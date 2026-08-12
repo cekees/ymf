@@ -10,3 +10,7 @@ build/
 dist/
 .mypy_cache/
 .ruff_cache/
+
+# Generated notebook artifacts (regenerate via the notebooks themselves)
+examples/notebooks/*.xmf
+.ipynb_checkpoints/
