@@ -105,12 +105,49 @@ Unit strings accept the notational variants used throughout the docs
   extension point, not a real geospatial fetch pipeline (no
   rasterio/xarray dependency assumed).
 
+## XDMF Round-Trip
+
+`ydmf.xdmf` provides bidirectional YDMF <-> XDMF conversion, not just
+write-only export:
+
+- `write_xdmf(domain, path, ydmf_extra=None)` — writes the mesh archive
+  (`domain`, an XDMF-native `Domain`/`Grid`/`Topology`/`Geometry` tree) as
+  real XDMF elements. If `ydmf_extra` is given (e.g. the `Problem`/
+  `solution_paths`/`vvuq` sections that have no XDMF equivalent), it's
+  JSON-serialized, base64-encoded, and embedded as a single
+  `<Information Name="YDMF" Value="...">` child of `<Domain>` — a
+  standard XDMF extension point that generic consumers (ParaView, VisIt)
+  parse and then ignore.
+- `read_xdmf(path)` — returns `(domain, ydmf_extra)`, recovering both the
+  mesh archive and (if present) the embedded non-mesh YDMF content.
+- `round_trip_equal(domain, ydmf_extra=None)` — write + read back + compare,
+  for verifying a specific document round-trips exactly.
+- `canonicalize_domain(domain)` — fills in XDMF's documented DataItem
+  defaults (`Format`, `DataType`, `Precision`) for any fields a sparse
+  input `domain` dict omitted; use this when comparing a hand-written
+  `domain` against a read-back one, since the written file always has
+  those attributes explicit even if the Python dict didn't.
+
+**Honesty note**: the `<Information>` extension mechanism is used because
+it's a well-known, standards-consistent XDMF extension point — but this
+design has not been verified against the live `Xdmf.dtd`/XSD from
+gitlab.kitware.com (no network access in the environment this was built
+in). If it turns out `Information` has placement restrictions stricter
+than assumed, moving the element under a `<Grid>` instead of `<Domain>`
+is the documented fallback (see `src/ydmf/xdmf.py` module docstring).
+
+The round-trip is lossless for the mesh archive (it's already XDMF's
+native shape) and for any YDMF content that survives a JSON round-trip
+(true for everything in the current schema). See the "Lossiness" section
+of the `ydmf.xdmf` module docstring for the precise scope of what's
+guaranteed vs. not.
+
 ## Roadmap
 
 See `docs/ydmf-schema-v0.2-delta.md` §7 for what's deferred to v0.3:
 multi-component BMI `System:` coupling block (on hold per user request),
 symbolic non-dimensionalization of `strong_form_expression`, automated
-raster/NetCDF data fetching, XDMF unit-metadata embedding.
+raster/NetCDF data fetching.
 
 ## License
 
