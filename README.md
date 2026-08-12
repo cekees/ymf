@@ -128,13 +128,12 @@ write-only export:
   `domain` against a read-back one, since the written file always has
   those attributes explicit even if the Python dict didn't.
 
-**Honesty note**: the `<Information>` extension mechanism is used because
-it's a well-known, standards-consistent XDMF extension point — but this
-design has not been verified against the live `Xdmf.dtd`/XSD from
-gitlab.kitware.com (no network access in the environment this was built
-in). If it turns out `Information` has placement restrictions stricter
-than assumed, moving the element under a `<Grid>` instead of `<Domain>`
-is the documented fallback (see `src/ydmf/xdmf.py` module docstring).
+**Verified**: checked directly against the live `Xdmf.dtd` from
+gitlab.kitware.com/xdmf/xdmf — `<!ELEMENT Domain (Information*, Grid+)>`
+confirms `Information` is explicitly legal as a direct child of `Domain`.
+The originally-documented `<Grid>` fallback (see `src/ydmf/xdmf.py`
+module docstring) turned out not to be needed, though it would also have
+worked (`Grid` permits `Information*` too).
 
 The round-trip is lossless for the mesh archive (it's already XDMF's
 native shape) and for any YDMF content that survives a JSON round-trip

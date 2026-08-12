@@ -39,13 +39,14 @@ style, block scalars) buy nothing here. The rest of the package still uses
 YAML/strictyaml everywhere a human or LLM actually edits a YDMF document;
 only this internal round-trip encoding uses JSON.
 
-**Honesty note**: this is a reasonable, standards-consistent design given
-what's known about XDMF's grammar, but it has *not* been verified against
-the live ``Xdmf.dtd``/XSD from gitlab.kitware.com — this sandbox has no
-network access to fetch it. If ``Information`` turns out to have stricter
-placement rules than assumed here, the fallback is to move the element
-under a ``<Grid>`` instead of directly under ``<Domain>`` (also permitted
-by every XDMF version this design is aware of).
+**Verified**: checked directly against the live ``Xdmf.dtd`` fetched
+from gitlab.kitware.com/xdmf/xdmf (2026-08-12, outside this sandbox's own
+no-network environment). The grammar confirms
+``<!ELEMENT Domain (Information*, Grid+)>`` — ``Information`` is
+explicitly legal as a direct child of ``Domain``, ahead of ``Grid+`` in
+its content model. No fallback needed (``Grid`` also permits
+``Information*``, so the originally-documented ``<Grid>`` fallback would
+have worked too, it just isn't required).
 
 Lossiness
 ---------
