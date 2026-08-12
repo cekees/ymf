@@ -5,6 +5,7 @@ from ydmf.normalize import normalize_unknowns
 from ydmf.units import check as check_units
 from ydmf.units import non_dimensionalize
 from ydmf.data_sources import resolve_roughness_source, validate_source_record
+from ydmf.xdmf import build_xdmf_tree, write_xdmf
 
 __all__ = [
     "YDMF_SCHEMA",
@@ -15,6 +16,8 @@ __all__ = [
     "non_dimensionalize",
     "resolve_roughness_source",
     "validate_source_record",
+    "build_xdmf_tree",
+    "write_xdmf",
 ]
 
 __version__ = "0.2.0"
