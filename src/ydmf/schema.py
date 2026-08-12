@@ -312,17 +312,32 @@ YDMF_SCHEMA = Map(
 )
 
 
+# YDMF documents and examples use YAML flow-style collections extensively
+# (e.g. ``unknowns: [u, p]``, ``fields: {family: CG, order: 2}``).
+# strictyaml disallows flow style by default (``allow_flow_style=False``)
+# as a style-consistency feature; YDMF explicitly opts back in since flow
+# style is idiomatic for short inline lists/maps throughout the schema.
+_ALLOW_FLOW_STYLE = True
+
+
 def load_ydmf(path: str | Path) -> AnyType:
     """Load and validate a YDMF YAML file, returning a plain Python object.
 
     Raises ``strictyaml.YAMLValidationError`` on schema violations.
     """
     text = Path(path).read_text()
-    parsed = strictyaml.load(text, YDMF_SCHEMA)
+    # NB: strictyaml.load() does not forward allow_flow_style; use
+    # dirty_load(), which is the same generic_load() implementation with
+    # the flow-style option exposed.
+    parsed = strictyaml.dirty_load(
+        text, YDMF_SCHEMA, allow_flow_style=_ALLOW_FLOW_STYLE
+    )
     return parsed.data
 
 
 def validate_ydmf(text: str) -> AnyType:
     """Validate a YDMF document already loaded as a string; returns plain data."""
-    parsed = strictyaml.load(text, YDMF_SCHEMA)
+    parsed = strictyaml.dirty_load(
+        text, YDMF_SCHEMA, allow_flow_style=_ALLOW_FLOW_STYLE
+    )
     return parsed.data
