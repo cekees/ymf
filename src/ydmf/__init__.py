@@ -2,12 +2,19 @@
 
 from ydmf.schema import YDMF_SCHEMA, load_ydmf, validate_ydmf
 from ydmf.normalize import normalize_unknowns
+from ydmf.units import check as check_units
+from ydmf.units import non_dimensionalize
+from ydmf.data_sources import resolve_roughness_source, validate_source_record
 
 __all__ = [
     "YDMF_SCHEMA",
     "load_ydmf",
     "validate_ydmf",
     "normalize_unknowns",
+    "check_units",
+    "non_dimensionalize",
+    "resolve_roughness_source",
+    "validate_source_record",
 ]
 
 __version__ = "0.2.0"

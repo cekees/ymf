@@ -70,11 +70,47 @@ doc = load_ydmf("examples/poisson.yaml")
 unknowns = normalize_unknowns(doc["Problem"]["strong_form"]["unknowns"])
 ```
 
+## Units and Dimensional Analysis
+
+`ydmf.units` (pint-backed) provides:
+
+- `check(doc)` — validates dimensional consistency between `unknowns`,
+  `boundary_conditions`, and `initial_conditions` unit strings. Documents
+  with no units at all pass trivially (units are optional everywhere).
+- `characteristic_scale_values(problem)` / `compute_dimensionless_numbers(problem)`
+  — resolve `characteristic_scales` (incl. `derived: true` formulas) and
+  evaluate `dimensionless_numbers` formulas (e.g. Reynolds number).
+- `non_dimensionalize(doc)` — resolves characteristic scales/dimensionless
+  numbers and derives substitution relations (`u* = u / U_char`, etc.) for
+  units-tagged unknowns. Does not symbolically rewrite
+  `strong_form_expression` — that needs the sympy/ibvp language layer
+  (still deferred, see roadmap).
+
+Unit strings accept the notational variants used throughout the docs
+(`m2/s`, `m²/s`, `m^2/s`, `kg/(m·s)`) via `normalize_unit_string()`.
+
+## Data Sources
+
+`ydmf.data_sources` provides:
+
+- `resolve_roughness_source(roughness_source, land_cover)` /
+  `manning_n_for_land_cover(...)` — Manning's n lookup from land cover
+  class (internal keys or raw USGS NLCD class codes), per
+  Chow (1959) / Arcement & Schneider (1989) reference ranges. Supports a
+  CSV `lookup_table` override.
+- `validate_source_record(record)` — checks a `source`/`source_url` pair
+  against a small built-in catalog (SRTM, CHIRPS, ERA5, NLCD, etc.) and
+  returns warnings (never errors — sources outside the catalog are fine).
+- `fetch(url, dest)` — minimal stdlib-only downloader; a placeholder
+  extension point, not a real geospatial fetch pipeline (no
+  rasterio/xarray dependency assumed).
+
 ## Roadmap
 
-See `docs/ydmf-schema-v0.2-delta.md` §7 for deferred v0.3 items:
-multi-component BMI coupling, automatic non-dimensionalization, automated
-geospatial data sourcing, XDMF unit-metadata embedding.
+See `docs/ydmf-schema-v0.2-delta.md` §7 for what's deferred to v0.3:
+multi-component BMI `System:` coupling block (on hold per user request),
+symbolic non-dimensionalization of `strong_form_expression`, automated
+raster/NetCDF data fetching, XDMF unit-metadata embedding.
 
 ## License
 

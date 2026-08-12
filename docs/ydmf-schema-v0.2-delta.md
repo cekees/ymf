@@ -401,7 +401,7 @@ YDMF = Map({
 
 ## 7. Deferred to v0.3 (Not in This Delta)
 
-- Multi-component `System:` coupling block for BMI-based multi-physics (csdms-bmi §3.5)
-- Automatic non-dimensionalization pipeline (`ydmf.units.non_dimensionalize()`, units report §5.3/§6)
-- `ydmf.data_sources` module for automated DEM/land-cover fetching (data-sources report §7)
+- Multi-component `System:` coupling block for BMI-based multi-physics (csdms-bmi §3.5) — **deferred, on hold per user request (2026-08-12)**
+- ~~Automatic non-dimensionalization pipeline (`ydmf.units.non_dimensionalize()`, units report §5.3/§6)~~ — **implemented 2026-08-12**, see `src/ydmf/units.py`. Produces resolved characteristic scales, dimensionless numbers, and substitution relations for units-tagged unknowns; does *not* symbolically substitute into `strong_form_expression` (still needs the sympy/ibvp language layer) — that piece remains deferred.
+- ~~`ydmf.data_sources` module for automated DEM/land-cover fetching (data-sources report §7)~~ — **partially implemented 2026-08-12**, see `src/ydmf/data_sources.py`. Manning's n land-cover lookup (incl. NLCD class codes) and a known-source URL validator are done and tested; actual raster/NetCDF fetching (SRTM/CHIRPS/ERA5/NLCD tile downloads) is **not** implemented — needs rasterio/xarray + network access, neither available in this sandbox. `fetch()` is a minimal stdlib-only URL downloader as a placeholder extension point.
 - XDMF output unit-metadata embedding (units report §6.4)
