@@ -1,0 +1,64 @@
+# ============================================================
+# YDMF Example: Poisson on unit square (v0.1-compatible)
+# ============================================================
+
+Problem:
+  name: "Poisson unit square"
+  physical_model:
+    provenance: llm_derived
+    processes: [heat_conduction]
+    assumptions: [steady, constant_properties]
+
+  strong_form:
+    unknowns: [u]
+    unknown_provenance: llm_derived
+    equation_formulation: "Poisson"
+    strong_form_expression: "-Δu = f  in Ω"
+    domain: |
+      Ω = [0,1] × [0,1]
+    boundary_regions:
+      - name: "all_boundaries"
+        geometry: "∂Ω"
+    coefficients:
+      f: "π²sin(πx)sin(πy)"
+
+  weak_forms:
+    - label: "global"
+      provenance: llm_derived
+      derivation: |
+        Multiply by test function v ∈ H1_0(Ω),
+        integrate over Ω, integrate by parts.
+      solution_spaces:
+        trial: "H1"
+        test: "H1_0"
+      inf_sup_stability: "true"
+      existence_note: "Lax-Milgram applies (coercive bilinear form)"
+      uniqueness_note: "guaranteed by coercivity"
+      regularity_note: "u ∈ H2(Ω) on convex domain"
+      bilinear: |
+        a(u,v) = ∫Ω ∇u·∇v dx
+      linear: |
+        l(v) = ∫Ω f·v dx
+      boundary_conditions: |
+        u|∂Ω = 0  (essential)
+      stabilization_method: "none"
+
+solution_paths:
+  analytical:
+    - name: "exact_Poisson"
+      provenance: llm_derived
+      method: "separation_of_variables"
+      solution:
+        formula: "u(x,y) = sin(πx)sin(πy) / (2π²)"
+        derivation_source: "sympy.dsolve"
+
+  discretizations:
+    - name: "P1_linear"
+      provenance: llm_derived
+      from_weak_form: "global"
+      finite_element:
+        fields: {family: CG, order: 1}
+      solver:
+        type: linear
+        linear_solver: petsc
+        tolerance: 1e-12

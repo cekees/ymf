@@ -1,0 +1,75 @@
+# ============================================================
+# YDMF Example: Poisson (heat conduction), v0.2 enriched
+# Demonstrates: structured unknowns with units/std_name,
+# characteristic_scales, dimensional_check, boundary_conditions.
+# ============================================================
+
+Problem:
+  name: "Poisson heat conduction"
+  physical_model:
+    provenance: llm_derived
+    processes: [heat_conduction]
+    assumptions: [steady, constant_properties]
+
+  units:
+    convention: SI
+    default: true
+
+  characteristic_scales:
+    length: {value: 1.0, units: m}
+    temperature: {value: 300.0, units: K}
+
+  strong_form:
+    unknowns:
+      - name: T
+        units: K
+        std_name: land_surface_temperature
+    unknown_provenance: llm_derived
+    equation_formulation: "Poisson"
+    strong_form_expression: "-kΔT = Q  in Ω"
+    domain: |
+      Ω = [0,1] × [0,1]
+    boundary_regions:
+      - name: "all_boundaries"
+        geometry: "∂Ω"
+    boundary_conditions:
+      - region: "all_boundaries"
+        variable: "T"
+        type: dirichlet
+        value: 300.0
+        units: K
+    coefficients:
+      k: "1.0"
+      Q: "π²"
+    dimensional_check:
+      enabled: true
+      method: automatic
+      tolerance: 1e-10
+
+  weak_forms:
+    - label: "global"
+      provenance: llm_derived
+      derivation: |
+        Multiply by test function v ∈ H1_0(Ω),
+        integrate over Ω, integrate by parts.
+      solution_spaces:
+        trial: "H1"
+        test: "H1_0"
+      bilinear: |
+        a(T,v) = ∫Ω k ∇T·∇v dx
+      linear: |
+        l(v) = ∫Ω Q·v dx
+
+solution_paths:
+  analytical: []
+  discretizations:
+    - name: "P1_linear"
+      provenance: llm_derived
+      from_weak_form: "global"
+      finite_element:
+        fields: {family: CG, order: 1}
+      solver:
+        type: linear
+        linear_solver: petsc
+        tolerance: 1e-12
+      bmi_interface: true
