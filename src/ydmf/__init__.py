@@ -1,5 +1,7 @@
 """YDMF — YAML Data Model and Format for computational physics."""
 
+from importlib.metadata import PackageNotFoundError, version as _version
+
 from ydmf.schema import YDMF_SCHEMA, load_ydmf, validate_ydmf
 from ydmf.normalize import normalize_unknowns
 from ydmf.units import check as check_units
@@ -29,4 +31,7 @@ __all__ = [
     "canonicalize_domain",
 ]
 
-__version__ = "0.2.0"
+try:
+    __version__ = _version("ydmf")
+except PackageNotFoundError:
+    __version__ = "0.0.0+unknown"
