@@ -1,3 +1,5 @@
+from xml.etree.ElementTree import Element
+
 import pytest
 
 from ydmf.xdmf import (
@@ -114,6 +116,11 @@ def test_round_trip_equal_domain_only():
     assert round_trip_equal(SAMPLE_DOMAIN) is True
 
 
+def test_parse_xdmf_domain_returns_empty_dict_without_domain_element():
+    root = Element("Xdmf", {"Version": "2.0"})
+    assert parse_xdmf_domain(root) == {}
+
+
 def test_no_information_element_when_ydmf_extra_omitted(tmp_path):
     path = tmp_path / "test.xmf"
     write_xdmf(SAMPLE_DOMAIN, path)
@@ -180,6 +187,11 @@ def test_round_trip_equal_with_ydmf_extra():
 def test_parse_xdmf_extra_returns_none_without_information():
     tree = build_xdmf_tree(SAMPLE_DOMAIN)
     assert parse_xdmf_extra(tree.getroot()) is None
+
+
+def test_parse_xdmf_extra_returns_none_without_domain_element():
+    root = Element("Xdmf", {"Version": "2.0"})
+    assert parse_xdmf_extra(root) is None
 
 
 def test_ydmf_extra_with_unicode_survives_round_trip(tmp_path):
