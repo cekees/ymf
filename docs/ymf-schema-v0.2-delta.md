@@ -1,14 +1,14 @@
-# YDMF Schema v0.2 — Consolidation Delta
+# YMF Schema v0.2 — Consolidation Delta
 
 **Date**: 2026-08-12
-**Status**: Draft — proposed additive/breaking changes to `ydmf-schema.md` (v0.1), synthesized from four background reports:
+**Status**: Draft — proposed additive/breaking changes to `ymf-schema.md` (v0.1), synthesized from four background reports:
 
 - `csdms-bmi-report.md` — CSDMS Standard Names + BMI component interoperability
-- `ydmf-units-report.md` — physical units, dimensional consistency, non-dimensionalization
+- `ymf-units-report.md` — physical units, dimensional consistency, non-dimensionalization
 - `data-sources-report.md` — topography/bathymetry/vegetation/roughness/remote-sensing data sourcing
 - `session-summary-2026-07-29.md` — original v0.1 design rationale
 
-This document is a **delta**, not a replacement. It lists exactly what changes in the v0.1 schema, flags the one breaking change, and gives the merged strictyaml validators. Once reviewed, fold this into `ydmf-schema.md` proper and bump the version string.
+This document is a **delta**, not a replacement. It lists exactly what changes in the v0.1 schema, flags the one breaking change, and gives the merged strictyaml validators. Once reviewed, fold this into `ymf-schema.md` proper and bump the version string.
 
 ---
 
@@ -359,8 +359,8 @@ Problem = Map({
     Optional("mesh_generation"): MeshGenerationDef,                # NEW
 })
 
-# --- Top-level YDMF (unchanged structurally, Problem definition updated above) ---
-YDMF = Map({
+# --- Top-level YMF (unchanged structurally, Problem definition updated above) ---
+YMF = Map({
     "Problem": Problem,
     "solution_paths": DiscretizationCategory,
     Optional("vvuq"): Map({
@@ -376,7 +376,7 @@ YDMF = Map({
 
 ## 5. Cross-Report Reconciliation Notes
 
-1. **Units string format** is consistent across `csdms-bmi-report.md` and `ydmf-units-report.md` — both use bare unit strings like `"m/s"`, `"m2/s"`, `"Pa"`, parseable by `pint`. No conflict.
+1. **Units string format** is consistent across `csdms-bmi-report.md` and `ymf-units-report.md` — both use bare unit strings like `"m/s"`, `"m2/s"`, `"Pa"`, parseable by `pint`. No conflict.
 
 2. **CSDMS `std_name` and units report's `units` field coexist** on the same `UnknownDef`/coefficient map — they are complementary, not overlapping. The units report's §4.6/§6.5 explicitly proposes validating `units` against the CSDMS-expected units for a given `std_name`. This is a **post-parse validation step**, not a schema constraint (strictyaml can't do cross-field semantic validation on its own) — implement as a `validate_std_name_units()` Python function.
 
@@ -384,9 +384,9 @@ YDMF = Map({
 
 4. **data-sources report's BC/IC provenance fields** (`source`, `source_url`, `temporal`) integrate directly into the new `InitialConditionDef`/`BoundaryConditionDef` — no conflict, this report essentially specified what those new sections needed to contain.
 
-5. **Known remaining inconsistency (flagged, not yet resolved)**: `csdms-bmi-report.md` §3.4's example YDMF→BMI data flow still shows bare `unknowns: [u, p]` and `coefficients: {ν: 1.0e-5}` without units/std_name — that example predates this consolidation and should be updated to the enriched v0.2 form when the BMI report is folded into permanent docs.
+5. **Known remaining inconsistency (flagged, not yet resolved)**: `csdms-bmi-report.md` §3.4's example YMF→BMI data flow still shows bare `unknowns: [u, p]` and `coefficients: {ν: 1.0e-5}` without units/std_name — that example predates this consolidation and should be updated to the enriched v0.2 form when the BMI report is folded into permanent docs.
 
-6. **Multi-component `System:` coupling block** (`csdms-bmi-report.md` §3.5) is explicitly marked "illustrative example only" / future extension in that report and is **not included** in this v0.2 delta — it doesn't fit under the current `Problem`/`solution_paths` structure and needs its own design pass (likely a new top-level key, e.g. `System`, sibling to `Problem`, only present for multi-component YDMF documents). Deferred to v0.3.
+6. **Multi-component `System:` coupling block** (`csdms-bmi-report.md` §3.5) is explicitly marked "illustrative example only" / future extension in that report and is **not included** in this v0.2 delta — it doesn't fit under the current `Problem`/`solution_paths` structure and needs its own design pass (likely a new top-level key, e.g. `System`, sibling to `Problem`, only present for multi-component YMF documents). Deferred to v0.3.
 
 ---
 
@@ -395,13 +395,13 @@ YDMF = Map({
 1. v0.1 documents remain valid under v0.2 (only `unknowns` type is widened, not narrowed — old bare-string lists still parse).
 2. New optional sections default to absent/`None` — no behavior change for documents that don't use them.
 3. `normalize_unknowns()` (§2) should be called immediately after YAML parsing, before any code touches `unknowns`, so internal code never has to branch on str-vs-map.
-4. Recommend bumping `archive.version` to `"ydmf-0.2"` once a document uses any v0.2-only field.
+4. Recommend bumping `archive.version` to `"ymf-0.2"` once a document uses any v0.2-only field.
 
 ---
 
 ## 7. Deferred to v0.3 (Not in This Delta)
 
 - Multi-component `System:` coupling block for BMI-based multi-physics (csdms-bmi §3.5) — **deferred, on hold per user request (2026-08-12)**
-- ~~Automatic non-dimensionalization pipeline (`ydmf.units.non_dimensionalize()`, units report §5.3/§6)~~ — **implemented 2026-08-12**, see `src/ydmf/units.py`. Produces resolved characteristic scales, dimensionless numbers, and substitution relations for units-tagged unknowns; does *not* symbolically substitute into `strong_form_expression` (still needs the sympy/ibvp language layer) — that piece remains deferred.
-- ~~`ydmf.data_sources` module for automated DEM/land-cover fetching (data-sources report §7)~~ — **partially implemented 2026-08-12**, see `src/ydmf/data_sources.py`. Manning's n land-cover lookup (incl. NLCD class codes) and a known-source URL validator are done and tested; actual raster/NetCDF fetching (SRTM/CHIRPS/ERA5/NLCD tile downloads) is **not** implemented — needs rasterio/xarray + network access, neither available in this sandbox. `fetch()` is a minimal stdlib-only URL downloader as a placeholder extension point.
-- ~~XDMF output unit-metadata embedding (units report §6.4)~~ — **superseded 2026-08-12** by a more general mechanism: `ydmf.xdmf.write_xdmf(domain, path, ydmf_extra=...)` embeds an *entire* YDMF sub-document (not just unit strings) as a base64-encoded JSON payload inside a standard XDMF `<Information Name="YDMF">` extension element, with `read_xdmf()` recovering it losslessly. Unit metadata specifically (units report §6.4's original ask) is automatically covered since `unknowns[].units` is part of whatever `Problem` document gets passed as `ydmf_extra`. See `src/ydmf/xdmf.py` and the README's "XDMF Round-Trip" section. Not yet verified against the live `Xdmf.dtd`/XSD (no network access) — see the module docstring's "Honesty note".
+- ~~Automatic non-dimensionalization pipeline (`ymf.units.non_dimensionalize()`, units report §5.3/§6)~~ — **implemented 2026-08-12**, see `src/ymf/units.py`. Produces resolved characteristic scales, dimensionless numbers, and substitution relations for units-tagged unknowns; does *not* symbolically substitute into `strong_form_expression` (still needs the sympy/ibvp language layer) — that piece remains deferred.
+- ~~`ymf.data_sources` module for automated DEM/land-cover fetching (data-sources report §7)~~ — **partially implemented 2026-08-12**, see `src/ymf/data_sources.py`. Manning's n land-cover lookup (incl. NLCD class codes) and a known-source URL validator are done and tested; actual raster/NetCDF fetching (SRTM/CHIRPS/ERA5/NLCD tile downloads) is **not** implemented — needs rasterio/xarray + network access, neither available in this sandbox. `fetch()` is a minimal stdlib-only URL downloader as a placeholder extension point.
+- ~~XDMF output unit-metadata embedding (units report §6.4)~~ — **superseded 2026-08-12** by a more general mechanism: `ymf.xdmf.write_xdmf(domain, path, ymf_extra=...)` embeds an *entire* YMF sub-document (not just unit strings) as a base64-encoded JSON payload inside a standard XDMF `<Information Name="YMF">` extension element, with `read_xdmf()` recovering it losslessly. Unit metadata specifically (units report §6.4's original ask) is automatically covered since `unknowns[].units` is part of whatever `Problem` document gets passed as `ymf_extra`. See `src/ymf/xdmf.py` and the README's "XDMF Round-Trip" section. Not yet verified against the live `Xdmf.dtd`/XSD (no network access) — see the module docstring's "Honesty note".

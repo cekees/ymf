@@ -1,6 +1,6 @@
 import pytest
 
-from ydmf.units import (
+from ymf.units import (
     UnitCheckResult,
     UnitParseError,
     characteristic_scale_values,

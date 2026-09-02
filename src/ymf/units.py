@@ -1,17 +1,17 @@
 """Unit handling, dimensional consistency checking, and non-dimensionalization.
 
 Implements the "immediate"/"short-term" recommendations from
-``docs/ydmf-units-report.md``:
+``docs/ymf-units-report.md``:
 
 - pint-backed unit string parsing (report §1.1, §6.2), tolerant of the
   bare-exponent (``m2/s``), unicode-superscript (``m²``), caret (``m^2``),
-  and dot-multiply (``kg/(m·s)``) idioms used throughout the YDMF docs and
+  and dot-multiply (``kg/(m·s)``) idioms used throughout the YMF docs and
   examples, none of which pint accepts natively.
 - Cross-field dimensional consistency checks (report §4.4): boundary/initial
   condition units must be compatible with the unknown they apply to.
 - Characteristic-scale-based non-dimensionalization (report §5).
 
-Deliberately **non-intrusive** (report §2.1): every function accepts YDMF
+Deliberately **non-intrusive** (report §2.1): every function accepts YMF
 documents with no units at all and simply reports "nothing to check" rather
 than raising. Units are an enhancement, never a requirement.
 
@@ -30,7 +30,7 @@ from typing import Any, Dict, List, Optional
 
 import pint
 
-from ydmf.normalize import normalize_unknowns
+from ymf.normalize import normalize_unknowns
 
 __all__ = [
     "UnitParseError",
@@ -61,13 +61,13 @@ _BARE_EXPONENT_RE = re.compile(r"(?<!\*)(?<=[A-Za-zµ])(-?\d+)(?!\d)")
 
 
 class UnitParseError(ValueError):
-    """Raised when a YDMF unit string cannot be parsed by pint."""
+    """Raised when a YMF unit string cannot be parsed by pint."""
 
 
 def normalize_unit_string(unit_str: Optional[str]) -> Optional[str]:
-    """Normalize a YDMF-style unit string into pint-parseable syntax.
+    """Normalize a YMF-style unit string into pint-parseable syntax.
 
-    Handles the notational idioms used throughout the YDMF docs/examples
+    Handles the notational idioms used throughout the YMF docs/examples
     that pint's default parser rejects outright:
 
     >>> normalize_unit_string("m2/s")
@@ -90,7 +90,7 @@ def normalize_unit_string(unit_str: Optional[str]) -> Optional[str]:
 
 
 def to_pint_unit(unit_str: Optional[str]) -> "pint.Unit":
-    """Parse a YDMF unit string into a :class:`pint.Unit`.
+    """Parse a YMF unit string into a :class:`pint.Unit`.
 
     ``None``, ``""``, and ``"dimensionless"`` all map to pint's dimensionless
     unit. Raises :class:`UnitParseError` on anything pint can't parse even
@@ -154,7 +154,7 @@ def _collect_unknown_units(strong_form: Dict[str, Any]) -> Dict[str, str]:
 
 
 def check(doc: Dict[str, Any]) -> UnitCheckResult:
-    """Check dimensional consistency of a parsed YDMF document.
+    """Check dimensional consistency of a parsed YMF document.
 
     Non-intrusive per report §2.1: any unknown, coefficient, boundary
     condition, or initial condition with no ``units`` field is silently
@@ -228,7 +228,7 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
 def _eval_formula(formula: str, scope: Dict[str, float]) -> Optional[float]:
     """Evaluate a characteristic-scale/dimensionless-number formula string.
 
-    Formulas come from the YDMF document author (trusted, same trust level
+    Formulas come from the YMF document author (trusted, same trust level
     as any other YAML content in the file) but evaluation is still
     restricted to arithmetic on the given scope: no builtins, no attribute
     or subscript access. Returns ``None`` (rather than raising) if the
@@ -236,7 +236,7 @@ def _eval_formula(formula: str, scope: Dict[str, float]) -> Optional[float]:
     evaluate, since not all referenced scales may be available yet.
     """
     try:
-        code = compile(formula, "<ydmf-formula>", "eval")
+        code = compile(formula, "<ymf-formula>", "eval")
     except SyntaxError:
         return None
     for name in code.co_names:

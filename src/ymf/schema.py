@@ -1,8 +1,8 @@
-"""strictyaml schema validators for YDMF v0.2.
+"""strictyaml schema validators for YMF v0.2.
 
 This module implements the schema described in
-``docs/ydmf-schema-v0.2-delta.md``, merged on top of the v0.1 schema in
-``docs/ydmf-schema.md``. Only ``unknowns`` widens its accepted type
+``docs/ymf-schema-v0.2-delta.md``, merged on top of the v0.1 schema in
+``docs/ymf-schema.md``. Only ``unknowns`` widens its accepted type
 (bare string OR structured map) relative to v0.1; every other v0.2
 addition is optional and preserves v0.1 documents unchanged.
 """
@@ -296,10 +296,10 @@ ProblemDef = Map(
 )
 
 # ---------------------------------------------------------------------------
-# Top-level YDMF schema
+# Top-level YMF schema
 # ---------------------------------------------------------------------------
 
-YDMF_SCHEMA = Map(
+YMF_SCHEMA = Map(
     {
         "Problem": ProblemDef,
         "solution_paths": DiscretizationCategory,
@@ -312,16 +312,16 @@ YDMF_SCHEMA = Map(
 )
 
 
-# YDMF documents and examples use YAML flow-style collections extensively
+# YMF documents and examples use YAML flow-style collections extensively
 # (e.g. ``unknowns: [u, p]``, ``fields: {family: CG, order: 2}``).
 # strictyaml disallows flow style by default (``allow_flow_style=False``)
-# as a style-consistency feature; YDMF explicitly opts back in since flow
+# as a style-consistency feature; YMF explicitly opts back in since flow
 # style is idiomatic for short inline lists/maps throughout the schema.
 _ALLOW_FLOW_STYLE = True
 
 
-def load_ydmf(path: str | Path) -> AnyType:
-    """Load and validate a YDMF YAML file, returning a plain Python object.
+def load_ymf(path: str | Path) -> AnyType:
+    """Load and validate a YMF YAML file, returning a plain Python object.
 
     Raises ``strictyaml.YAMLValidationError`` on schema violations.
     """
@@ -330,14 +330,14 @@ def load_ydmf(path: str | Path) -> AnyType:
     # dirty_load(), which is the same generic_load() implementation with
     # the flow-style option exposed.
     parsed = strictyaml.dirty_load(
-        text, YDMF_SCHEMA, allow_flow_style=_ALLOW_FLOW_STYLE
+        text, YMF_SCHEMA, allow_flow_style=_ALLOW_FLOW_STYLE
     )
     return parsed.data
 
 
-def validate_ydmf(text: str) -> AnyType:
-    """Validate a YDMF document already loaded as a string; returns plain data."""
+def validate_ymf(text: str) -> AnyType:
+    """Validate a YMF document already loaded as a string; returns plain data."""
     parsed = strictyaml.dirty_load(
-        text, YDMF_SCHEMA, allow_flow_style=_ALLOW_FLOW_STYLE
+        text, YMF_SCHEMA, allow_flow_style=_ALLOW_FLOW_STYLE
     )
     return parsed.data

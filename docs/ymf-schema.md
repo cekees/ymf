@@ -1,4 +1,4 @@
-# YDMF — Yet Another Data Model for Physics
+# YMF — Yet Another Data Model for Physics
 # Draft Schema (v0.1)
 
 A structured, human- and LLM-editable format for describing physical
@@ -15,7 +15,7 @@ branching across formulations, solution paths, and solver backends.
   string label for human/LLM readability.  Both resolve to the same
   array position.
 - **XDMF preservation**: every valid XDMF 2.0/3.x document is a valid
-  YDMF document (embedded under the `Xdmf` key).  ParaView and other
+  YMF document (embedded under the `Xdmf` key).  ParaView and other
   XDMF consumers skip unknown top-level keys.
 
 ---
@@ -24,7 +24,7 @@ branching across formulations, solution paths, and solver backends.
 
 ```yaml
 # ============================================================
-# YDMF — Yet Another Data Model for Physics (working name)
+# YMF — Yet Another Data Model for Physics (working name)
 # ============================================================
 
 # === 1. Problem definition (shared by all branches) ===
@@ -50,11 +50,11 @@ archive:
 # === 5. Archive output (easily mappable to XDMF) ===
 # A valid archive is a data tree plus metadata.  The data tree
 # maps cleanly to XDMF without XDMF being a dependency — XDMF is
-# only a consumer of the archive, not a building block of YDMF.
+# only a consumer of the archive, not a building block of YMF.
 Archive:
   Domain: { ... }          # XDMF 2.0/3.x data tree
   Extension:               # non-XDMF metadata, skipped by standard consumers
-    YDMF_provenance: "..."
+    YMF_provenance: "..."
 ```
 
 ---
@@ -412,8 +412,8 @@ archive:
       - time_step_accepted
   bundle: true                  # single HDF5 file for all data
   compression: gzip             # or lzf, szip, none
-  include_ydmf: true            # embed full YDMF as provenance
-  version: "ydmf-0.1"
+  include_ymf: true            # embed full YMF as provenance
+  version: "ymf-0.1"
   software_versions:
     proteus: "2.0.0"
     fenics: "2023.1.0"
@@ -432,7 +432,7 @@ archive:
 ```yaml
 Xdmf:
   # Valid XDMF 2.0 or 3.x XML structure, embedded here.
-  # Every valid XDMF document is a valid YDMF document.
+  # Every valid XDMF document is a valid YMF document.
   # ParaView and other XDMF consumers read the Xdmf key
   # and ignore all others (unknown top-level keys).
   Domain:
@@ -446,7 +446,7 @@ Xdmf:
 
   # Extension elements: arbitrary XML that XDMF consumers skip.
   Extension:
-    YDMF_provenance: "supg_standard → taylor_hood_cg2"
+    YMF_provenance: "supg_standard → taylor_hood_cg2"
     weak_form_label: "supg_standard"
     discretization_index: 0
 ```
@@ -459,7 +459,7 @@ A complete working example (combining all sections):
 
 ```yaml
 # ============================================================
-# YDMF Example: Poisson on unit square
+# YMF Example: Poisson on unit square
 # ============================================================
 
 Problem:
@@ -575,8 +575,8 @@ archive:
   time_collection: batch
   bundle: true
   compression: gzip
-  include_ydmf: true
-  version: "ydmf-0.1"
+  include_ymf: true
+  version: "ymf-0.1"
 
 Archive:
   Format:
@@ -601,7 +601,7 @@ Archive:
 
 ## Schema Validation (strictyaml)
 
-The YDMF file is validated with `strictyaml` before processing:
+The YMF file is validated with `strictyaml` before processing:
 
 ```python
 from strictyaml import (
@@ -719,7 +719,7 @@ PhysicalModelDef = Map({
 })
 
 # Top-level schema
-YDMF = Map({
+YMF = Map({
     "Problem": Map({
         "name": Str(),
         Optional("physical_model"): PhysicalModelDef,

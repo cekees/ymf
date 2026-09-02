@@ -2,7 +2,7 @@ from xml.etree.ElementTree import Element
 
 import pytest
 
-from ydmf.xdmf import (
+from ymf.xdmf import (
     build_xdmf_tree,
     canonicalize_domain,
     parse_xdmf_domain,
@@ -68,7 +68,7 @@ SAMPLE_DOMAIN = {
 
 
 # ---------------------------------------------------------------------------
-# domain-only round trip (no ydmf_extra)
+# domain-only round trip (no ymf_extra)
 # ---------------------------------------------------------------------------
 
 
@@ -94,9 +94,9 @@ def test_domain_round_trips_via_parse_xdmf_domain():
 def test_write_then_read_xdmf_domain_only(tmp_path):
     path = tmp_path / "test.xmf"
     write_xdmf(SAMPLE_DOMAIN, path)
-    domain, ydmf_extra = read_xdmf(path)
+    domain, ymf_extra = read_xdmf(path)
     assert domain == canonicalize_domain(SAMPLE_DOMAIN)
-    assert ydmf_extra is None
+    assert ymf_extra is None
 
 
 def test_canonicalize_domain_is_idempotent():
@@ -121,7 +121,7 @@ def test_parse_xdmf_domain_returns_empty_dict_without_domain_element():
     assert parse_xdmf_domain(root) == {}
 
 
-def test_no_information_element_when_ydmf_extra_omitted(tmp_path):
+def test_no_information_element_when_ymf_extra_omitted(tmp_path):
     path = tmp_path / "test.xmf"
     write_xdmf(SAMPLE_DOMAIN, path)
     tree = __import__("xml.etree.ElementTree", fromlist=["parse"]).parse(path)
@@ -130,10 +130,10 @@ def test_no_information_element_when_ydmf_extra_omitted(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# domain + ydmf_extra round trip
+# domain + ymf_extra round trip
 # ---------------------------------------------------------------------------
 
-SAMPLE_YDMF_EXTRA = {
+SAMPLE_YMF_EXTRA = {
     "Problem": {
         "name": "Poisson 3D (unit cube, tetrahedral mesh)",
         "strong_form": {
@@ -158,30 +158,30 @@ SAMPLE_YDMF_EXTRA = {
 }
 
 
-def test_information_element_present_when_ydmf_extra_given(tmp_path):
+def test_information_element_present_when_ymf_extra_given(tmp_path):
     path = tmp_path / "test.xmf"
-    write_xdmf(SAMPLE_DOMAIN, path, ydmf_extra=SAMPLE_YDMF_EXTRA)
+    write_xdmf(SAMPLE_DOMAIN, path, ymf_extra=SAMPLE_YMF_EXTRA)
     import xml.etree.ElementTree as ET
 
     tree = ET.parse(path)
     domain_elem = tree.getroot().find("Domain")
     info = domain_elem.find("Information")
     assert info is not None
-    assert info.attrib["Name"] == "YDMF"
+    assert info.attrib["Name"] == "YMF"
     # value should be base64 (no raw YAML/unicode leaking into the attribute)
     assert info.attrib["Value"].isascii()
 
 
-def test_write_then_read_xdmf_with_ydmf_extra(tmp_path):
+def test_write_then_read_xdmf_with_ymf_extra(tmp_path):
     path = tmp_path / "test.xmf"
-    write_xdmf(SAMPLE_DOMAIN, path, ydmf_extra=SAMPLE_YDMF_EXTRA)
-    domain, ydmf_extra = read_xdmf(path)
+    write_xdmf(SAMPLE_DOMAIN, path, ymf_extra=SAMPLE_YMF_EXTRA)
+    domain, ymf_extra = read_xdmf(path)
     assert domain == canonicalize_domain(SAMPLE_DOMAIN)
-    assert ydmf_extra == SAMPLE_YDMF_EXTRA
+    assert ymf_extra == SAMPLE_YMF_EXTRA
 
 
-def test_round_trip_equal_with_ydmf_extra():
-    assert round_trip_equal(SAMPLE_DOMAIN, ydmf_extra=SAMPLE_YDMF_EXTRA) is True
+def test_round_trip_equal_with_ymf_extra():
+    assert round_trip_equal(SAMPLE_DOMAIN, ymf_extra=SAMPLE_YMF_EXTRA) is True
 
 
 def test_parse_xdmf_extra_returns_none_without_information():
@@ -194,37 +194,37 @@ def test_parse_xdmf_extra_returns_none_without_domain_element():
     assert parse_xdmf_extra(root) is None
 
 
-def test_ydmf_extra_with_unicode_survives_round_trip(tmp_path):
+def test_ymf_extra_with_unicode_survives_round_trip(tmp_path):
     # strong_form_expression fields routinely contain unicode math (∂, ∇, Ω, ...)
     extra = {
         "strong_form_expression": "∂u/∂t + u·∇u = -∇p + νΔu + f\n∇·u = 0",
         "domain": "Ω = [0,10] × [0,1]",
     }
     path = tmp_path / "test.xmf"
-    write_xdmf(SAMPLE_DOMAIN, path, ydmf_extra=extra)
-    _, ydmf_extra = read_xdmf(path)
-    assert ydmf_extra == extra
+    write_xdmf(SAMPLE_DOMAIN, path, ymf_extra=extra)
+    _, ymf_extra = read_xdmf(path)
+    assert ymf_extra == extra
 
 
-def test_ydmf_extra_with_special_xml_chars_survives_round_trip(tmp_path):
+def test_ymf_extra_with_special_xml_chars_survives_round_trip(tmp_path):
     # <, >, &, and quotes would break a naive (unescaped) XML attribute;
     # base64 encoding sidesteps XML escaping entirely.
     extra = {"notes": "if a < b & c > d then \"quote\" and 'apostrophe'"}
     path = tmp_path / "test.xmf"
-    write_xdmf(SAMPLE_DOMAIN, path, ydmf_extra=extra)
-    _, ydmf_extra = read_xdmf(path)
-    assert ydmf_extra == extra
+    write_xdmf(SAMPLE_DOMAIN, path, ymf_extra=extra)
+    _, ymf_extra = read_xdmf(path)
+    assert ymf_extra == extra
 
 
 # ---------------------------------------------------------------------------
-# full YDMF document round trip (the actual notebook example)
+# full YMF document round trip (the actual notebook example)
 # ---------------------------------------------------------------------------
 
 
 def test_full_notebook_example_round_trips(tmp_path):
-    """End-to-end: the same Problem doc used in YDMF-updated.ipynb, plus the
+    """End-to-end: the same Problem doc used in YMF-updated.ipynb, plus the
     mesh archive, written and read back through write_xdmf/read_xdmf."""
-    from ydmf import validate_ydmf
+    from ymf import validate_ymf
 
     poisson_problem_yaml = """
 Problem:
@@ -258,12 +258,12 @@ solution_paths:
         linear_solver: petsc
         tolerance: 1e-10
 """
-    problem_doc = validate_ydmf(poisson_problem_yaml)
+    problem_doc = validate_ymf(poisson_problem_yaml)
 
     path = tmp_path / "poisson_full.xmf"
-    write_xdmf(SAMPLE_DOMAIN, path, ydmf_extra=problem_doc)
-    domain, ydmf_extra = read_xdmf(path)
+    write_xdmf(SAMPLE_DOMAIN, path, ymf_extra=problem_doc)
+    domain, ymf_extra = read_xdmf(path)
 
     assert domain == canonicalize_domain(SAMPLE_DOMAIN)
-    assert ydmf_extra == problem_doc
-    assert ydmf_extra["Problem"]["name"] == "Poisson 3D (unit cube, tetrahedral mesh)"
+    assert ymf_extra == problem_doc
+    assert ymf_extra["Problem"]["name"] == "Poisson 3D (unit cube, tetrahedral mesh)"

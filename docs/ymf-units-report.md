@@ -1,6 +1,6 @@
-# Physical Units Support for YDMF
+# Physical Units Support for YMF
 
-A report on adding physical unit support to YDMF in a non-intrusive way that enables dimensional consistency checks and non-dimensionalization.
+A report on adding physical unit support to YMF in a non-intrusive way that enables dimensional consistency checks and non-dimensionalization.
 
 ---
 
@@ -16,7 +16,7 @@ A report on adding physical unit support to YDMF in a non-intrusive way that ena
 | **sympy.physics.units** | Native sympy integration, symbolic manipulation with units, dimensional analysis built-in | Slow, limited unit definitions, incomplete coverage | Symbolic computation with units |
 | **quantities** (pyquantities) | Numpy-style API, unit conversion, simple syntax | Minimal documentation, small community | Simple scientific scripts |
 
-**Recommendation**: Use **pint** as the primary unit library for YDMF, with **sympy.physics.units** for symbolic dimensional analysis. Pint's extensive unit registry and conversion capabilities complement sympy's symbolic manipulation.
+**Recommendation**: Use **pint** as the primary unit library for YMF, with **sympy.physics.units** for symbolic dimensional analysis. Pint's extensive unit registry and conversion capabilities complement sympy's symbolic manipulation.
 
 ### 1.2 Scientific Formats
 
@@ -33,10 +33,10 @@ A report on adding physical unit support to YDMF in a non-intrusive way that ena
 
 ### 2.1 Non-Intrusive by Default
 
-The primary design constraint is **non-intrusiveness**. YDMF should work perfectly without any unit annotation:
+The primary design constraint is **non-intrusiveness**. YMF should work perfectly without any unit annotation:
 
 ```yaml
-# This is valid YDMF today — no units needed
+# This is valid YMF today — no units needed
 strong_form:
   unknowns: [u, p]
   coefficients:
@@ -55,7 +55,7 @@ strong_form:
       units: m2/s  # optional annotation
 ```
 
-**Guiding principle**: Unit annotation is an *enhancement*, not a requirement. A YDMF file without units is still a valid, usable problem specification.
+**Guiding principle**: Unit annotation is an *enhancement*, not a requirement. A YMF file without units is still a valid, usable problem specification.
 
 ### 2.2 Dimensional Compatibility
 
@@ -68,7 +68,7 @@ When units ARE provided:
 
 ### 2.3 Multi-Unit System Support
 
-YDMF should support multiple unit systems:
+YMF should support multiple unit systems:
 
 | System | Units | Typical Use |
 |---|---|---|
@@ -77,7 +77,7 @@ YDMF should support multiple unit systems:
 | **Imperial/US** | ft, lb, s, °F | US engineering, environmental modeling |
 | **Dimensionless** | No units | Non-dimensional analysis, benchmark cases |
 
-A single YDMF file should be able to specify which unit system it uses, and the system can convert between them automatically.
+A single YMF file should be able to specify which unit system it uses, and the system can convert between them automatically.
 
 ---
 
@@ -88,7 +88,7 @@ Three approaches, ranked from least to most intrusive:
 ### Strategy A: Global Units Table (Minimal change)
 
 ```yaml
-# YDMF stays mostly unchanged
+# YMF stays mostly unchanged
 Problem:
   name: "Flow over flat plate"
   strong_form:
@@ -108,7 +108,7 @@ units:
     y: m
 ```
 
-**Pros**: Minimal change to existing YDMF structure; backwards compatible; clear separation of values and units.
+**Pros**: Minimal change to existing YMF structure; backwards compatible; clear separation of values and units.
 
 **Cons**: Loose coupling between variable and unit definitions; no per-variable unit checking at the YAML level.
 
@@ -193,7 +193,7 @@ This approach:
 
 ### 4.1 Dimensional Representation
 
-YDMF should track dimensions using the standard SI dimensional notation:
+YMF should track dimensions using the standard SI dimensional notation:
 
 ```
 [M]^a [L]^b [T]^c [Θ]^d [mol]^e [A]^f [cd]^g
@@ -224,7 +224,7 @@ strong_form:
 
 The validation process:
 1. Parse the `strong_form_expression` to extract terms (e.g., `-Δu` and `f`)
-2. Look up the units of each variable from the YDMF specification
+2. Look up the units of each variable from the YMF specification
 3. Check that all terms have the same dimensions
 4. Report any mismatches
 
@@ -329,7 +329,7 @@ nu_units = ureg.meter**2 / ureg.second    # m²/s
 - **Generalizability**: results apply to entire classes of problems (e.g., "high Reynolds number flow" applies to many geometries and fluids)
 - **Scaling**: results from one simulation can predict behavior at different scales
 
-### 5.2 Characteristic Scales in YDMF
+### 5.2 Characteristic Scales in YMF
 
 ```yaml
 Problem:
@@ -371,7 +371,7 @@ Problem:
 
 ### 5.3 Automatic Non-Dimensionalization
 
-YDMF can store both the dimensional and dimensionless forms:
+YMF can store both the dimensional and dimensionless forms:
 
 ```yaml
 # Dimensional form (for input to solver)
@@ -441,7 +441,7 @@ Non-dimensional: ∂u*/∂t* = Δ*u*
 ### 6.1 Minimal Viable Implementation (Version 1)
 
 ```yaml
-# Schema additions to YDMF
+# Schema additions to YMF
 units:
   convention: SI | CGS | US | dimensionless   # optional, default SI
   variables:                                    # optional mapping
@@ -456,15 +456,15 @@ units:
 # Python module for dimensional analysis
 import pint
 
-def check_dimensional_consistency(ydmf):
+def check_dimensional_consistency(ymf):
     """Check that all terms in strong_form have compatible dimensions."""
     ureg = pint.UnitRegistry()
 
     # Parse unknowns and coefficients
-    unknown_units = {k: ureg(v) for k, v in ydmf['units']['variables'].items()}
+    unknown_units = {k: ureg(v) for k, v in ymf['units']['variables'].items()}
 
     # For each equation term, check dimensionality
-    for equation in ydmf['Problem']['strong_form']['equations']:
+    for equation in ymf['Problem']['strong_form']['equations']:
         terms = extract_terms(equation['expression'])
         term_dims = [look_up_dimension(term, unknown_units) for term in terms]
 
@@ -476,8 +476,8 @@ def check_dimensional_consistency(ydmf):
 
 1. **Pint integration**: Install `pip install pint` (already a common dependency)
 2. **Sympy unit integration**: Use `sympy.physics.units` for symbolic dimensional analysis
-3. **Dimension checker module**: A `ydmf.check_units()` function that validates dimensional consistency
-4. **Non-dimensionalization module**: A `ydmf.non_dimensionalize()` function that generates the dimensionless form
+3. **Dimension checker module**: A `ymf.check_units()` function that validates dimensional consistency
+4. **Non-dimensionalization module**: A `ymf.non_dimensionalize()` function that generates the dimensionless form
 5. **Unit conversion in output**: XDMF output should include unit metadata (via CF Conventions-style attributes)
 
 ### 6.3 Making It LLM-Friendly
@@ -506,14 +506,14 @@ XDMF doesn't have a built-in unit system, but it can carry unit metadata:
 </Attribute>
 ```
 
-The XDMF output module can automatically add unit attributes from the YDMF specification.
+The XDMF output module can automatically add unit attributes from the YMF specification.
 
 ### 6.5 Integration with CSDMS Standard Names
 
-CSDMS standard names carry expected units. The dimensional checker can validate YDMF units against CSDMS expectations:
+CSDMS standard names carry expected units. The dimensional checker can validate YMF units against CSDMS expectations:
 
 ```python
-# If YDMF has:
+# If YMF has:
 #   unknowns:
 #     - name: u
 #       units: m/s
@@ -524,7 +524,7 @@ CSDMS standard names carry expected units. The dimensional checker can validate 
 ```
 
 This creates a **three-layer unit system**:
-1. **YDMF explicit units** (from the YAML file)
+1. **YMF explicit units** (from the YAML file)
 2. **CSDMS standard name units** (from the registry)
 3. **Physical reality** (what the units should actually be)
 
@@ -651,7 +651,7 @@ The dimensional checker would flag: `velocity` has units [L] but should have [L/
 
 ## 8. Summary of Recommendations
 
-### For YDMF Schema (immediate)
+### For YMF Schema (immediate)
 
 1. **Add optional `units` field** to unknowns, coefficients, and boundary conditions
 2. **Add optional `characteristic_scales`** section for non-dimensionalization
@@ -660,9 +660,9 @@ The dimensional checker would flag: `velocity` has units [L] but should have [L/
 ### For Python Infrastructure (short-term)
 
 1. **Install pint** — `pip install pint`
-2. **Create `ydmf.units.check()`** — validates dimensional consistency of a YDMF file
-3. **Create `ydmf.units.non_dimensionalize()`** — converts dimensional YDMF to dimensionless form
-4. **Create `ydmf.units.auto_suggest()`** — suggests units based on context (LLM-friendly)
+2. **Create `ymf.units.check()`** — validates dimensional consistency of a YMF file
+3. **Create `ymf.units.non_dimensionalize()`** — converts dimensional YMF to dimensionless form
+4. **Create `ymf.units.auto_suggest()`** — suggests units based on context (LLM-friendly)
 
 ### For XDMF Output (short-term)
 
@@ -671,8 +671,8 @@ The dimensional checker would flag: `velocity` has units [L] but should have [L/
 
 ### For Long-Term
 
-1. **Integrate with CSDMS Standard Names** — validate YDMF units against expected units for each standard name
-2. **Automatic non-dimensionalization** — generate dimensionless forms from dimensional YDMF automatically
+1. **Integrate with CSDMS Standard Names** — validate YMF units against expected units for each standard name
+2. **Automatic non-dimensionalization** — generate dimensionless forms from dimensional YMF automatically
 3. **Unit-aware solvers** — some solvers benefit from knowing units; pass units through the pipeline
 
 ---

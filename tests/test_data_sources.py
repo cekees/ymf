@@ -1,6 +1,6 @@
 import pytest
 
-from ydmf.data_sources import (
+from ymf.data_sources import (
     DEFAULT_MANNING_N_TABLE,
     ManningLookupError,
     KNOWN_DATA_SOURCES,

@@ -2,7 +2,7 @@ import importlib
 
 from importlib.metadata import PackageNotFoundError
 
-import ydmf
+import ymf
 
 
 def test_version_fallback_when_not_installed(monkeypatch):
@@ -10,7 +10,7 @@ def test_version_fallback_when_not_installed(monkeypatch):
         raise PackageNotFoundError(name)
 
     monkeypatch.setattr("importlib.metadata.version", raise_not_found)
-    importlib.reload(ydmf)
-    assert ydmf.__version__ == "0.0.0+unknown"
+    importlib.reload(ymf)
+    assert ymf.__version__ == "0.0.0+unknown"
 
-    importlib.reload(ydmf)
+    importlib.reload(ymf)

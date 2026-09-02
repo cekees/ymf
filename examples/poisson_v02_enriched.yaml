@@ -1,5 +1,5 @@
 # ============================================================
-# YDMF Example: Poisson (heat conduction), v0.2 enriched
+# YMF Example: Poisson (heat conduction), v0.2 enriched
 # Demonstrates: structured unknowns with units/std_name,
 # characteristic_scales, dimensional_check, boundary_conditions.
 # ============================================================

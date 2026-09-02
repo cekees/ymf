@@ -1,16 +1,16 @@
-"""Convert between a YDMF data tree and an XDMF 2.0 XML document, round-trip.
+"""Convert between a YMF data tree and an XDMF 2.0 XML document, round-trip.
 
-Per ``docs/ydmf-schema.md`` §5 ("XDMF Preservation") and the design
-principle that *XDMF is a consumer, not a dependency* of YDMF: this module
+Per ``docs/ymf-schema.md`` §5 ("XDMF Preservation") and the design
+principle that *XDMF is a consumer, not a dependency* of YMF: this module
 reads a plain Python dict describing a time-collection of grids (mesh
 topology + geometry, optionally HDF5-backed) and emits an ``.xmf`` file
 that ParaView and other XDMF-aware tools can open directly, using only the
-parts of the YDMF document that XDMF actually understands.
+parts of the YMF document that XDMF actually understands.
 
-Round-trip strategy (write -> read -> get the same YDMF document back)
+Round-trip strategy (write -> read -> get the same YMF document back)
 -----------------------------------------------------------------------
 XDMF's grammar (the ``Xdmf.dtd``/``Xdmf.xsd``, referenced in
-``examples/notebooks/YDMF-original.ipynb`` cell 1) defines an
+``examples/notebooks/YMF-original.ipynb`` cell 1) defines an
 ``<Information Name="..." Value="...">`` element that is legal as a child
 of essentially any XDMF element (``Domain``, ``Grid``, ``DataItem``, ...)
 specifically as an extension point: generic XDMF consumers (ParaView,
@@ -21,13 +21,13 @@ including a plain ``xml.etree.ElementTree`` reader with default settings,
 silently drop) or non-standard custom elements (which a strict
 schema-validating XDMF reader could legitimately reject).
 
-So: everything in a YDMF document that *does* map onto XDMF concepts
+So: everything in a YMF document that *does* map onto XDMF concepts
 (``Domain``/``Grid``/``Topology``/``Geometry``/``DataItem`` — i.e. the mesh
 archive) is written as real XDMF elements. Everything else (``Problem``,
 ``solution_paths``, ``vvuq``, and any ``archive``-level metadata XDMF has
 no concept of) is serialized to JSON, base64-encoded (safe inside an XML
 attribute value with no escaping headaches), and stashed in a single
-``<Information Name="YDMF" Value="...">`` child of ``<Domain>``.
+``<Information Name="YMF" Value="...">`` child of ``<Domain>``.
 
 JSON rather than YAML is used for this *specific* embedded payload:
 strictyaml's ``as_document()`` cannot serialize empty lists/dicts without
@@ -36,7 +36,7 @@ an explicit schema (raises ``YAMLSerializationError`` on
 since this payload is base64-encoded anyway — not meant to be read
 directly out of the XML — YAML's human-authoring niceties (comments, flow
 style, block scalars) buy nothing here. The rest of the package still uses
-YAML/strictyaml everywhere a human or LLM actually edits a YDMF document;
+YAML/strictyaml everywhere a human or LLM actually edits a YMF document;
 only this internal round-trip encoding uses JSON.
 
 **Verified**: checked directly against the live ``Xdmf.dtd`` fetched
@@ -75,9 +75,9 @@ from xml.etree.ElementTree import Element, ElementTree, SubElement, parse as et_
 
 XDMF_HEADER = b'<?xml version="1.0" ?>\n<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>\n'
 
-# Name used for the <Information Name="YDMF" Value="..."> extension element
-# that carries the non-mesh part of a YDMF document through an XDMF file.
-YDMF_INFORMATION_NAME = "YDMF"
+# Name used for the <Information Name="YMF" Value="..."> extension element
+# that carries the non-mesh part of a YMF document through an XDMF file.
+YMF_INFORMATION_NAME = "YMF"
 
 
 def _indent_xml(elem: Element, level: int = 0) -> None:
@@ -216,25 +216,25 @@ def _parse_topology_and_geometry(grid_elem: Element) -> Dict[str, Any]:
     return grid
 
 
-def _encode_ydmf_extra(ydmf_extra: Any) -> str:
-    """Serialize a YDMF (sub-)document to base64-encoded JSON text.
+def _encode_ymf_extra(ymf_extra: Any) -> str:
+    """Serialize a YMF (sub-)document to base64-encoded JSON text.
 
     See the module docstring ("Round-trip strategy") for why JSON is used
     here specifically, rather than YAML/strictyaml as used everywhere else
     in the package.
     """
-    json_text = json.dumps(ydmf_extra, ensure_ascii=False)
+    json_text = json.dumps(ymf_extra, ensure_ascii=False)
     return base64.b64encode(json_text.encode("utf-8")).decode("ascii")
 
 
-def _decode_ydmf_extra(value: str) -> Any:
-    """Inverse of :func:`_encode_ydmf_extra`."""
+def _decode_ymf_extra(value: str) -> Any:
+    """Inverse of :func:`_encode_ymf_extra`."""
     json_text = base64.b64decode(value.encode("ascii")).decode("utf-8")
     return json.loads(json_text)
 
 
 def build_xdmf_tree(
-    domain: Dict[str, Any], ydmf_extra: Optional[Any] = None
+    domain: Dict[str, Any], ymf_extra: Optional[Any] = None
 ) -> ElementTree:
     """Build an :class:`xml.etree.ElementTree.ElementTree` for an XDMF document.
 
@@ -242,7 +242,7 @@ def build_xdmf_tree(
     ----------
     domain:
         A plain dict shaped like the ``Domain`` block described in
-        ``docs/ydmf-schema.md`` §5, e.g.::
+        ``docs/ymf-schema.md`` §5, e.g.::
 
             {
                 "TimeCollection": {
@@ -260,11 +260,11 @@ def build_xdmf_tree(
                     ],
                 }
             }
-    ydmf_extra:
-        Optional additional YDMF content with no XDMF equivalent (e.g. the
-        ``Problem``/``solution_paths``/``vvuq`` sections of a full YDMF
+    ymf_extra:
+        Optional additional YMF content with no XDMF equivalent (e.g. the
+        ``Problem``/``solution_paths``/``vvuq`` sections of a full YMF
         document). If given, it's serialized to YAML, base64-encoded, and
-        embedded as an ``<Information Name="YDMF" Value="...">`` child of
+        embedded as an ``<Information Name="YMF" Value="...">`` child of
         ``<Domain>`` so :func:`read_xdmf` can recover it later. See the
         module docstring for why this mechanism (rather than XML comments
         or custom elements) was chosen.
@@ -282,11 +282,11 @@ def build_xdmf_tree(
     tree = ElementTree(root)
     domain_elem = SubElement(root, "Domain")
 
-    if ydmf_extra is not None:
+    if ymf_extra is not None:
         SubElement(
             domain_elem,
             "Information",
-            {"Name": YDMF_INFORMATION_NAME, "Value": _encode_ydmf_extra(ydmf_extra)},
+            {"Name": YMF_INFORMATION_NAME, "Value": _encode_ymf_extra(ymf_extra)},
         )
 
     time_collection = domain.get("TimeCollection")
@@ -313,15 +313,15 @@ def build_xdmf_tree(
 
 
 def write_xdmf(
-    domain: Dict[str, Any], path: str | Path, ydmf_extra: Optional[Any] = None
+    domain: Dict[str, Any], path: str | Path, ymf_extra: Optional[Any] = None
 ) -> None:
     """Write an XDMF 2.0 ``.xmf`` file for the given ``domain`` data tree.
 
     Convenience wrapper around :func:`build_xdmf_tree` that also writes the
     ``XDMF_HEADER`` (DOCTYPE) and pretty-indents the output. See
-    :func:`build_xdmf_tree` for ``ydmf_extra``.
+    :func:`build_xdmf_tree` for ``ymf_extra``.
     """
-    tree = build_xdmf_tree(domain, ydmf_extra=ydmf_extra)
+    tree = build_xdmf_tree(domain, ymf_extra=ymf_extra)
     _indent_xml(tree.getroot())
     path = Path(path)
     with open(path, "wb") as xml_file:
@@ -333,11 +333,11 @@ def parse_xdmf_domain(root: Element) -> Dict[str, Any]:
     """Parse an ``<Xdmf><Domain>...`` tree back into a ``domain`` dict.
 
     Inverse of the mesh-archive half of :func:`build_xdmf_tree` (i.e. of
-    ``domain``, not ``ydmf_extra`` — see :func:`read_xdmf` for the combined
+    ``domain``, not ``ymf_extra`` — see :func:`read_xdmf` for the combined
     round-trip). Only understands the ``TimeCollection`` shape this module
     writes; other valid XDMF structures (non-temporal collections, multiple
     top-level grids, ``Attribute`` fields, etc.) are not yet parsed back —
-    this is a round-trip for *what YDMF itself writes*, not a general XDMF
+    this is a round-trip for *what YMF itself writes*, not a general XDMF
     reader.
     """
     domain_elem = root.find("Domain")
@@ -366,44 +366,44 @@ def parse_xdmf_domain(root: Element) -> Dict[str, Any]:
 
 
 def parse_xdmf_extra(root: Element) -> Optional[Any]:
-    """Extract and decode the ``ydmf_extra`` payload from an XDMF tree, if present."""
+    """Extract and decode the ``ymf_extra`` payload from an XDMF tree, if present."""
     domain_elem = root.find("Domain")
     if domain_elem is None:
         return None
     for info_elem in domain_elem.findall("Information"):
-        if info_elem.attrib.get("Name") == YDMF_INFORMATION_NAME:
-            return _decode_ydmf_extra(info_elem.attrib["Value"])
+        if info_elem.attrib.get("Name") == YMF_INFORMATION_NAME:
+            return _decode_ymf_extra(info_elem.attrib["Value"])
     return None
 
 
 def read_xdmf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
     """Read an ``.xmf`` file written by :func:`write_xdmf` back into Python.
 
-    Returns a ``(domain, ydmf_extra)`` tuple:
+    Returns a ``(domain, ymf_extra)`` tuple:
 
     - ``domain``: the mesh archive dict, in the same shape
       :func:`build_xdmf_tree` accepts (round-trips exactly for anything
       *this module* wrote — see :func:`parse_xdmf_domain`).
-    - ``ydmf_extra``: whatever was passed as ``ydmf_extra`` to
+    - ``ymf_extra``: whatever was passed as ``ymf_extra`` to
       :func:`write_xdmf`/:func:`build_xdmf_tree`, decoded back from the
-      embedded ``<Information Name="YDMF">`` element, or ``None`` if the
+      embedded ``<Information Name="YMF">`` element, or ``None`` if the
       file has no such element (e.g. it's a plain XDMF file not written by
-      this module, or was written with ``ydmf_extra=None``).
+      this module, or was written with ``ymf_extra=None``).
     """
     tree = et_parse(path)
     root = tree.getroot()
     domain = parse_xdmf_domain(root)
-    ydmf_extra = parse_xdmf_extra(root)
-    return domain, ydmf_extra
+    ymf_extra = parse_xdmf_extra(root)
+    return domain, ymf_extra
 
 
-def round_trip_equal(domain: Dict[str, Any], ydmf_extra: Optional[Any] = None) -> bool:
-    """Write ``(domain, ydmf_extra)`` to a temp file, read it back, and compare.
+def round_trip_equal(domain: Dict[str, Any], ymf_extra: Optional[Any] = None) -> bool:
+    """Write ``(domain, ymf_extra)`` to a temp file, read it back, and compare.
 
     Useful for verifying a *specific* document round-trips exactly, rather
     than assuming it does (see the "Lossiness" note in the module
     docstring). Returns ``True`` iff both the parsed ``domain`` and
-    ``ydmf_extra`` are equal (``==``) to the originals after a full
+    ``ymf_extra`` are equal (``==``) to the originals after a full
     write/read cycle.
     """
     import tempfile
@@ -411,8 +411,8 @@ def round_trip_equal(domain: Dict[str, Any], ydmf_extra: Optional[Any] = None) -
     with tempfile.NamedTemporaryFile(suffix=".xmf", delete=False) as f:
         tmp_path = f.name
     try:
-        write_xdmf(domain, tmp_path, ydmf_extra=ydmf_extra)
+        write_xdmf(domain, tmp_path, ymf_extra=ymf_extra)
         read_domain, read_extra = read_xdmf(tmp_path)
-        return read_domain == canonicalize_domain(domain) and read_extra == ydmf_extra
+        return read_domain == canonicalize_domain(domain) and read_extra == ymf_extra
     finally:
         Path(tmp_path).unlink(missing_ok=True)

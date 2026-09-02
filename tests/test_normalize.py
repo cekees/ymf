@@ -1,6 +1,6 @@
 import pytest
 
-from ydmf.normalize import normalize_unknowns
+from ymf.normalize import normalize_unknowns
 
 
 def test_normalize_v01_bare_strings():

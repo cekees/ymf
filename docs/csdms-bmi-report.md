@@ -1,18 +1,18 @@
-# CSDMS Standard Names and BMI Integration for YDMF
+# CSDMS Standard Names and BMI Integration for YMF
 
-A report on integrating CSDMS Standard Names and the Basic Model Interface (BMI) into the YAML Data Model and Format (YDMF) for computational physics.
+A report on integrating CSDMS Standard Names and the Basic Model Interface (BMI) into the YAML Modeling Format (YMF) for computational physics.
 
 ---
 
 ## 1. Overview
 
-CSDMS (the Center for Subsurface Modeling and Simulation at the University of Colorado Boulder) has developed two complementary standards that are highly relevant to YDMF's goals:
+CSDMS (the Center for Subsurface Modeling and Simulation at the University of Colorado Boulder) has developed two complementary standards that are highly relevant to YMF's goals:
 
 - **CSDMS Standard Names** — a registry of ~4,000+ standardized variable names for earth system and subsurface modeling variables, enabling interoperability across codes regardless of how each developer chose to name their variables.
 
 - **BMI (Basic Model Interface)** — a component-based API specification that allows any model to be treated as a plug-and-play component within a larger coupled modeling framework.
 
-Both standards align well with YDMF's dual goals: (1) a structured, human/LLM-friendly problem description format, and (2) multi-backend interoperability across solvers (Proteus, FEniCS, Firedrake, ParFlow, Delft3D, WRF, etc.).
+Both standards align well with YMF's dual goals: (1) a structured, human/LLM-friendly problem description format, and (2) multi-backend interoperability across solvers (Proteus, FEniCS, Firedrake, ParFlow, Delft3D, WRF, etc.).
 
 ---
 
@@ -59,9 +59,9 @@ Each entry includes:
 - `long_name` (string): human-readable long form
 - `is_valid` (boolean): whether the entry is active
 
-### 2.4 Integration with YDMF
+### 2.4 Integration with YMF
 
-YDMF can integrate CSDMS Standard Names at multiple levels:
+YMF can integrate CSDMS Standard Names at multiple levels:
 
 #### Level 1: Direct replacement (most explicit)
 
@@ -104,7 +104,7 @@ strong_form:
 #### Level 3: Validation-only (minimal change)
 
 ```yaml
-# YDMF stays exactly as-is today
+# YMF stays exactly as-is today
 unknowns: [u, p]
 strong_form_expression: "∂u/∂t + u·∇u = -∇p + νΔu + f"
 
@@ -118,7 +118,7 @@ validation:
 
 ### 2.5 Benefits
 
-1. **Interoperability**: Any solver reading YDMF can look up the standard name and map it to their internal variable representation, regardless of naming conventions.
+1. **Interoperability**: Any solver reading YMF can look up the standard name and map it to their internal variable representation, regardless of naming conventions.
 
 2. **Unit awareness**: CSDMS entries carry expected SI units, which feeds into the units system (Report 2).
 
@@ -132,9 +132,9 @@ validation:
 
 2. **Dimensionality ambiguity**: `surface_water_velocity_x` is inherently 3D but only specifies one component. Multi-component vector fields need multiple entries.
 
-3. **Not a substitute for physics**: A standard name says *what* a variable is, not *how* it behaves in the PDE. YDMF still needs the equation-level specification.
+3. **Not a substitute for physics**: A standard name says *what* a variable is, not *how* it behaves in the PDE. YMF still needs the equation-level specification.
 
-4. **Not all variables fit**: Some YDMF variables (e.g., numerical artifacts, solver diagnostics) have no natural standard name.
+4. **Not all variables fit**: Some YMF variables (e.g., numerical artifacts, solver diagnostics) have no natural standard name.
 
 ---
 
@@ -212,43 +212,43 @@ BMI is implemented in:
 - **Fortran**: `bmi-fortran` (https://github.com/csdms/bmi-fortran)
 - **Rust**: (community implementations)
 
-### 3.4 Integration with YDMF
+### 3.4 Integration with YMF
 
-YDMF can serve as the **configuration layer** for BMI-compliant models. The YDMF file describes the problem specification, and a BMI adapter reads the YDMF file and exposes the problem to the solver as a BMI component.
+YMF can serve as the **configuration layer** for BMI-compliant models. The YMF file describes the problem specification, and a BMI adapter reads the YMF file and exposes the problem to the solver as a BMI component.
 
-#### Example: YDMF → BMI Adapter
+#### Example: YMF → BMI Adapter
 
 ```python
 from pymt.bmi import BMI
 
-class YDMFBMIAdapter(BMI):
-    """Adapter that exposes a YDMF problem specification as a BMI component."""
+class YMFBMIAdapter(BMI):
+    """Adapter that exposes a YMF problem specification as a BMI component."""
 
     def initialize(self, config_path):
-        # Parse the YDMF file
-        self.ydmf = load_ydmf(config_path)
+        # Parse the YMF file
+        self.ymf = load_ymf(config_path)
 
-        # Register variables from YDMF weak_form definition
+        # Register variables from YMF weak_form definition
         self._register_variables()
 
-        # Register grids from YDMF discretization
+        # Register grids from YMF discretization
         self._register_grids()
 
-        # Set up the solver using YDMF specification
-        self.solver = build_solver(self.ydmf)
+        # Set up the solver using YMF specification
+        self.solver = build_solver(self.ymf)
         self.solver.initialize()
 
     def get_var_units(self, name):
-        # Look up unit from YDMF coefficient/unknown definition
-        return self._get_unit_from_ydmf(name)
+        # Look up unit from YMF coefficient/unknown definition
+        return self._get_unit_from_ymf(name)
 
     def get_var_location(self, name):
-        # Look up location from YDMF boundary condition definition
-        return self._get_location_from_ydmf(name)
+        # Look up location from YMF boundary condition definition
+        return self._get_location_from_ymf(name)
 
     def get_grid_spacing(self, name, spacing):
-        # Look up grid spacing from YDMF discretization grid definition
-        return self._get_spacing_from_ydmf(name, spacing)
+        # Look up grid spacing from YMF discretization grid definition
+        return self._get_spacing_from_ymf(name, spacing)
 
     def take_step(self):
         self.solver.step()
@@ -260,9 +260,9 @@ class YDMFBMIAdapter(BMI):
         self.solver.set_field(name, value)
 ```
 
-#### YDMF → BMI Variable Mapping
+#### YMF → BMI Variable Mapping
 
-| YDMF Section | BMI Method | Mapping |
+| YMF Section | BMI Method | Mapping |
 |---|---|---|
 | `strong_form.unknowns` | `add_var()` | Register each unknown as an output variable |
 | `strong_form.coefficients` | `add_var()` | Register each coefficient as an input variable |
@@ -272,10 +272,10 @@ class YDMFBMIAdapter(BMI):
 | `strong_form.domain` | `add_grid()` | Register computational domain grid |
 | `solution_paths[].solver.*` | `initialize()` | Pass solver configuration |
 
-#### Example YDMF → BMI Data Flow
+#### Example YMF → BMI Data Flow
 
 ```yaml
-# YDMF input
+# YMF input
 Problem:
   strong_form:
     unknowns: [u, p]
@@ -299,27 +299,27 @@ The BMI adapter would register:
 
 ### 3.5 Multi-Component Coupling
 
-BMI's real power is in coupling multiple models. YDMF can describe a **system of coupled components**:
+BMI's real power is in coupling multiple models. YMF can describe a **system of coupled components**:
 
 ```yaml
-# Multi-component YDMF (future extension) — illustrative example only
+# Multi-component YMF (future extension) — illustrative example only
 System:
   components:
     - name: "fluid_solver"
       bmi_interface: true
-      ydmf_file: "fluid.ydmf"
+      ymf_file: "fluid.ymf"
       coupling:
         inputs: [fluid_velocity, fluid_pressure]
         outputs: [fluid_force]
     - name: "solid_solver"
       bmi_interface: true
-      ydmf_file: "solid.ydmf"
+      ymf_file: "solid.ymf"
       coupling:
         inputs: [fluid_force, solid_stress]
         outputs: [solid_displacement]
     - name: "boundary_manager"
       bmi_interface: true
-      ydmf_file: "boundary.ydmf"
+      ymf_file: "boundary.ymf"
       coupling:
         inputs: [solid_displacement]
         outputs: [boundary_velocity]
@@ -327,7 +327,7 @@ System:
   coupling_interval: 0.01
 ```
 
-This approach would enable YDMF to drive multi-physics simulations (fluid-structure interaction, heat transfer in flowing fluids, etc.) by connecting BMI-compatible components.
+This approach would enable YMF to drive multi-physics simulations (fluid-structure interaction, heat transfer in flowing fluids, etc.) by connecting BMI-compatible components.
 
 ### 3.6 Existing BMI-Compatible Models
 
@@ -340,7 +340,7 @@ Many earth system models are already BMI-compliant or have adapters:
 - **ParMOSEK** (optimization)
 - **PyMT** (the framework itself, provides BMI wrappers)
 
-YDMF could serve as a **problem specification format** that works across all of these.
+YMF could serve as a **problem specification format** that works across all of these.
 
 ---
 
@@ -350,14 +350,14 @@ YDMF could serve as a **problem specification format** that works across all of 
 
 **What can be done first (low effort, high value):**
 
-1. **Add `std_name` field** to YDMF unknowns and coefficients, alongside existing bare names:
+1. **Add `std_name` field** to YMF unknowns and coefficients, alongside existing bare names:
    ```yaml
    unknowns:
      - name: u
        std_name: surface_water_velocity_x
    ```
 
-2. **Add `units` field** to YDMF coefficients and unknowns:
+2. **Add `units` field** to YMF coefficients and unknowns:
    ```yaml
    coefficients:
      ν:
@@ -365,25 +365,25 @@ YDMF could serve as a **problem specification format** that works across all of 
        units: m2/s
    ```
 
-3. **Create a `std_names.py` module** that maps YDMF variable names to CSDMS standard names using the `csdms_stdname` package.
+3. **Create a `std_names.py` module** that maps YMF variable names to CSDMS standard names using the `csdms_stdname` package.
 
 ### 4.2 Intermediate Integration
 
 **What requires more infrastructure:**
 
-1. **BMI adapter layer** that reads YDMF files and exposes them to BMI-compatible solvers.
+1. **BMI adapter layer** that reads YMF files and exposes them to BMI-compatible solvers.
 
-2. **Automated variable lookup** that suggests CSDMS standard names from the YDMF's `strong_form_expression` (parse the expression, identify variables, propose standard names).
+2. **Automated variable lookup** that suggests CSDMS standard names from the YMF's `strong_form_expression` (parse the expression, identify variables, propose standard names).
 
-3. **Unit validation** that checks YDMF coefficients against CSDMS expected units.
+3. **Unit validation** that checks YMF coefficients against CSDMS expected units.
 
 ### 4.3 Long-Term Vision
 
-1. **YDMF as a universal problem specification format** that works with any BMI-compliant model framework, not just Proteus or FEniCS.
+1. **YMF as a universal problem specification format** that works with any BMI-compliant model framework, not just Proteus or FEniCS.
 
-2. **Automatic coupling** where YDMF describes multi-component systems and the BMI adapter handles data exchange between components.
+2. **Automatic coupling** where YMF describes multi-component systems and the BMI adapter handles data exchange between components.
 
-3. **Registry integration** where YDMF variable lookups against the CSDMS registry happen at load time, providing warnings if a variable name doesn't match any standard.
+3. **Registry integration** where YMF variable lookups against the CSDMS registry happen at load time, providing warnings if a variable name doesn't match any standard.
 
 ---
 
@@ -391,38 +391,38 @@ YDMF could serve as a **problem specification format** that works across all of 
 
 ### 5.1 Scope Mismatch
 
-The CSDMS Standard Names registry is earth-science focused. YDMF aims to support general computational physics (including non-earth-science domains like structural mechanics, electromagnetics, chemistry, etc.). **Not all PDE variables have CSDMS standard names.**
+The CSDMS Standard Names registry is earth-science focused. YMF aims to support general computational physics (including non-earth-science domains like structural mechanics, electromagnetics, chemistry, etc.). **Not all PDE variables have CSDMS standard names.**
 
 **Mitigation**: Use CSDMS standard names *where available* but allow arbitrary names for variables outside the registry.
 
 ### 5.2 BMI Grid Assumption
 
-BMI assumes a grid-based data structure. YDMF supports grid-based methods (FEM on meshes, FD on structured grids) but also non-grid methods (spectral methods, meshfree methods, global bases).
+BMI assumes a grid-based data structure. YMF supports grid-based methods (FEM on meshes, FD on structured grids) but also non-grid methods (spectral methods, meshfree methods, global bases).
 
 **Mitigation**: BMI's `get_grid_type()` method returns `"unstructured"` or other types, which can accommodate various discretizations. For truly non-grid methods, the BMI adapter could create a "virtual grid" (e.g., spectral coefficients arranged on a conceptual grid).
 
 ### 5.3 Unknown vs. Input/Output
 
-BMI has a clear separation between input variables and output variables. YDMF's unknown/coefficient distinction doesn't map cleanly:
+BMI has a clear separation between input variables and output variables. YMF's unknown/coefficient distinction doesn't map cleanly:
 - Some variables are both input and output (e.g., velocity is input to the momentum equation but output from the solver)
 - Coefficients can change over time (e.g., viscosity as a function of temperature)
 - Boundary conditions can be time-dependent
 
-**Mitigation**: Use the YDMF `solution_paths[].solver.type` to determine which variables are inputs vs outputs. For steady-state problems, all variables are effectively outputs. For time-dependent problems, coefficients are inputs and unknowns are outputs.
+**Mitigation**: Use the YMF `solution_paths[].solver.type` to determine which variables are inputs vs outputs. For steady-state problems, all variables are effectively outputs. For time-dependent problems, coefficients are inputs and unknowns are outputs.
 
 ### 5.4 Performance
 
 BMI's Python API has overhead compared to direct calls to solver libraries. For very large-scale simulations, the BMI adapter layer could add non-trivial overhead.
 
-**Mitigation**: BMI is designed for model coupling, not for maximizing throughput within a single solver. Use BMI for coupling YDMF-specified problems; for single-solver performance, bypass BMI and call the solver directly.
+**Mitigation**: BMI is designed for model coupling, not for maximizing throughput within a single solver. Use BMI for coupling YMF-specified problems; for single-solver performance, bypass BMI and call the solver directly.
 
 ---
 
 ## 6. Recommendations
 
-### For YDMF Schema (immediate)
+### For YMF Schema (immediate)
 
-1. **Add `std_name` and `units` fields** to YDMF's unknowns, coefficients, and boundary conditions. These are optional, backward-compatible additions.
+1. **Add `std_name` and `units` fields** to YMF's unknowns, coefficients, and boundary conditions. These are optional, backward-compatible additions.
 
 2. **Add `bmi_interface` flag** to discretizations, indicating whether the solver should be exposed via BMI.
 
@@ -430,7 +430,7 @@ BMI's Python API has overhead compared to direct calls to solver libraries. For 
 
 ### For BMI Integration (short-term)
 
-1. **Create a `ydmf_bmi.py` module** that loads a YDMF file and returns a BMI-compliant adapter object.
+1. **Create a `ymf_bmi.py` module** that loads a YMF file and returns a BMI-compliant adapter object.
 
 2. **Support the most common BMI methods** first: `initialize`, `finalize`, `take_step`, `get_var_units`, `get_var_location`, `get_grid_spacing`.
 
@@ -438,20 +438,20 @@ BMI's Python API has overhead compared to direct calls to solver libraries. For 
 
 ### For Long-Term
 
-1. **Consider a "components" section** in YDMF for multi-component coupled problems, using BMI for inter-component communication.
+1. **Consider a "components" section** in YMF for multi-component coupled problems, using BMI for inter-component communication.
 
 2. **Integrate with PyMT** (Python Modeling Toolkit) as the coupling framework, since it already provides BMI wrappers for many models.
 
-3. **Explore BMI's grid API** for automated mesh generation from YDMF's domain/geometry specifications.
+3. **Explore BMI's grid API** for automated mesh generation from YMF's domain/geometry specifications.
 
 ---
 
 ## 7. Conclusion
 
-CSDMS Standard Names and BMI are highly complementary to YDMF's goals. The standard names provide a semantic layer for variable identification and unit awareness, while BMI provides a mechanical layer for model interoperability and coupling.
+CSDMS Standard Names and BMI are highly complementary to YMF's goals. The standard names provide a semantic layer for variable identification and unit awareness, while BMI provides a mechanical layer for model interoperability and coupling.
 
-The integration doesn't have to be all-or-nothing. YDMF can adopt these standards incrementally: first adding `std_name` and `units` fields to the schema, then creating a BMI adapter layer, and finally supporting multi-component coupling.
+The integration doesn't have to be all-or-nothing. YMF can adopt these standards incrementally: first adding `std_name` and `units` fields to the schema, then creating a BMI adapter layer, and finally supporting multi-component coupling.
 
-The biggest challenge is scope mismatch — CSDMS standard names are earth-science focused, while YDMF aims for general computational physics. However, this is a manageable limitation: use standard names where available, fall back to arbitrary names otherwise.
+The biggest challenge is scope mismatch — CSDMS standard names are earth-science focused, while YMF aims for general computational physics. However, this is a manageable limitation: use standard names where available, fall back to arbitrary names otherwise.
 
-**Bottom line**: CSDMS and BMI are not dependencies of YDMF, but they are natural extensions that would significantly improve YDMF's interoperability without compromising its core design goals.
+**Bottom line**: CSDMS and BMI are not dependencies of YMF, but they are natural extensions that would significantly improve YMF's interoperability without compromising its core design goals.

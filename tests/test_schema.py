@@ -3,20 +3,20 @@ from pathlib import Path
 import pytest
 import strictyaml
 
-from ydmf.schema import load_ydmf
+from ymf.schema import load_ymf
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 
 
 def test_load_v01_compatible_example():
-    doc = load_ydmf(EXAMPLES_DIR / "poisson.yaml")
+    doc = load_ymf(EXAMPLES_DIR / "poisson.yaml")
     assert doc["Problem"]["name"] == "Poisson unit square"
     # v0.1-style bare string unknowns must still validate
     assert doc["Problem"]["strong_form"]["unknowns"] == ["u"]
 
 
 def test_load_v02_enriched_example():
-    doc = load_ydmf(EXAMPLES_DIR / "poisson_v02_enriched.yaml")
+    doc = load_ymf(EXAMPLES_DIR / "poisson_v02_enriched.yaml")
     unknowns = doc["Problem"]["strong_form"]["unknowns"]
     assert unknowns[0]["name"] == "T"
     assert unknowns[0]["units"] == "K"
@@ -47,7 +47,7 @@ solution_paths:
   analytical: []
   discretizations: []
 """
-    from ydmf.schema import validate_ydmf
+    from ymf.schema import validate_ymf
 
     with pytest.raises(strictyaml.YAMLValidationError):
-        validate_ydmf(bad_yaml)
+        validate_ymf(bad_yaml)

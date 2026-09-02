@@ -1,11 +1,11 @@
-"""Geospatial/environmental data-sourcing helpers for YDMF.
+"""Geospatial/environmental data-sourcing helpers for YMF.
 
 Implements the "short-term integration" items from
 ``docs/data-sources-report.md`` §7:
 
 - A land-cover -> Manning's n lookup table (Arcement & Schneider 1989 /
   Chow 1959 reference ranges, report §4.1), driving ``roughness_source``
-  resolution for a YDMF discretization entry.
+  resolution for a YMF discretization entry.
 - A thin, dependency-light fetch helper for the named remote-sensing/DEM
   sources (SRTM, CHIRPS, ERA5, NLCD, ...) referenced by ``source``/
   ``source_url`` fields in ``mesh_generation``, ``initial_conditions``,
@@ -20,7 +20,7 @@ geospatial stack (rasterio/xarray) and network access, and is left as a
 documented extension point (:func:`fetch`, which is a thin
 ``urllib``-only downloader plus format dispatch, deliberately kept minimal).
 What *is* fully implemented and tested: the Manning's n lookup (pure
-stdlib, no deps) and YDMF-side metadata validation for source records
+stdlib, no deps) and YMF-side metadata validation for source records
 (``validate_source_record``).
 """
 
@@ -153,7 +153,7 @@ def resolve_roughness_source(
     roughness_source: Dict[str, Any],
     land_cover: str | int,
 ) -> float:
-    """Resolve a YDMF ``roughness_source`` block (report §3.6) to a Manning's n value.
+    """Resolve a YMF ``roughness_source`` block (report §3.6) to a Manning's n value.
 
     ``land_cover`` is either an internal land-cover key (``str``) or a raw
     NLCD class code (``int``), matching the convention of
@@ -180,7 +180,7 @@ class DataSourceInfo:
 
 
 # Catalog transcribed from data-sources-report.md so source names/URLs used
-# in YDMF ``source``/``source_url`` fields can be validated against a known
+# in YMF ``source``/``source_url`` fields can be validated against a known
 # registry (report §7: "Add `url` field to reference data sources directly
 # in the YAML"). Not exhaustive relative to the report — covers every
 # source that has a URL cited in the report's appendix.
@@ -259,13 +259,13 @@ KNOWN_DATA_SOURCES: Dict[str, DataSourceInfo] = {
 
 
 def validate_source_record(record: Dict[str, Any]) -> List[str]:
-    """Validate a YDMF ``source``/``source_url`` pair against the known catalog.
+    """Validate a YMF ``source``/``source_url`` pair against the known catalog.
 
     ``record`` is any dict with optional ``source`` and ``source_url`` keys
     (matches the shape of ``initial_conditions[]``, ``boundary_conditions[]``,
     and ``mesh_generation`` entries). Returns a list of warning strings
     (empty list = no issues). Never raises — an unrecognized source is a
-    warning, not an error, since YDMF explicitly supports sources outside
+    warning, not an error, since YMF explicitly supports sources outside
     this catalog (report is a starting catalog, not an allowlist).
     """
     warnings: List[str] = []

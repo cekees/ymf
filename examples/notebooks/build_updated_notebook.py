@@ -1,17 +1,17 @@
-"""Generate examples/notebooks/YDMF-updated.ipynb.
+"""Generate examples/notebooks/YMF-updated.ipynb.
 
 Run this script (from the repo root) to (re)build the updated notebook:
 
     python examples/notebooks/build_updated_notebook.py
 
 Kept as a script rather than hand-edited JSON so the notebook can be
-regenerated cleanly if the ydmf package API changes.
+regenerated cleanly if the ymf package API changes.
 """
 
 import json
 from pathlib import Path
 
-NB_PATH = Path(__file__).parent / "YDMF-updated.ipynb"
+NB_PATH = Path(__file__).parent / "YMF-updated.ipynb"
 
 
 def md(*lines):
@@ -30,34 +30,34 @@ def code(*lines):
 
 cells = [
     md(
-        "# YDMF example: Poisson problem — updated for the `ydmf` package",
+        "# YMF example: Poisson problem — updated for the `ymf` package",
         "",
-        "This notebook is the **updated** version of `YDMF-original.ipynb`. The",
+        "This notebook is the **updated** version of `YMF-original.ipynb`. The",
         "original prototyped a bespoke inline strictyaml schema (`Model` /",
         "`ModelDomain` / `Domain` / `Grid` / `Topology` / `Geometry` / `DataItem`)",
         "directly mirroring XDMF concepts, plus hand-rolled YAML→XDMF XML-writing",
         "code.",
         "",
-        "That schema predates (and differs from) the `ydmf` package's actual",
+        "That schema predates (and differs from) the `ymf` package's actual",
         "`Problem` / `strong_form` / `solution_paths` / `archive` schema — see",
-        "`docs/ydmf-schema.md` and `docs/ydmf-schema-v0.2-delta.md`. This notebook",
+        "`docs/ymf-schema.md` and `docs/ymf-schema-v0.2-delta.md`. This notebook",
         "keeps the same worked example (a 3D Poisson problem archived as a",
-        "time-collection of tetrahedral meshes in HDF5, per `docs/ydmf-schema.md`",
+        "time-collection of tetrahedral meshes in HDF5, per `docs/ymf-schema.md`",
         "§5 \"XDMF Preservation\") but:",
         "",
-        "1. Uses `ydmf.load_ydmf`/`ydmf.validate_ydmf` (real package schema) instead",
-        "   of the notebook's private inline `YDMF` strictyaml schema.",
-        "2. Uses `ydmf.write_xdmf` (in `src/ydmf/xdmf.py`) instead of the hand-rolled",
+        "1. Uses `ymf.load_ymf`/`ymf.validate_ymf` (real package schema) instead",
+        "   of the notebook's private inline `YMF` strictyaml schema.",
+        "2. Uses `ymf.write_xdmf` (in `src/ymf/xdmf.py`) instead of the hand-rolled",
         "   `ElementTree` code that used to live directly in the notebook.",
-        "3. Demonstrates a full problem-definition YDMF document (physics + weak",
+        "3. Demonstrates a full problem-definition YMF document (physics + weak",
         "   form + discretization) *and* an `Archive.Domain` block for the mesh",
         "   time-series output, since those are two distinct schema sections in",
         "   the current package (the original notebook conflated them into one",
         "   ad hoc structure).",
     ),
-    md("## 1. A full YDMF problem document (v0.1-compatible schema)"),
+    md("## 1. A full YMF problem document (v0.1-compatible schema)"),
     code(
-        "from ydmf import load_ydmf, validate_ydmf, normalize_unknowns",
+        "from ymf import load_ymf, validate_ymf, normalize_unknowns",
         "",
         "poisson_problem_yaml = r\"\"\"",
         "Problem:",
@@ -111,10 +111,10 @@ cells = [
         "archive:",
         "  format: xdmf",
         "  time_collection: append",
-        "  version: \"ydmf-0.2\"",
+        "  version: \"ymf-0.2\"",
         "\"\"\"",
         "",
-        "poisson_problem = validate_ydmf(poisson_problem_yaml)",
+        "poisson_problem = validate_ymf(poisson_problem_yaml)",
         "print('Problem name:', poisson_problem['Problem']['name'])",
         "print('Unknowns (normalized):',",
         "      normalize_unknowns(poisson_problem['Problem']['strong_form']['unknowns']))",
@@ -125,14 +125,14 @@ cells = [
         "This is the part of the original notebook's `poisson_data` YAML that",
         "described the actual mesh time-series (two time steps of a tetrahedral",
         "mesh, backed by HDF5 datasets). In the current schema this corresponds",
-        "to `docs/ydmf-schema.md` §5 (\"XDMF Preservation\") — an `Archive.Domain`",
+        "to `docs/ymf-schema.md` §5 (\"XDMF Preservation\") — an `Archive.Domain`",
         "block that mirrors XDMF's own `Domain`/`Grid` structure directly, since",
-        "*XDMF is a consumer of the archive, not a schema dependency of YDMF*.",
+        "*XDMF is a consumer of the archive, not a schema dependency of YMF*.",
         "",
         "We keep this as a plain Python dict (rather than trying to force it",
-        "through the `Problem`-oriented `YDMF_SCHEMA`, which doesn't model mesh",
+        "through the `Problem`-oriented `YMF_SCHEMA`, which doesn't model mesh",
         "archives — only physics/discretization) and feed it straight to",
-        "`ydmf.write_xdmf`.",
+        "`ymf.write_xdmf`.",
     ),
     code(
         "domain = {",
@@ -189,9 +189,9 @@ cells = [
         "    }",
         "}",
     ),
-    md("## 3. Convert to XDMF using `ydmf.write_xdmf` (package code, not notebook code)"),
+    md("## 3. Convert to XDMF using `ymf.write_xdmf` (package code, not notebook code)"),
     code(
-        "from ydmf import write_xdmf",
+        "from ymf import write_xdmf",
         "",
         "write_xdmf(domain, \"poisson.xmf\")",
         "",
@@ -201,15 +201,15 @@ cells = [
     md(
         "## 4. What changed vs. the original notebook",
         "",
-        "| Original (`YDMF-original.ipynb`) | Updated (this notebook) |",
+        "| Original (`YMF-original.ipynb`) | Updated (this notebook) |",
         "|---|---|",
-        "| Inline `Model`/`ModelDomain`/`Domain`/`Grid`/... strictyaml schema defined *in the notebook* | Real `ydmf.YDMF_SCHEMA` from `src/ydmf/schema.py`, versioned and tested |",
+        "| Inline `Model`/`ModelDomain`/`Domain`/`Grid`/... strictyaml schema defined *in the notebook* | Real `ymf.YMF_SCHEMA` from `src/ymf/schema.py`, versioned and tested |",
         "| One YAML blob conflating physics (`Model.Equation`) and mesh archive (`Domain.TimeCollection`) | Two clear sections: a `Problem`/`solution_paths` document for physics+discretization, and a plain `Archive.Domain` dict for the mesh time-series |",
-        "| Hand-rolled `ElementTree` XML-building code, `indentXML()`, pasted inline | `ydmf.write_xdmf()` / `ydmf.build_xdmf_tree()` — tested package functions |",
-        "| `dirty_load(..., allow_flow_style=True)` called directly on an ad hoc schema | Same `allow_flow_style=True` need, now handled once inside `ydmf.load_ydmf`/`ydmf.validate_ydmf` so every caller gets it for free |",
+        "| Hand-rolled `ElementTree` XML-building code, `indentXML()`, pasted inline | `ymf.write_xdmf()` / `ymf.build_xdmf_tree()` — tested package functions |",
+        "| `dirty_load(..., allow_flow_style=True)` called directly on an ad hoc schema | Same `allow_flow_style=True` need, now handled once inside `ymf.load_ymf`/`ymf.validate_ymf` so every caller gets it for free |",
         "",
         "The original notebook is preserved unmodified at",
-        "`examples/notebooks/YDMF-original.ipynb` for reference.",
+        "`examples/notebooks/YMF-original.ipynb` for reference.",
     ),
 ]
 

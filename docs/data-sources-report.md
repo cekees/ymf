@@ -354,11 +354,11 @@ This is the most common approach: derive roughness from land cover data.
 
 ---
 
-## 6. Integration with YDMF
+## 6. Integration with YMF
 
 ### 6.1 Remote Sensing Fields as Input
 
-YDMF can include remote sensing fields as initial/boundary conditions:
+YMF can include remote sensing fields as initial/boundary conditions:
 
 ```yaml
 strong_form:
@@ -451,7 +451,7 @@ discretizations:
 
 ### 6.5 Data Accessibility Summary
 
-| Data Type | Primary Free Source | Primary Commercial Source | YDMF Integration |
+| Data Type | Primary Free Source | Primary Commercial Source | YMF Integration |
 |---|---|---|---|
 | Topography | SRTM, Copernicus DEM, NASADEM | Maxar, WorldDEM | Mesh generation, initial conditions |
 | Bathymetry | NOAA ETOPO, EMODnet | Seabed 2030 consortium | Domain definition, initial conditions |
@@ -465,7 +465,7 @@ discretizations:
 
 ## 7. Recommendations
 
-### For YDMF Schema (immediate)
+### For YMF Schema (immediate)
 
 1. **Add `data_source` field** to initial conditions, boundary conditions, and domain specification
 2. **Add `url` field** to reference data sources directly in the YAML
@@ -474,15 +474,15 @@ discretizations:
 
 ### For Integration (short-term)
 
-1. **Create `ydmf.data_sources` module** that can load and process topography, bathymetry, and land cover data from YDMF-specified sources
+1. **Create `ymf.data_sources` module** that can load and process topography, bathymetry, and land cover data from YMF-specified sources
 2. **Add land cover → Manning's n lookup table** (standardized reference: Arcement & Schneider, 1989)
-3. **Create mesh generation from DEM data** using YDMF's domain specification
+3. **Create mesh generation from DEM data** using YMF's domain specification
 4. **Add environmental forcing** (precipitation, wind, temperature) as time-varying BCs
 
 ### For Long-Term
 
-1. **Automated data sourcing**: YDMF automatically downloads and validates data from specified sources
-2. **Multi-resolution support**: YDMF handles coarse (ERA5) to fine (NLCD) data seamlessly
+1. **Automated data sourcing**: YMF automatically downloads and validates data from specified sources
+2. **Multi-resolution support**: YMF handles coarse (ERA5) to fine (NLCD) data seamlessly
 3. **Temporal consistency checks**: Ensure temporal resolution of different forcing data is compatible
 4. **Spatial registration**: Ensure topography, bathymetry, land cover, and weather data are all in the same coordinate reference system
 
