@@ -1,0 +1,32 @@
+<?xml version="1.0" ?>
+<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>
+<Xdmf Version="2.0" xmlns:xi="http://www.w3.org/2001/XInclude">
+  <Domain>
+    <Grid Name="Mesh Spatial_Domain" GridType="Collection" CollectionType="Temporal">
+      <Grid GridType="Uniform">
+        <Time Value="0.000000e+00" Name="0" />
+        <Topology Type="Triangle" NumberOfElements="800">
+          <DataItem Format="HDF" DataType="Int" Dimensions="800 3">vortex_c0p1_level_1_ELLIPTIC_REDIST_0.h5:/elementsSpatial_Domain0</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="441 3">vortex_c0p1_level_1_ELLIPTIC_REDIST_0.h5:/nodesSpatial_Domain0</DataItem>
+        </Geometry>
+        <Attribute Name="nodeMaterialTypes" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Int" Dimensions="441">vortex_c0p1_level_1_ELLIPTIC_REDIST_0.h5:/nodeMaterialTypes_t0</DataItem>
+        </Attribute>
+        <Attribute Name="elementMaterialTypes" AttributeType="Scalar" Center="Cell">
+          <DataItem Format="HDF" DataType="Int" Dimensions="800">vortex_c0p1_level_1_ELLIPTIC_REDIST_0.h5:/elementMaterialTypes_t0</DataItem>
+        </Attribute>
+        <Attribute Name="u" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="441">vortex_c0p1_level_1_ELLIPTIC_REDIST_0.h5:/u_t0</DataItem>
+        </Attribute>
+        <Attribute Name="u_analytical" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="441">vortex_c0p1_level_1_ELLIPTIC_REDIST_0.h5:/u_analytical_t0</DataItem>
+        </Attribute>
+        <Attribute Name="phid" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="441">vortex_c0p1_level_1_ELLIPTIC_REDIST_0.h5:/phid_t0</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+  </Domain>
+</Xdmf>

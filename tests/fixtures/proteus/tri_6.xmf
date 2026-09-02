@@ -1,0 +1,70 @@
+<?xml version="1.0" ?>
+<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>
+<Xdmf Version="2.0" xmlns:xi="http://www.w3.org/2001/XInclude">
+  <Domain>
+    <Grid Name="Mesh Spatial_Domain" GridType="Collection" CollectionType="Temporal">
+      <Grid GridType="Uniform">
+        <Time Value="0.000000e+00" Name="0" />
+        <Topology Type="Triangle" NumberOfElements="128">
+          <DataItem Format="HDF" DataType="Int" Dimensions="128 3">ladr_ss_2d.h5:/elementsSpatial_Domain0</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="81 3">ladr_ss_2d.h5:/nodesSpatial_Domain0</DataItem>
+        </Geometry>
+        <Attribute Name="nodeMaterialTypes" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Int" Dimensions="81">ladr_ss_2d.h5:/nodeMaterialTypes_t0</DataItem>
+        </Attribute>
+        <Attribute Name="elementMaterialTypes" AttributeType="Scalar" Center="Cell">
+          <DataItem Format="HDF" DataType="Int" Dimensions="128">ladr_ss_2d.h5:/elementMaterialTypes_t0</DataItem>
+        </Attribute>
+      </Grid>
+      <Grid GridType="Uniform">
+        <Time Value="1.000000e+00" Name="1" />
+        <Topology Type="Triangle" NumberOfElements="128">
+          <DataItem Format="HDF" DataType="Int" Dimensions="128 3">ladr_ss_2d.h5:/elementsSpatial_Domain1</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="81 3">ladr_ss_2d.h5:/nodesSpatial_Domain1</DataItem>
+        </Geometry>
+        <Attribute Name="nodeMaterialTypes" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Int" Dimensions="81">ladr_ss_2d.h5:/nodeMaterialTypes_t1</DataItem>
+        </Attribute>
+        <Attribute Name="elementMaterialTypes" AttributeType="Scalar" Center="Cell">
+          <DataItem Format="HDF" DataType="Int" Dimensions="128">ladr_ss_2d.h5:/elementMaterialTypes_t1</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="Mesh_c0p2_Lagrange" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="Grid_c0p2_Lagrange" GridType="Uniform">
+        <Time Value="0.000000e+00" Name="0" />
+        <Topology Type="Tri_6" NumberOfElements="128">
+          <DataItem Format="HDF" DataType="Int" Dimensions="128 6">ladr_ss_2d.h5:/elements_c0p2_Lagrange0</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="289 3">ladr_ss_2d.h5:/nodes_c0p2_Lagrange0</DataItem>
+        </Geometry>
+        <Attribute Name="u" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="289">ladr_ss_2d.h5:/u_t0</DataItem>
+        </Attribute>
+        <Attribute Name="u_analytical" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="289">ladr_ss_2d.h5:/u_analytical_t0</DataItem>
+        </Attribute>
+      </Grid>
+      <Grid Name="Grid_c0p2_Lagrange" GridType="Uniform">
+        <Time Value="1.000000e+00" Name="1" />
+        <Topology Type="Tri_6" NumberOfElements="128">
+          <DataItem Format="HDF" DataType="Int" Dimensions="128 6">ladr_ss_2d.h5:/elements_c0p2_Lagrange1</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="289 3">ladr_ss_2d.h5:/nodes_c0p2_Lagrange1</DataItem>
+        </Geometry>
+        <Attribute Name="u" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="289">ladr_ss_2d.h5:/u_t1</DataItem>
+        </Attribute>
+        <Attribute Name="u_analytical" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="289">ladr_ss_2d.h5:/u_analytical_t1</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+  </Domain>
+</Xdmf>

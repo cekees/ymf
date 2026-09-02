@@ -1,0 +1,70 @@
+<?xml version="1.0" ?>
+<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>
+<Xdmf Version="2.0" xmlns:xi="http://www.w3.org/2001/XInclude">
+  <Domain>
+    <Grid Name="Mesh Spatial_Domain" GridType="Collection" CollectionType="Temporal">
+      <Grid GridType="Uniform">
+        <Time Value="0.000000e+00" Name="0" />
+        <Topology Type="Tetrahedron" NumberOfElements="384">
+          <DataItem Format="HDF" DataType="Int" Dimensions="384 4">3D_poisson_simplex_degree2.h5:/elementsSpatial_Domain0</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="125 3">3D_poisson_simplex_degree2.h5:/nodesSpatial_Domain0</DataItem>
+        </Geometry>
+        <Attribute Name="nodeMaterialTypes" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Int" Dimensions="125">3D_poisson_simplex_degree2.h5:/nodeMaterialTypes_t0</DataItem>
+        </Attribute>
+        <Attribute Name="elementMaterialTypes" AttributeType="Scalar" Center="Cell">
+          <DataItem Format="HDF" DataType="Int" Dimensions="384">3D_poisson_simplex_degree2.h5:/elementMaterialTypes_t0</DataItem>
+        </Attribute>
+      </Grid>
+      <Grid GridType="Uniform">
+        <Time Value="1.000000e+00" Name="1" />
+        <Topology Type="Tetrahedron" NumberOfElements="384">
+          <DataItem Format="HDF" DataType="Int" Dimensions="384 4">3D_poisson_simplex_degree2.h5:/elementsSpatial_Domain1</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="125 3">3D_poisson_simplex_degree2.h5:/nodesSpatial_Domain1</DataItem>
+        </Geometry>
+        <Attribute Name="nodeMaterialTypes" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Int" Dimensions="125">3D_poisson_simplex_degree2.h5:/nodeMaterialTypes_t1</DataItem>
+        </Attribute>
+        <Attribute Name="elementMaterialTypes" AttributeType="Scalar" Center="Cell">
+          <DataItem Format="HDF" DataType="Int" Dimensions="384">3D_poisson_simplex_degree2.h5:/elementMaterialTypes_t1</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+    <Grid Name="Mesh_c0p2_Lagrange" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="Grid_c0p2_Lagrange" GridType="Uniform">
+        <Time Value="0.000000e+00" Name="0" />
+        <Topology Type="Tet_10" NumberOfElements="384">
+          <DataItem Format="HDF" DataType="Int" Dimensions="384 10">3D_poisson_simplex_degree2.h5:/elements_c0p2_Lagrange0</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="729 3">3D_poisson_simplex_degree2.h5:/nodes_c0p2_Lagrange0</DataItem>
+        </Geometry>
+        <Attribute Name="u0" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="729">3D_poisson_simplex_degree2.h5:/u0_t0</DataItem>
+        </Attribute>
+        <Attribute Name="u0_analytical" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="729">3D_poisson_simplex_degree2.h5:/u0_analytical_t0</DataItem>
+        </Attribute>
+      </Grid>
+      <Grid Name="Grid_c0p2_Lagrange" GridType="Uniform">
+        <Time Value="1.000000e+00" Name="1" />
+        <Topology Type="Tet_10" NumberOfElements="384">
+          <DataItem Format="HDF" DataType="Int" Dimensions="384 10">3D_poisson_simplex_degree2.h5:/elements_c0p2_Lagrange1</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="729 3">3D_poisson_simplex_degree2.h5:/nodes_c0p2_Lagrange1</DataItem>
+        </Geometry>
+        <Attribute Name="u0" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="729">3D_poisson_simplex_degree2.h5:/u0_t1</DataItem>
+        </Attribute>
+        <Attribute Name="u0_analytical" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="729">3D_poisson_simplex_degree2.h5:/u0_analytical_t1</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+  </Domain>
+</Xdmf>

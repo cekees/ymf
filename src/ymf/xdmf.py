@@ -73,6 +73,8 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from xml.etree.ElementTree import Element, ElementTree, SubElement, parse as et_parse
 
+from ymf.archive import canonicalize_domain
+
 XDMF_HEADER = b'<?xml version="1.0" ?>\n<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>\n'
 
 # Name used for the <Information Name="YMF" Value="..."> extension element
@@ -98,120 +100,120 @@ def _indent_xml(elem: Element, level: int = 0) -> None:
             elem.tail = i
 
 
-def _canonicalize_data_item(data_item: Dict[str, Any]) -> Dict[str, Any]:
-    """Fill in XDMF's documented DataItem defaults for missing fields.
-
-    Once a DataItem is written to XML, every attribute has *some* value --
-    there's no XML-level distinction between "attribute omitted, consumer
-    should assume the default" and "attribute explicitly set to the
-    default". So a sparse input dict (e.g. no ``Precision`` given) and the
-    dict parsed back after writing will only be equal if the sparse dict is
-    first canonicalized to the same defaults the writer used. This helper
-    does that canonicalization so callers/tests can compare against a
-    well-defined expected form rather than being surprised by it.
-    """
-    return {
-        "Format": data_item.get("Format", "HDF"),
-        "DataType": data_item.get("DataType", "Float"),
-        "Precision": int(data_item.get("Precision", 4)),
-        "Dimensions": list(data_item["Dimensions"]),
-        "Data": str(data_item["Data"]),
-    }
-
-
-def canonicalize_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
-    """Return ``domain`` with every DataItem's defaultable fields filled in.
-
-    Use this when comparing a hand-written sparse ``domain`` dict against
-    the result of :func:`read_xdmf` on a file written from it -- the
-    written/read-back form always has ``Format``/``DataType``/``Precision``
-    explicit (see :func:`_canonicalize_data_item`), so a direct ``==``
-    against the original sparse dict can spuriously fail even though
-    nothing was actually lost.
-    """
-    result: Dict[str, Any] = {}
-    time_collection = domain.get("TimeCollection")
-    if time_collection is not None:
-        result["TimeCollection"] = {
-            "Name": time_collection.get("Name", "TimeCollection"),
-            "Data": [
-                {
-                    "Time": float(grid["Time"]),
-                    "Topology": {
-                        "Type": grid["Topology"]["Type"],
-                        "NumberOfElements": int(grid["Topology"]["NumberOfElements"]),
-                        "DataItem": _canonicalize_data_item(grid["Topology"]["DataItem"]),
-                    },
-                    "Geometry": {
-                        "Type": grid["Geometry"]["Type"],
-                        "DataItem": _canonicalize_data_item(grid["Geometry"]["DataItem"]),
-                    },
-                }
-                for grid in time_collection["Data"]
-            ],
-        }
-    return result
+XI_NAMESPACE = "http://www.w3.org/2001/XInclude"
 
 
 def _data_item_attrs(data_item: Dict[str, Any]) -> Dict[str, str]:
-    canonical = _canonicalize_data_item(data_item)
     return {
-        "Format": canonical["Format"],
-        "DataType": canonical["DataType"],
-        "Precision": str(canonical["Precision"]),
-        "Dimensions": " ".join(str(d) for d in canonical["Dimensions"]),
+        "Format": data_item["Format"],
+        "DataType": data_item["DataType"],
+        "Precision": str(data_item["Precision"]),
+        "Dimensions": " ".join(str(d) for d in data_item["Dimensions"]),
     }
+
+
+def _add_data_item(parent: Element, data_item: Dict[str, Any]) -> Element:
+    """Write one DataItem, HDF5-referencing or text-including.
+
+    ``Format="HDF"`` puts the dataset reference in the element's text.
+    ``Format="XML"`` instead gets an ``<xi:include parse="text">`` child
+    naming a sidecar file -- the no-HDF5 fallback.
+    """
+    elem = SubElement(parent, "DataItem", _data_item_attrs(data_item))
+    if "Include" in data_item:
+        SubElement(
+            elem,
+            "xi:include",
+            {"parse": "text", "href": str(data_item["Include"])},
+        )
+    else:
+        elem.text = str(data_item["Data"])
+    return elem
 
 
 def _parse_data_item(elem: Element) -> Dict[str, Any]:
-    dims = [int(d) for d in elem.attrib["Dimensions"].split()]
     precision = elem.attrib.get("Precision", "4")
-    return {
+    item: Dict[str, Any] = {
         "Format": elem.attrib.get("Format", "HDF"),
         "DataType": elem.attrib.get("DataType", "Float"),
         "Precision": int(precision) if precision.isdigit() else precision,
-        "Dimensions": dims,
-        "Data": (elem.text or "").strip(),
+        "Dimensions": [int(d) for d in elem.attrib["Dimensions"].split()],
     }
+    # An xi:include child means the values live in a sidecar file. Match on
+    # the local name so the lookup works whether the document used the
+    # literal "xi:include" this module writes or a properly namespaced form
+    # that a round-trip through another XML tool may have produced.
+    include = None
+    for child in elem:
+        tag = child.tag
+        if tag == "xi:include" or tag == f"{{{XI_NAMESPACE}}}include":
+            include = child.attrib.get("href")
+            break
+    if include is not None:
+        item["Include"] = include
+    else:
+        item["Data"] = (elem.text or "").strip()
+    return item
 
 
-def _add_topology_and_geometry(grid_elem: Element, grid: Dict[str, Any]) -> None:
+def _add_grid_body(grid_elem: Element, grid: Dict[str, Any]) -> None:
+    """Write a grid's Topology, Geometry and Attributes into ``grid_elem``."""
     topo = grid["Topology"]
-    topology_elem = SubElement(
-        grid_elem,
-        "Topology",
-        {"Type": topo["Type"], "NumberOfElements": str(topo["NumberOfElements"])},
-    )
-    d = topo["DataItem"]
-    data_item = SubElement(topology_elem, "DataItem", _data_item_attrs(d))
-    data_item.text = str(d["Data"])
+    topo_attrs = {
+        "Type": topo["Type"],
+        "NumberOfElements": str(topo["NumberOfElements"]),
+    }
+    if "NodesPerElement" in topo:
+        topo_attrs["NodesPerElement"] = str(topo["NodesPerElement"])
+    _add_data_item(SubElement(grid_elem, "Topology", topo_attrs), topo["DataItem"])
 
     geom = grid["Geometry"]
-    geometry_elem = SubElement(grid_elem, "Geometry", {"Type": geom["Type"]})
-    d = geom["DataItem"]
-    data_item = SubElement(geometry_elem, "DataItem", _data_item_attrs(d))
-    data_item.text = str(d["Data"])
+    _add_data_item(SubElement(grid_elem, "Geometry", {"Type": geom["Type"]}), geom["DataItem"])
+
+    for attr in grid.get("Attributes", []):
+        attr_elem = SubElement(
+            grid_elem,
+            "Attribute",
+            {
+                "Name": attr["Name"],
+                "AttributeType": attr["AttributeType"],
+                "Center": attr["Center"],
+            },
+        )
+        _add_data_item(attr_elem, attr["DataItem"])
 
 
-def _parse_topology_and_geometry(grid_elem: Element) -> Dict[str, Any]:
+def _parse_grid_body(grid_elem: Element) -> Dict[str, Any]:
+    """Inverse of :func:`_add_grid_body`."""
     grid: Dict[str, Any] = {}
 
     topology_elem = grid_elem.find("Topology")
     if topology_elem is not None:
-        data_item_elem = topology_elem.find("DataItem")
-        grid["Topology"] = {
+        topo: Dict[str, Any] = {
             "Type": topology_elem.attrib["Type"],
             "NumberOfElements": int(topology_elem.attrib["NumberOfElements"]),
-            "DataItem": _parse_data_item(data_item_elem),
+            "DataItem": _parse_data_item(topology_elem.find("DataItem")),
         }
+        if "NodesPerElement" in topology_elem.attrib:
+            topo["NodesPerElement"] = int(topology_elem.attrib["NodesPerElement"])
+        grid["Topology"] = topo
 
     geometry_elem = grid_elem.find("Geometry")
     if geometry_elem is not None:
-        data_item_elem = geometry_elem.find("DataItem")
         grid["Geometry"] = {
             "Type": geometry_elem.attrib["Type"],
-            "DataItem": _parse_data_item(data_item_elem),
+            "DataItem": _parse_data_item(geometry_elem.find("DataItem")),
         }
+
+    grid["Attributes"] = [
+        {
+            "Name": attr_elem.attrib["Name"],
+            "AttributeType": attr_elem.attrib.get("AttributeType", "Scalar"),
+            "Center": attr_elem.attrib.get("Center", "Node"),
+            "DataItem": _parse_data_item(attr_elem.find("DataItem")),
+        }
+        for attr_elem in grid_elem.findall("Attribute")
+    ]
 
     return grid
 
@@ -289,25 +291,43 @@ def build_xdmf_tree(
             {"Name": YMF_INFORMATION_NAME, "Value": _encode_ymf_extra(ymf_extra)},
         )
 
-    time_collection = domain.get("TimeCollection")
-    if time_collection is not None:
+    # Canonicalize up front so this function reads one well-defined shape
+    # rather than re-deriving defaults inline at every use.
+    canonical = canonicalize_domain(domain)
+    for time_collection in canonical.get("TimeCollections", []):
         collection_elem = SubElement(
             domain_elem,
             "Grid",
             {
-                "Name": time_collection.get("Name", "TimeCollection"),
+                "Name": time_collection["Name"],
                 "GridType": "Collection",
                 "CollectionType": "Temporal",
             },
         )
-        for i, grid in enumerate(time_collection["Data"]):
-            grid_elem = SubElement(collection_elem, "Grid", {"GridType": "Uniform"})
-            SubElement(
-                grid_elem,
-                "Time",
-                {"Value": str(grid["Time"]), "Name": str(i)},
-            )
-            _add_topology_and_geometry(grid_elem, grid)
+        for i, step in enumerate(time_collection["Data"]):
+            if "SpatialCollection" in step:
+                # One grid per subdomain. Time hangs off the spatial
+                # collection, not off each subdomain grid, so a viewer sees
+                # a single instant made of several pieces.
+                spatial_elem = SubElement(
+                    collection_elem,
+                    "Grid",
+                    {"GridType": "Collection", "CollectionType": "Spatial"},
+                )
+                SubElement(
+                    spatial_elem, "Time", {"Value": str(step["Time"]), "Name": str(i)}
+                )
+                for subdomain in step["SpatialCollection"]:
+                    attrs = {"GridType": "Uniform"}
+                    if "Name" in subdomain:
+                        attrs["Name"] = subdomain["Name"]
+                    _add_grid_body(SubElement(spatial_elem, "Grid", attrs), subdomain)
+            else:
+                grid_elem = SubElement(collection_elem, "Grid", {"GridType": "Uniform"})
+                SubElement(
+                    grid_elem, "Time", {"Value": str(step["Time"]), "Name": str(i)}
+                )
+                _add_grid_body(grid_elem, step)
 
     return tree
 
@@ -345,22 +365,45 @@ def parse_xdmf_domain(root: Element) -> Dict[str, Any]:
         return {}
 
     result: Dict[str, Any] = {}
-    collection_elem = domain_elem.find("Grid")
-    if collection_elem is not None and collection_elem.attrib.get(
-        "CollectionType"
-    ) == "Temporal":
-        grids = []
-        for grid_elem in collection_elem.findall("Grid"):
-            time_elem = grid_elem.find("Time")
-            grid_data = {
+    collections = []
+    # A Domain holds one temporal collection per finite-element space -- a
+    # Proteus archive commonly has both the linear base mesh and a
+    # quadratic space -- so every child Grid is parsed, not just the first.
+    for collection_elem in domain_elem.findall("Grid"):
+        if collection_elem.attrib.get("CollectionType") != "Temporal":
+            continue
+        steps = []
+        for step_elem in collection_elem.findall("Grid"):
+            time_elem = step_elem.find("Time")
+            step: Dict[str, Any] = {
                 "Time": float(time_elem.attrib["Value"]) if time_elem is not None else 0.0,
             }
-            grid_data.update(_parse_topology_and_geometry(grid_elem))
-            grids.append(grid_data)
-        result["TimeCollection"] = {
-            "Name": collection_elem.attrib.get("Name", "TimeCollection"),
-            "Data": grids,
-        }
+            if step_elem.attrib.get("CollectionType") == "Spatial":
+                step["SpatialCollection"] = [
+                    _parse_grid_body(sub_elem) for sub_elem in step_elem.findall("Grid")
+                ]
+                for sub_elem, parsed in zip(
+                    step_elem.findall("Grid"), step["SpatialCollection"]
+                ):
+                    if "Name" in sub_elem.attrib:
+                        # Name goes first, matching the key order the core's
+                        # canonicalize_domain() produces, so a parsed
+                        # document compares equal to a canonicalized one.
+                        parsed_with_name = {"Name": sub_elem.attrib["Name"]}
+                        parsed_with_name.update(parsed)
+                        parsed.clear()
+                        parsed.update(parsed_with_name)
+            else:
+                step.update(_parse_grid_body(step_elem))
+            steps.append(step)
+        collections.append(
+            {
+                "Name": collection_elem.attrib.get("Name", "TimeCollection"),
+                "Data": steps,
+            }
+        )
+    if collections:
+        result["TimeCollections"] = collections
 
     return result
 

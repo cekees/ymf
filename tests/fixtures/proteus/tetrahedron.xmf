@@ -1,0 +1,53 @@
+<?xml version="1.0" ?>
+<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>
+<Xdmf Version="2.0" xmlns:xi="http://www.w3.org/2001/XInclude">
+  <Domain>
+    <Grid Name="Mesh Spatial_Domain" GridType="Collection" CollectionType="Temporal">
+      <Grid GridType="Uniform">
+        <Time Value="2.500000e-03" Name="1" />
+        <Topology Type="Tetrahedron" NumberOfElements="735">
+          <DataItem Format="HDF" DataType="Int" Dimensions="735 4">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/elementsSpatial_Domain1</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276 3">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/nodesSpatial_Domain1</DataItem>
+        </Geometry>
+        <Attribute Name="nodeMaterialTypes" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Int" Dimensions="276">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/nodeMaterialTypes_t1</DataItem>
+        </Attribute>
+        <Attribute Name="elementMaterialTypes" AttributeType="Scalar" Center="Cell">
+          <DataItem Format="HDF" DataType="Int" Dimensions="735">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/elementMaterialTypes_t1</DataItem>
+        </Attribute>
+        <Attribute Name="u" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/u_t1</DataItem>
+        </Attribute>
+        <Attribute Name="v" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/v_t1</DataItem>
+        </Attribute>
+        <Attribute Name="w" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/w_t1</DataItem>
+        </Attribute>
+        <Attribute Name="velocity" AttributeType="Vector" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276 3">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/velocity_t1</DataItem>
+        </Attribute>
+        <Attribute Name="phi_s0" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/phi_s0_t1</DataItem>
+        </Attribute>
+        <Attribute Name="quantDOFs_for_momentum0" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/quantDOFs_for_momentum0_t1</DataItem>
+        </Attribute>
+        <Attribute Name="pInc" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/pInc_t1</DataItem>
+        </Attribute>
+        <Attribute Name="phi_sp0" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/phi_sp0_t1</DataItem>
+        </Attribute>
+        <Attribute Name="p" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/p_t1</DataItem>
+        </Attribute>
+        <Attribute Name="pInit" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="276">cylinder_sbm_mesh3D_T001_P1_sbm_3Dmesh.h5:/pInit_t1</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+  </Domain>
+</Xdmf>

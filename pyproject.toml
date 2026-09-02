@@ -10,16 +10,30 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "cekees" }]
+# Core runtime dependency, kept to exactly one on purpose: a solver that
+# writes YMF archives (see ymf.archive) must not inherit the validation
+# stack. Everything heavier sits behind the extras below, which only the
+# validating front-end installs.
 dependencies = [
-    "strictyaml>=1.7",
-    "sympy>=1.12",
-    "pint>=0.23",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
+# strictyaml-backed schema validation of human/LLM-authored YMF input.
+spec = ["strictyaml>=1.7"]
+# pint-backed unit coherence and dimensional analysis.
+units = ["pint>=0.23"]
+# Reserved for the planned ibvp/sympy symbolic layer. Nothing in the
+# package imports sympy yet; it was previously a hard dependency purely in
+# anticipation of that work.
+symbolic = ["sympy>=1.12"]
+# Everything the validating front-end needs.
+frontend = ["strictyaml>=1.7", "pint>=0.23"]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
+    "strictyaml>=1.7",
+    "pint>=0.23",
 ]
 
 [tool.setuptools.packages.find]

@@ -1,0 +1,80 @@
+<?xml version="1.0" ?>
+<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>
+<Xdmf Version="2.0" xmlns:xi="http://www.w3.org/2001/XInclude">
+  <Domain>
+    <Grid Name="Mesh Spatial_Domain" GridType="Collection" CollectionType="Temporal">
+      <Grid GridType="Uniform">
+        <Time Value="5.000000e-01" Name="1" />
+        <Topology Type="Polyline" NumberOfElements="3" NodesPerElement="2">
+          <DataItem Format="HDF" DataType="Int" Dimensions="3 2">mooring.h5:/elementsSpatial_Domain1</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4 3">mooring.h5:/nodesSpatial_Domain1</DataItem>
+        </Geometry>
+        <Attribute Name="ux" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/ux_t1</DataItem>
+        </Attribute>
+        <Attribute Name="uy" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/uy_t1</DataItem>
+        </Attribute>
+        <Attribute Name="uz" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/uz_t1</DataItem>
+        </Attribute>
+        <Attribute Name="ax" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/ax_t1</DataItem>
+        </Attribute>
+        <Attribute Name="ay" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/ay_t1</DataItem>
+        </Attribute>
+        <Attribute Name="az" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/az_t1</DataItem>
+        </Attribute>
+        <Attribute Name="fluid_ux" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/fluid_ux_t1</DataItem>
+        </Attribute>
+        <Attribute Name="fluid_uy" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/fluid_uy_t1</DataItem>
+        </Attribute>
+        <Attribute Name="fluid_uz" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/fluid_uz_t1</DataItem>
+        </Attribute>
+        <Attribute Name="fluid_ax" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/fluid_ax_t1</DataItem>
+        </Attribute>
+        <Attribute Name="fluid_ay" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/fluid_ay_t1</DataItem>
+        </Attribute>
+        <Attribute Name="fluid_az" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/fluid_az_t1</DataItem>
+        </Attribute>
+        <Attribute Name="dragx" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/dragx_t1</DataItem>
+        </Attribute>
+        <Attribute Name="dragy" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/dragy_t1</DataItem>
+        </Attribute>
+        <Attribute Name="dragz" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/dragz_t1</DataItem>
+        </Attribute>
+        <Attribute Name="amx" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/amx_t1</DataItem>
+        </Attribute>
+        <Attribute Name="amy" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/amy_t1</DataItem>
+        </Attribute>
+        <Attribute Name="amz" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/amz_t1</DataItem>
+        </Attribute>
+        <Attribute Name="sx0.0" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/sx0.0_t1</DataItem>
+        </Attribute>
+        <Attribute Name="sy0.0" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/sy0.0_t1</DataItem>
+        </Attribute>
+        <Attribute Name="sz0.0" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="4">mooring.h5:/sz0.0_t1</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+  </Domain>
+</Xdmf>

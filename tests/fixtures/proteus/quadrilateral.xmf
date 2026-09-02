@@ -1,0 +1,38 @@
+<?xml version="1.0" ?>
+<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>
+<Xdmf Version="2.0" xmlns:xi="http://www.w3.org/2001/XInclude">
+  <Domain>
+    <Grid Name="Mesh_c0q2_Lagrange" GridType="Collection" CollectionType="Temporal">
+      <Grid Name="Grid_c0q2_Lagrange" GridType="Uniform">
+        <Time Value="0.000000e+00" Name="0" />
+        <Topology Type="Quadrilateral" NumberOfElements="400">
+          <DataItem Format="HDF" DataType="Int" Dimensions="400 4">2D_poisson_hex_degree2.h5:/elements_c0q2_Lagrange0</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="441 3">2D_poisson_hex_degree2.h5:/nodes_c0q2_Lagrange0</DataItem>
+        </Geometry>
+        <Attribute Name="u0" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="441">2D_poisson_hex_degree2.h5:/u0_t0</DataItem>
+        </Attribute>
+        <Attribute Name="u0_analytical" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="441">2D_poisson_hex_degree2.h5:/u0_analytical_t0</DataItem>
+        </Attribute>
+      </Grid>
+      <Grid Name="Grid_c0q2_Lagrange" GridType="Uniform">
+        <Time Value="1.000000e+00" Name="1" />
+        <Topology Type="Quadrilateral" NumberOfElements="400">
+          <DataItem Format="HDF" DataType="Int" Dimensions="400 4">2D_poisson_hex_degree2.h5:/elements_c0q2_Lagrange1</DataItem>
+        </Topology>
+        <Geometry Type="XYZ">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="441 3">2D_poisson_hex_degree2.h5:/nodes_c0q2_Lagrange1</DataItem>
+        </Geometry>
+        <Attribute Name="u0" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="441">2D_poisson_hex_degree2.h5:/u0_t1</DataItem>
+        </Attribute>
+        <Attribute Name="u0_analytical" AttributeType="Scalar" Center="Node">
+          <DataItem Format="HDF" DataType="Float" Precision="8" Dimensions="441">2D_poisson_hex_degree2.h5:/u0_analytical_t1</DataItem>
+        </Attribute>
+      </Grid>
+    </Grid>
+  </Domain>
+</Xdmf>
