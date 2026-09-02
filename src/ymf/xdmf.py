@@ -218,6 +218,33 @@ def _parse_grid_body(grid_elem: Element) -> Dict[str, Any]:
     return grid
 
 
+def parse_grid_element(grid_elem: Element) -> Dict[str, Any]:
+    """Convert one XDMF ``<Grid>`` element into a grid dict.
+
+    The inverse of what :func:`build_xdmf_tree` writes for a single uniform
+    grid: ``Name`` (when present), ``Topology``, ``Geometry`` and
+    ``Attributes``. A ``<Time>`` child is *not* included -- time belongs to
+    the step that holds the grid, not to the grid itself.
+
+    This exists for producers that still build XDMF elements directly and
+    want to hand the result to the archive core as data. It is a bridge:
+    a producer that builds grid dicts in the first place has no use for it.
+    """
+    grid: Dict[str, Any] = {}
+    if "Name" in grid_elem.attrib:
+        grid["Name"] = grid_elem.attrib["Name"]
+    grid.update(_parse_grid_body(grid_elem))
+    return grid
+
+
+def grid_element_time(grid_elem: Element) -> Optional[float]:
+    """Return the ``<Time>`` value of a grid element, or ``None``."""
+    time_elem = grid_elem.find("Time")
+    if time_elem is None:
+        return None
+    return float(time_elem.attrib["Value"])
+
+
 def _encode_ymf_extra(ymf_extra: Any) -> str:
     """Serialize a YMF (sub-)document to base64-encoded JSON text.
 

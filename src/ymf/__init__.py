@@ -41,6 +41,8 @@ from ymf.archive import (
 from ymf.normalize import normalize_unknowns
 from ymf.xdmf import (
     build_xdmf_tree,
+    grid_element_time,
+    parse_grid_element,
     read_xdmf,
     round_trip_equal,
     write_xdmf,
@@ -91,6 +93,8 @@ __all__ = [
     "write_xdmf",
     "read_xdmf",
     "round_trip_equal",
+    "parse_grid_element",
+    "grid_element_time",
     # --- core: stdlib helpers ---
     "normalize_unknowns",
     # --- lazy: front-end validation (see _LAZY_ATTRS) ---
