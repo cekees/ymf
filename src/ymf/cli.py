@@ -1,6 +1,6 @@
 """Command line entry points.
 
-Only ``ymf2xdmf`` so far: it turns a ``.ymf`` archive into the ``.xmf`` that
+Only ``ymf2xmf`` so far: it turns a ``.ymf`` archive into the ``.xmf`` that
 ParaView and VisIt read.
 
 This exists because of the campaign's decision that a solver writes YMF and
@@ -24,7 +24,7 @@ from typing import List, Optional, Sequence
 from ymf.archive import YmfArchiveError, canonicalize_domain, read_ymf, validate_domain
 from ymf.xdmf import write_xdmf
 
-__all__ = ["ymf2xdmf", "ymf2xdmf_main"]
+__all__ = ["ymf2xmf", "ymf2xmf_main"]
 
 
 def _default_output(source: Path) -> Path:
@@ -32,7 +32,7 @@ def _default_output(source: Path) -> Path:
     return source.with_suffix(".xmf")
 
 
-def ymf2xdmf(
+def ymf2xmf(
     source: str | Path,
     output: Optional[str | Path] = None,
     *,
@@ -92,10 +92,10 @@ def _describe(domain) -> List[str]:
     return lines
 
 
-def ymf2xdmf_main(argv: Optional[Sequence[str]] = None) -> int:
-    """``ymf2xdmf`` console entry point."""
+def ymf2xmf_main(argv: Optional[Sequence[str]] = None) -> int:
+    """``ymf2xmf`` console entry point."""
     parser = argparse.ArgumentParser(
-        prog="ymf2xdmf",
+        prog="ymf2xmf",
         description="Convert a YMF archive into an XDMF (.xmf) file that "
                     "ParaView and VisIt can open. The heavy data is not "
                     "copied -- the .xmf references the same HDF5 datasets "
@@ -119,15 +119,15 @@ def ymf2xdmf_main(argv: Optional[Sequence[str]] = None) -> int:
             print("%s" % (source,))
             for line in _describe(canonicalize_domain(domain)):
                 print(line)
-        destination = ymf2xdmf(source, args.output,
+        destination = ymf2xmf(source, args.output,
                                validate=not args.no_validate)
     except YmfArchiveError as exc:
         # A structural problem in the archive, named. Not a traceback:
         # the user asked to convert a file, and the file is the problem.
-        print("ymf2xdmf: %s" % (exc,), file=sys.stderr)
+        print("ymf2xmf: %s" % (exc,), file=sys.stderr)
         return 1
     except OSError as exc:
-        print("ymf2xdmf: %s" % (exc,), file=sys.stderr)
+        print("ymf2xmf: %s" % (exc,), file=sys.stderr)
         return 1
 
     print("wrote %s" % (destination,))
@@ -135,4 +135,4 @@ def ymf2xdmf_main(argv: Optional[Sequence[str]] = None) -> int:
 
 
 if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(ymf2xdmf_main())
+    raise SystemExit(ymf2xmf_main())

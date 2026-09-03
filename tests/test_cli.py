@@ -1,4 +1,4 @@
-"""Tests for the ymf2xdmf converter and its command line."""
+"""Tests for the ymf2xmf converter and its command line."""
 
 import subprocess
 import sys
@@ -19,7 +19,7 @@ from ymf.archive import (
     topology,
     write_ymf,
 )
-from ymf.cli import ymf2xdmf, ymf2xdmf_main
+from ymf.cli import ymf2xmf, ymf2xmf_main
 
 
 def make_domain(spatial=False, n_ranks=2):
@@ -63,19 +63,19 @@ def archive(tmp_path):
 
 
 def test_the_output_defaults_to_the_archive_with_an_xmf_suffix(archive):
-    destination = ymf2xdmf(archive)
+    destination = ymf2xmf(archive)
     assert destination == archive.with_suffix(".xmf")
     assert destination.exists()
 
 
 def test_an_explicit_output_path_is_honoured(archive, tmp_path):
-    destination = ymf2xdmf(archive, tmp_path / "elsewhere.xmf")
+    destination = ymf2xmf(archive, tmp_path / "elsewhere.xmf")
     assert destination == tmp_path / "elsewhere.xmf"
     assert destination.exists()
 
 
 def test_the_converted_document_is_xdmf(archive):
-    root = parse(ymf2xdmf(archive)).getroot()
+    root = parse(ymf2xmf(archive)).getroot()
     assert root.tag == "Xdmf"
     collection = root.find("Domain").find("Grid")
     assert collection.attrib["CollectionType"] == "Temporal"
@@ -99,7 +99,7 @@ def test_the_conversion_preserves_every_dataset_reference(archive):
                 for attr in g.get("Attributes", []):
                     expected.append(attr["DataItem"]["Data"])
 
-    root = parse(ymf2xdmf(archive)).getroot()
+    root = parse(ymf2xmf(archive)).getroot()
     found = [(item.text or "").strip() for item in root.iter("DataItem")]
     assert found == expected
 
@@ -107,7 +107,7 @@ def test_the_conversion_preserves_every_dataset_reference(archive):
 def test_a_per_subdomain_archive_converts_to_spatial_collections(tmp_path):
     path = tmp_path / "run.ymf"
     write_ymf(make_domain(spatial=True, n_ranks=3), path)
-    root = parse(ymf2xdmf(path)).getroot()
+    root = parse(ymf2xmf(path)).getroot()
     steps = root.find("Domain").find("Grid").findall("Grid")
     assert len(steps) == 2
     for step in steps:
@@ -126,7 +126,7 @@ def test_the_extra_payload_survives_the_conversion(tmp_path):
     extra = {"Problem": {"name": "poisson", "provenance": "proteus_derived"}}
     path = tmp_path / "run.ymf"
     write_ymf(make_domain(), path, extra=extra)
-    _, recovered = read_xdmf(ymf2xdmf(path))
+    _, recovered = read_xdmf(ymf2xmf(path))
     assert recovered == extra
 
 
@@ -134,7 +134,7 @@ def test_an_empty_archive_is_refused(tmp_path):
     path = tmp_path / "empty.ymf"
     write_ymf({}, path, validate=False)
     with pytest.raises(YmfArchiveError, match="nothing to convert"):
-        ymf2xdmf(path)
+        ymf2xmf(path)
 
 
 def test_a_malformed_archive_is_refused_by_default(tmp_path):
@@ -143,7 +143,7 @@ def test_a_malformed_archive_is_refused_by_default(tmp_path):
     path = tmp_path / "bad.ymf"
     write_ymf(domain, path, validate=False)
     with pytest.raises(YmfArchiveError, match="Center"):
-        ymf2xdmf(path)
+        ymf2xmf(path)
 
 
 def test_validation_can_be_skipped_deliberately(tmp_path):
@@ -151,7 +151,7 @@ def test_validation_can_be_skipped_deliberately(tmp_path):
     domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["Center"] = "Nowhere"
     path = tmp_path / "bad.ymf"
     write_ymf(domain, path, validate=False)
-    assert ymf2xdmf(path, validate=False).exists()
+    assert ymf2xmf(path, validate=False).exists()
 
 
 # --------------------------------------------------------------------------
@@ -160,18 +160,18 @@ def test_validation_can_be_skipped_deliberately(tmp_path):
 
 
 def test_the_cli_converts_and_reports_where(archive, capsys):
-    assert ymf2xdmf_main([str(archive)]) == 0
+    assert ymf2xmf_main([str(archive)]) == 0
     assert "wrote" in capsys.readouterr().out
 
 
 def test_the_cli_honours_an_output_path(archive, tmp_path, capsys):
     destination = tmp_path / "out.xmf"
-    assert ymf2xdmf_main([str(archive), "-o", str(destination)]) == 0
+    assert ymf2xmf_main([str(archive), "-o", str(destination)]) == 0
     assert destination.exists()
 
 
 def test_verbose_describes_what_the_archive_holds(archive, capsys):
-    assert ymf2xdmf_main([str(archive), "-v"]) == 0
+    assert ymf2xmf_main([str(archive), "-v"]) == 0
     out = capsys.readouterr().out
     assert "Mesh Spatial_Domain" in out
     assert "2 steps" in out
@@ -181,7 +181,7 @@ def test_verbose_describes_what_the_archive_holds(archive, capsys):
 
 def test_a_missing_file_is_a_usage_error(tmp_path):
     with pytest.raises(SystemExit) as exc:
-        ymf2xdmf_main([str(tmp_path / "nope.ymf")])
+        ymf2xmf_main([str(tmp_path / "nope.ymf")])
     assert exc.value.code == 2      # argparse's usage-error code
 
 
@@ -191,8 +191,8 @@ def test_a_malformed_archive_exits_nonzero_without_a_traceback(tmp_path, capsys)
     domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["Center"] = "Nowhere"
     path = tmp_path / "bad.ymf"
     write_ymf(domain, path, validate=False)
-    assert ymf2xdmf_main([str(path)]) == 1
-    assert "ymf2xdmf:" in capsys.readouterr().err
+    assert ymf2xmf_main([str(path)]) == 1
+    assert "ymf2xmf:" in capsys.readouterr().err
 
 
 def test_the_cli_skips_validation_when_asked(tmp_path):
@@ -200,7 +200,7 @@ def test_the_cli_skips_validation_when_asked(tmp_path):
     domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["Center"] = "Nowhere"
     path = tmp_path / "bad.ymf"
     write_ymf(domain, path, validate=False)
-    assert ymf2xdmf_main([str(path), "--no-validate"]) == 0
+    assert ymf2xmf_main([str(path), "--no-validate"]) == 0
 
 
 # --------------------------------------------------------------------------
@@ -209,12 +209,12 @@ def test_the_cli_skips_validation_when_asked(tmp_path):
 
 
 def test_the_installed_console_script_runs(archive):
-    """Declared in pyproject as ymf2xdmf, so it must actually be callable."""
+    """Declared in pyproject as ymf2xmf, so it must actually be callable."""
     import shutil
 
-    executable = shutil.which("ymf2xdmf")
+    executable = shutil.which("ymf2xmf")
     if executable is None:
-        pytest.skip("ymf2xdmf is not on PATH (package not installed)")
+        pytest.skip("ymf2xmf is not on PATH (package not installed)")
     result = subprocess.run([executable, str(archive)],
                             capture_output=True, text=True, timeout=60)
     assert result.returncode == 0, result.stderr
@@ -222,7 +222,7 @@ def test_the_installed_console_script_runs(archive):
 
 
 def test_the_converter_needs_no_validation_extras(archive):
-    """ymf2xdmf must work in a core-only install.
+    """ymf2xmf must work in a core-only install.
 
     It reads YAML and writes XML; requiring strictyaml or pint to convert
     would defeat the point of the core/front-end split.
@@ -236,8 +236,8 @@ def test_the_converter_needs_no_validation_extras(archive):
         "            raise ImportError(name)\n"
         "        return None\n"
         "sys.meta_path.insert(0, Block())\n"
-        "from ymf.cli import ymf2xdmf\n"
-        "print(ymf2xdmf(%r))\n" % (str(archive),)
+        "from ymf.cli import ymf2xmf\n"
+        "print(ymf2xmf(%r))\n" % (str(archive),)
     )
     result = subprocess.run([sys.executable, "-c", code],
                             capture_output=True, text=True, timeout=60)

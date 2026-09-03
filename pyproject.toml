@@ -21,7 +21,7 @@ dependencies = [
 [project.scripts]
 # Converts a .ymf archive to the .xmf a viewer reads. In the core, so it
 # works without the ymf[spec] validation stack.
-ymf2xdmf = "ymf.cli:ymf2xdmf_main"
+ymf2xmf = "ymf.cli:ymf2xmf_main"
 
 [project.optional-dependencies]
 # strictyaml-backed schema validation of human/LLM-authored YMF input.
