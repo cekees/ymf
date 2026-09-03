@@ -319,6 +319,7 @@ def data_item_for(
     *,
     include: Optional[str] = None,
     dimensions: Optional[Sequence[int]] = None,
+    check: bool = True,
 ) -> Dict[str, Any]:
     """Build a DataItem by reading shape and dtype off ``array``.
 
@@ -335,6 +336,13 @@ def data_item_for(
     the array's own -- flattening an ``(N, k)`` connectivity array to
     ``[N*k]`` is the normal case. It is still checked for consistency, so a
     genuine mismatch is rejected.
+
+    Pass ``check=False`` when ``array`` is deliberately *not* the whole of
+    what the DataItem describes, and is present only to supply the dtype.
+    That is the case for a collective parallel write: the DataItem covers
+    the assembled global array while this caller holds one rank's slice, so
+    the declared dimensions are larger than the array by design and
+    checking them would reject a correct write.
     """
     try:
         shape, dtype = array.shape, array.dtype
@@ -360,7 +368,7 @@ def data_item_for(
         data_type=_DTYPE_KIND_TO_DATA_TYPE[kind],
         precision=dtype.itemsize,
     )
-    if dimensions is not None:
+    if dimensions is not None and check:
         check_dimensions(item, shape, where="data_item_for()")
     return item
 
