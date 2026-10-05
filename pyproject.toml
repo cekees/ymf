@@ -34,11 +34,16 @@ units = ["pint>=0.23"]
 symbolic = ["sympy>=1.12"]
 # Everything the validating front-end needs.
 frontend = ["strictyaml>=1.7", "pint>=0.23"]
+# What examples/write_archive.py and read_archive.py need to make and read
+# the HDF5 side of an archive. A solver brings its own.
+examples = ["numpy", "h5py"]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
     "strictyaml>=1.7",
     "pint>=0.23",
+    "numpy",
+    "h5py",
 ]
 
 [tool.setuptools.packages.find]

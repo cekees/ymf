@@ -1,0 +1,97 @@
+# ============================================================
+# YMF Example: transient heat conduction on the unit square
+#
+# Demonstrates: a time-dependent problem with initial and boundary
+# conditions, units on every quantity, characteristic scales, and an
+# analytical solution next to a numerical discretization.
+#
+# examples/write_archive.py embeds this document in the archive it
+# writes, so the output carries the problem it came from.
+# ============================================================
+
+Problem:
+  name: "Transient heat conduction, unit square"
+  physical_model:
+    provenance: human_specified
+    processes: [heat_conduction]
+    assumptions: [constant_properties, no_internal_heat_source]
+
+  units:
+    convention: SI
+    default: true
+
+  characteristic_scales:
+    length: {value: 1.0, units: m}
+    temperature: {value: 300.0, units: K}
+    # e-folding time of the slowest mode, 1 / (2 π² κ) with κ = 1e-3 m²/s
+    time: {value: 50.66, units: s}
+
+  strong_form:
+    unknowns:
+      - name: T
+        units: K
+    unknown_provenance: human_specified
+    equation_formulation: "heat equation"
+    strong_form_expression: "∂T/∂t = κ ΔT  in Ω × (0, t_end]"
+    domain: |
+      Ω = [0,1] × [0,1],  t_end = 50 s
+    boundary_regions:
+      - name: "walls"
+        geometry: "∂Ω"
+    initial_conditions:
+      - field: T
+        type: function
+        formula: "300 + 10 sin(πx) sin(πy)"
+        units: K
+    boundary_conditions:
+      - region: "walls"
+        variable: T
+        type: dirichlet
+        value: 300.0
+        units: K
+    coefficients:
+      kappa: {value: 1.0e-3, units: m2/s}
+    dimensional_check:
+      enabled: true
+      method: automatic
+
+  weak_forms:
+    - label: "galerkin"
+      provenance: human_specified
+      derivation: |
+        Multiply by v ∈ H1_0(Ω), integrate over Ω, integrate the
+        diffusion term by parts; the boundary term vanishes because
+        v = 0 on ∂Ω.
+      solution_spaces:
+        trial: "H1 (with T = 300 K on ∂Ω)"
+        test: "H1_0"
+      bilinear: |
+        m(∂T/∂t, v) + a(T, v),  m(w,v) = ∫Ω w v dx,  a(T,v) = ∫Ω κ ∇T·∇v dx
+      linear: |
+        l(v) = 0
+      boundary_conditions: |
+        T|∂Ω = 300 K  (essential)
+
+solution_paths:
+  analytical:
+    - name: "separation_of_variables"
+      provenance: human_specified
+      from_weak_form: "galerkin"
+      method: "separation_of_variables"
+      solution:
+        formula: "T(x,y,t) = 300 + 10 exp(-2π²κt) sin(πx) sin(πy)"
+        notes: "Only the (1,1) Fourier mode is excited by the initial condition."
+
+  discretizations:
+    - name: "P1_backward_euler"
+      provenance: human_specified
+      from_weak_form: "galerkin"
+      finite_element:
+        fields: {family: CG, order: 1}
+      discretization:
+        time_integration: backward_euler
+        dt: 1.0
+      solver:
+        type: time_marching
+        linear_solver: petsc
+        tolerance: 1.0e-10
