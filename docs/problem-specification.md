@@ -10,6 +10,8 @@ rationale, see [ymf-schema.md](ymf-schema.md) (v0.1) and
 
 - [The idea](#the-idea)
 - [Document structure](#document-structure)
+- [Writing it once: the notation](#writing-it-once-the-notation)
+- [Running a spec](#running-a-spec)
 - [Branching: one problem, several solution paths](#branching-one-problem-several-solution-paths)
 - [Composing documents: models and problems](#composing-documents-models-and-problems)
 - [Provenance](#provenance)
@@ -60,7 +62,7 @@ vvuq: ...                    # optional, free-form: verification/validation plan
 archive: ...                 # optional, free-form: reserved for output configuration
 Xdmf: ...                    # optional, free-form: legacy, from the v0.1 draft
 
-extends: model.yaml          # optional: the document this one builds on
+extends: model.ymf          # optional: the document this one builds on
 kind: model                  # optional: model | problem (default)
 composition: ...             # written by the loader into a composed document
 ```
@@ -69,25 +71,28 @@ The last three describe the file rather than the problem; see
 [Composing documents](#composing-documents-models-and-problems).
 
 The smallest complete example is
-[`examples/poisson.yaml`](../examples/poisson.yaml). The key blocks:
+[`examples/poisson.ymf`](../examples/poisson.ymf). The key blocks:
 
 **`physical_model`**: `provenance` (required), plus lists of `processes`
 and `assumptions`, and optionally a `source_document`.
 
 **`strong_form`**: `provenance`, `unknowns`, `equation_formulation`,
-`strong_form_expression`, `domain` and `boundary_regions` are required.
+`domain` and `boundary_regions` are required, and `equations` holds the
+equations themselves, in the [notation](#writing-it-once-the-notation).
 Unknowns are either bare names (`[u, p]`) or structured entries with
-`units` and optional `std_name` and `provenance`. `ymf.normalize_unknowns()`
-turns either form into the structured one. Optional: `initial_conditions`,
-`boundary_conditions`, `coefficients`, `known_analytical_solution`,
-`dimensional_check`.
+`units`, an optional `std_name`, `provenance`, and `rank` (1 for a vector).
+`ymf.normalize_unknowns()` turns either form into the structured one.
+Optional: `initial_conditions`, `boundary_conditions`, `coefficients`,
+`dimensional_check`. (`strong_form_expression` and
+`known_analytical_solution` are accepted from older documents; they
+duplicate `equations` and the analytical solution path, so new documents
+leave them out.)
 
 ```yaml
 initial_conditions:
   - field: T
     type: function          # constant | function | data_source
-    formula: |-
-      300 + 10 sin(πx) sin(πy)
+    formula: "300 + 10 sin(πx) sin(πy)"
     units: K
 boundary_conditions:
   - region: walls           # a boundary_regions[].name
@@ -110,7 +115,98 @@ usually `from_weak_form` and `finite_element`. `finite_element` takes
 `linear_solver` (`petsc | mumps | umfpack | superlu`), `nonlinear_solver`
 (`newton | broyden | line_search`), `tolerance` and `max_iterations`.
 `discretization` is a free-form block for anything else, such as the time
-integrator in `heat_equation.yaml`.
+integrator in `heat_equation.ymf`.
+
+## Writing it once: the notation
+
+Every fact in a spec is written once, in the notation a person writes and
+reads, and the same string is what `ymf.symbolic` parses. There is no
+separate machine-readable copy to keep in step. From the examples:
+
+```yaml
+strong_form:
+  equations:
+    - "∂T/∂t = ∇·(κ∇T)  in Ω"
+    - "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f  in Ω"
+  domain: "Ω = [0, 1] × [0, 1],  t ∈ (0, 50]"
+  boundary_regions:
+    - {name: walls, geometry: "y = 0 or y = H"}
+    - {name: pressure_datum, geometry: "x = 0 and y = 0"}
+    - {name: all, geometry: "∂Ω"}
+  boundary_conditions:
+    - {region: walls, variable: v, type: dirichlet, formula: "(U, 0)"}
+  coefficients:
+    κ: {value: 1.0e-3, units: m2/s}
+    f: "π² sin(πx) sin(πy)"
+    λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"
+solution_paths:
+  analytical:
+    - solution:
+        formula: |-
+          v = (1 - exp(λx) cos(2πy), λ/(2π) exp(λx) sin(2πy))
+          p = (1 - exp(2λx))/2
+```
+
+| written | means |
+|---|---|
+| `∇u`, `∇·F`, `Δu` | gradient, divergence, Laplacian of the operand that follows |
+| `∂u/∂t`, `∂u/∂x` | partial derivatives |
+| `a·b`, `a⊗b` | dot product (a product of scalars), outer product |
+| `(a, b)` | a vector |
+| `x² π³ x^n x**n` | powers |
+| `2π²κt`, `κ ΔT`, `sin(πx)` | implicit multiplication |
+| `sin cos tan exp log sqrt sinh cosh tanh abs` | functions, with parentheses |
+| `grad div lap dt dx dy dz dot outer` | the operators spelled out, for ASCII-only text |
+| `lhs = rhs  in Ω` | an equation; the `in ...` clause is ignored |
+| `y = 0 or x = 0 and y = H` | a boundary region; `∂Ω` is the whole boundary |
+| `Ω = [a, b] × [c, d],  t ∈ (t0, t1]` | the domain, a box, and the time interval of a transient problem |
+
+Names are the coordinates `x y z`, time `t`, `π`, the unknowns and the
+coefficients. A coefficient may be any name, Greek or not (`κ`, `ρ`, `μ`,
+`G`), and a coefficient's value may itself be a formula in the others and
+in `x`, `y`, `z`, `t`. A run of letters that is not a known name is read as
+a product of single-letter names (`πx` is π·x) if every letter is known,
+and is an error otherwise, so a misspelling is reported, not multiplied:
+
+```text
+unknown name 'kapa' (not a coefficient, an unknown, a coordinate, t, π or a
+function, nor a product of single-letter names) at position 2 in '2 kapa T'
+```
+
+Tensors follow the continuum-mechanics convention `grad(v)[i, j] =
+∂v_j/∂x_i`, so `v·∇v` is (v·∇)v and `∇·(μ∇v)` is the vector Laplacian.
+
+The equations are sorted into the advection-diffusion-reaction form that
+transport codes solve (mass, advective flux, diffusion, reaction,
+Hamiltonian), so they must be in a form that has one: a second derivative
+appears as the divergence of a flux, and a nonlinear first-order term
+depends on the gradients of the unknowns, not the unknowns themselves.
+That is why the Navier-Stokes model writes its advection as `∇·(ρ v⊗v)`,
+which equals ρ(v·∇)v when ∇·v = 0. The convective form is refused, with
+the reason.
+
+## Running a spec
+
+`ymf.symbolic.adr_problem(doc)` turns a validated, possibly composed, spec
+into a plain-data problem: each equation's coefficients and their
+derivatives as numpy code strings, the domain, the Dirichlet and periodic
+boundary data, initial conditions and the exact solution. A solver consumes
+that without sympy. For Proteus, `scripts/ymf_run` does the whole run:
+
+```bash
+ymf_run examples/poisson.ymf --cells 4 8 16 --outdir out
+```
+
+It runs each discretization on each mesh and prints the L2 error of every
+unknown against the exact solution, with observed rates. A discretization
+whose weak form asks for a stabilization the runner cannot provide is
+skipped and says so, rather than run without it. Each run writes an
+archive whose `extra` records everything needed to reproduce it: the
+composed specification (self-contained), the run configuration, the
+generated ADR form, software versions and the errors. Given that archive
+instead of a spec, `ymf_run` reruns exactly that run; with `--check` it
+confirms the pipeline is idempotent, meaning the ADR form is regenerated
+identically and every numerical dataset is bitwise identical.
 
 ## Branching: one problem, several solution paths
 
@@ -118,7 +214,7 @@ The schema exists to let one document hold *competing* approaches to the
 same problem, and to keep track of how they relate. Each discretization
 names the weak form it implements with `from_weak_form` (a label, or an
 integer index into `weak_forms`), and the `vvuq` block names the branches
-it compares. [`examples/kovasznay_flow.yaml`](../examples/kovasznay_flow.yaml)
+it compares. [`examples/kovasznay_flow.ymf`](../examples/kovasznay_flow.ymf)
 has this tree:
 
 ```text
@@ -140,13 +236,13 @@ is a **model** that many **problems** extend:
 
 ```text
 examples/navier_stokes/
-  navier_stokes_model.yaml          kind: model -- physics, equations, unknowns,
+  navier_stokes_model.ymf          kind: model -- physics, equations, unknowns,
   │                                 coefficient units; no domain, conditions or values
-  ├── planar_couette.yaml           geometry, BCs, values, exact solution,
+  ├── planar_couette.ymf           geometry, BCs, values, exact solution,
   │                                 a Galerkin weak form, Taylor-Hood
-  └── plane_poiseuille.yaml         the same, driven by a pressure gradient,
+  └── plane_poiseuille.ymf         the same, driven by a pressure gradient,
       │                             a stabilized weak form, equal-order P1
-      └── plane_poiseuille_re100.yaml   changes the viscosity and gradient only
+      └── plane_poiseuille_re100.ymf   changes the viscosity and gradient only
 ```
 
 For multiphysics, getting the model right (the processes, the coupled
@@ -161,17 +257,17 @@ unknown, a weak form) must still be complete. A problem file holds only
 what it adds:
 
 ```yaml
-extends: navier_stokes_model.yaml   # relative to this file
+extends: navier_stokes_model.ymf   # relative to this file
 Problem:
   name: "Planar Couette flow, Re = 10"
   physical_model:
     provenance: human_specified
     assumptions: [steady, fully_developed]   # added to the model's
   strong_form:
-    domain: |-
-      Ω = [0, 4] × [0, 1]  (m)
+    domain: "Ω = [0, 4] × [0, H]"
     coefficients:
-      mu: {value: 0.1}                       # the model gave the units
+      μ: {value: 0.1}                        # the model gave the units
+      H: {value: 1.0, units: m}              # and this problem adds one
   weak_forms: [...]
 solution_paths: {...}
 ```
@@ -185,18 +281,23 @@ partial schema as it is read, so an error is reported against the file and
 line that holds it. The composed result must then pass the full schema,
 unless the file being loaded is itself a model.
 
+To fill in a coefficient a model declares, use the mapping form
+(`f: {formula: "(G, 0)"}`), which merges with the model's `{units: ...}`. A
+bare string (`f: "(G, 0)"`) replaces the whole entry, units and all, and is
+recorded as an override.
+
 **Overrides are recorded, not refused.** When a child changes a value its
 parent set, the composed document's `composition` block records it, and
 also lists every source file:
 
 ```yaml
 composition:
-  sources: [navier_stokes_model.yaml, plane_poiseuille.yaml, plane_poiseuille_re100.yaml]
+  sources: [navier_stokes_model.ymf, plane_poiseuille.ymf, plane_poiseuille_re100.ymf]
   overrides:
-    - path: Problem.strong_form.coefficients.mu.value
+    - path: Problem.strong_form.coefficients.μ.value
       was: '1.0'
       now: '0.01'
-      set_by: plane_poiseuille_re100.yaml
+      set_by: plane_poiseuille_re100.ymf
     - path: Problem.strong_form.coefficients.G.value
       ...
 ```
@@ -266,46 +367,49 @@ Unit strings accept the common notations (`m2/s`, `m²/s`, `m^2/s`,
 true` with a formula over `L_char`, `U_char`, `rho_char`, `mu_char` and
 `T_char`, and over the numeric `coefficients` by name.
 `dimensionless_numbers` are formulas over `L`, `U`, `rho`, `mu`, `T`, `g`
-and the numeric coefficients:
+and the numeric coefficients. Both may be written in the
+[notation](#writing-it-once-the-notation) (`"1/(2π²κ)"`, `"ρ U L / μ"`),
+which needs `ymf[symbolic]` to evaluate:
 
 ```yaml
 characteristic_scales:
   length: {value: 1.0, units: m}
   velocity: {value: 1.0, units: m/s}
-  density: {value: 1.0, units: kg/m3}
-  viscosity: {value: 0.025, units: Pa*s}
+  density: {derived: true, formula: "ρ", units: kg/m3}
+  viscosity: {derived: true, formula: "μ", units: Pa*s}
   time: {derived: true, formula: "L_char / U_char"}
 dimensionless_numbers:
-  Re: {formula: "rho * U * L / mu"}
+  Re: {formula: "ρ U L / μ"}
 ```
 
 `ymf.non_dimensionalize(doc)` resolves these (`Re = 40.0` here) and derives
 the substitution relations for unknowns whose units it recognizes
-(`v* = v / U_char`, `p* = p / (rho_char * U_char**2)`). It does not rewrite
-the PDE itself. That needs the symbolic layer, which doesn't exist yet.
+(`v* = v / U_char`, `p* = p / (rho_char * U_char**2)`). It does not yet
+rewrite the PDE itself in dimensionless form.
 
 **State each value once.** Viscosity and density are both coefficients of
 the equations and characteristic scales. Don't write the number twice:
 derive the scale from the coefficient, and a problem that changes the
 coefficient changes the scale and every dimensionless number with it.
-From [`plane_poiseuille.yaml`](../examples/navier_stokes/plane_poiseuille.yaml):
+From [`plane_poiseuille.ymf`](../examples/navier_stokes/plane_poiseuille.ymf):
 
 ```yaml
 characteristic_scales:
-  length: {value: 1.0, units: m}
-  velocity: {derived: true, formula: "G * L_char**2 / (8 * mu)", units: m/s}
-  density: {derived: true, formula: "rho", units: kg/m3}
-  viscosity: {derived: true, formula: "mu", units: Pa*s}
+  length: {derived: true, formula: "H", units: m}
+  velocity: {derived: true, formula: "G H²/(8μ)", units: m/s}
+  density: {derived: true, formula: "ρ", units: kg/m3}
+  viscosity: {derived: true, formula: "μ", units: Pa*s}
 strong_form:
   coefficients:
-    rho: {value: 1.0}
-    mu: {value: 1.0}
+    ρ: {value: 1.0}
+    μ: {value: 1.0}
     G: {value: 8.0, units: Pa/m}
+    H: {value: 1.0, units: m}
 ```
 
-Its Re = 100 variant then changes `mu` and `G` and nothing else. The unit
+Its Re = 100 variant then changes `μ` and `G` and nothing else. The unit
 check enforces this for the conventional names: a `density` or `viscosity`
-scale given as a number beside a `rho` or `mu` coefficient is an **error**
+scale given as a number beside a `ρ`/`rho` or `μ`/`mu` coefficient is an **error**
 if the two differ and a **warning** if they agree:
 
 ```text
@@ -317,7 +421,7 @@ if the two differ and a **warning** if they agree:
 ```python
 from ymf import load_ymf, check_units, non_dimensionalize
 
-doc = load_ymf("examples/kovasznay_flow.yaml")   # raises on a schema violation
+doc = load_ymf("examples/kovasznay_flow.ymf")   # raises on a schema violation
 result = check_units(doc)                        # truthy if no errors
 for issue in result:
     print(issue)
@@ -334,13 +438,19 @@ strictyaml rejects by default.
 
 ## What is checked and what is free text
 
-The schema checks structure, enumerations and types. The mathematics is
-free text: `strong_form_expression`, `bilinear`, `linear`, `formula` and
-`derivation` are strings that people and LLMs read, and nothing parses them
-yet. A sympy-based layer that would turn them into something checkable
-(and into solver input) is the main piece of planned work. Until then, a
-discretization's correctness rests on review, and on the verification
-results recorded in `vvuq`.
+The schema checks structure, enumerations and types. With `ymf[symbolic]`,
+the mathematics is checked too, when a spec is run: the equations, the
+domain, the boundary regions, every coefficient, condition and solution
+formula are parsed, and a string that does not parse, or names something
+undefined, is an error that says where. Equations must also have an
+advection-diffusion-reaction form (see
+[the notation](#writing-it-once-the-notation)).
+
+Still free text, for people: `derivation`, the weak forms' `bilinear` and
+`linear`, `solution_spaces`, and notes. Weak forms are not parsed yet: the
+solver derives the weak form from the strong one (Proteus integrates the
+flux terms by parts), and the weak form's `stabilization_method` selects
+what the solver adds.
 
 `vvuq`, `archive` and `Xdmf` are accepted with any content. The intended
 shape of `vvuq` is in [ymf-schema.md §3](ymf-schema.md#3-vvuq-results).
@@ -362,10 +472,19 @@ nobody has to rediscover them:
   `coefficients` still sees strings, and a non-numeric coefficient (a
   formula such as `"π²"`) is still left out of the formula scope, which
   silently drops any number that refers to it.
-- **Boundary conditions are constants.** `boundary_conditions[].value` is a
-  number. Spatially varying data, such as Kovasznay's exact velocity on the
-  boundary, can only be stated in a weak form's free-text
-  `boundary_conditions`.
+- **Only Dirichlet and periodic conditions run.** Neumann, Robin and
+  `hydrograph` conditions validate but `adr_problem` refuses them, and the
+  domain must be a box.
+- **The notation's limits.** Functions need parentheses (`sin(πx)`, not
+  `sin πx`); there are no subscript characters (`p₀`), so write `p0` and
+  declare it; and a multi-letter name must be declared to be a name rather
+  than a product (`Re` is R·e unless it is a coefficient).
+- **SUPG/PSPG with equal-order P1 converges below its a priori rates on
+  Kovasznay flow** (velocity about 1.5 instead of 2, pressure not
+  converging) through Proteus's `NavierStokesASGS_velocity_pressure`,
+  while Taylor-Hood on the same problem converges at 3 and 2 and the
+  stabilized branch of plane Poiseuille flow meets its rates. Not yet
+  explained.
 - **Write `1.0e-10`, not `1e-10`.** strictyaml accepts both, but PyYAML
   (YAML 1.1), which reads a spec carried inside an archive, treats `1e-10`
   as a string.
@@ -376,7 +495,7 @@ nobody has to rediscover them:
   the merged document, labelled with the chain of files, not against a
   source file.
 - **Duplicated values are only caught by name.** The check above covers a
-  `density` or `viscosity` scale against a `rho` or `mu` coefficient. A
+  `density` or `viscosity` scale against a `ρ`/`rho` or `μ`/`mu` coefficient. A
   coefficient under another name (`nu`, `eta`), or a velocity scale that
   restates a boundary speed, isn't checked. Derive scales from coefficients
   wherever possible.

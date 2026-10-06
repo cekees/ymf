@@ -169,7 +169,7 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
     - Each ``initial_conditions[].units`` is dimensionally compatible with
       the ``unknowns[].units`` of the field it initializes.
     - A ``density`` or ``viscosity`` scale given as a number while a ``rho``
-      or ``mu`` coefficient is also given: ``error`` if they differ,
+      (``ρ``) or ``mu`` (``μ``) coefficient is also given: ``error`` if they differ,
       ``warning`` if they agree. Derive the scale from the coefficient
       instead, so the value is stated once.
 
@@ -234,11 +234,12 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
     # error; copies that agree are a warning, since that agreement is what
     # has to be maintained by hand.
     coefficient_values = _coefficient_values(problem)
-    for scale, coefficient in _SCALE_COEFFICIENT_NAMES.items():
+    for scale, names in _SCALE_COEFFICIENT_NAMES.items():
         spec = (problem.get("characteristic_scales") or {}).get(scale)
         if not isinstance(spec, dict) or spec.get("value") is None:
             continue
-        if coefficient not in coefficient_values:
+        coefficient = next((n for n in names if n in coefficient_values), None)
+        if coefficient is None:
             continue
         stated, actual = spec["value"], coefficient_values[coefficient]
         agree = math.isclose(stated, actual, rel_tol=1e-12)
@@ -253,7 +254,7 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
 
 #: Characteristic scales whose physical quantity is conventionally also a
 #: coefficient of the equations, by that coefficient's usual name.
-_SCALE_COEFFICIENT_NAMES = {"density": "rho", "viscosity": "mu"}
+_SCALE_COEFFICIENT_NAMES = {"density": ("rho", "ρ"), "viscosity": ("mu", "μ")}
 
 
 def _eval_formula(formula: str, scope: Dict[str, float]) -> Optional[float]:
@@ -269,13 +270,36 @@ def _eval_formula(formula: str, scope: Dict[str, float]) -> Optional[float]:
     try:
         code = compile(formula, "<ymf-formula>", "eval")
     except SyntaxError:
-        return None
+        # Not Python: the spec notation ("1/(2π²κ)", "ρ U L / μ"), which
+        # needs ymf[symbolic] to read.
+        return _eval_notation(formula, scope)
     for name in code.co_names:
         if name not in scope:
             return None
     try:
         return eval(code, {"__builtins__": {}}, dict(scope))  # noqa: S307
     except Exception:
+        return None
+
+
+def _eval_notation(formula: str, scope: Dict[str, float]) -> Optional[float]:
+    """Evaluate a formula in the spec notation, or None if it can't be."""
+    try:
+        import sympy
+        from ymf.symbolic.language import Space
+        from ymf.symbolic.notation import NotationError, Parser
+    except ImportError:
+        return None
+    space = Space(3, {}, {k: sympy.Float(v) for k, v in scope.items()})
+    try:
+        value = Parser(space).expression(formula)
+    except (NotationError, TypeError, ValueError):
+        return None
+    if getattr(value, "free_symbols", set()):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
         return None
 
 

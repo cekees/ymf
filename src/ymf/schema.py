@@ -100,10 +100,6 @@ AnalyticalEntry = Map(
                 Optional("notes"): Str(),
                 Optional("derivation_source"): Str(),
                 Optional("domain_restriction"): Str(),
-                # Machine-readable: unknown name -> expression in x, y, z, t
-                # and the coefficients (a vector unknown takes "(a, b)").
-                # ymf.symbolic evaluates these; ``formula`` stays for people.
-                Optional("expressions"): MapPattern(Str(), Str()),
             }
         ),
     }
@@ -280,15 +276,15 @@ StrongFormDef = Map(
         "provenance": ProvenanceEnum,
         "unknowns": Seq(UnknownDef),  # CHANGED in v0.2: was Seq(Str())
         "equation_formulation": Str(),
-        "strong_form_expression": Str(),
+        # Superseded by ``equations``, which is written in the same notation
+        # and read by ymf.symbolic; kept so older documents still validate.
+        Optional("strong_form_expression"): Str(),
+        # "Ω = [0, 1] × [0, 1]", optionally ", t ∈ (0, 50]" for the time
+        # interval of a transient problem.
         "domain": Str(),
-        "boundary_regions": Seq(Map({
-            "name": Str(),
-            "geometry": Str(),
-            # Machine-readable membership test, e.g. "x = 0 or x = 4",
-            # "x = 0 and y = 0"; ``geometry`` stays for people.
-            Optional("where"): Str(),
-        })),
+        # geometry is a membership test in the spec notation: "∂Ω" (all of
+        # it), "y = 0 or y = H", "x = 0 and y = 0".
+        "boundary_regions": Seq(Map({"name": Str(), "geometry": Str()})),
         Optional("initial_conditions"): Seq(InitialConditionDef),
         Optional("boundary_conditions"): Seq(BoundaryConditionDef),
         Optional("known_analytical_solution"): Map(
@@ -296,10 +292,9 @@ StrongFormDef = Map(
         ),
         Optional("coefficients"): MapPattern(Str(), Any()),
         Optional("dimensional_check"): DimensionalCheckDef,
-        # Machine-readable equations, one string per (vector or scalar)
-        # equation, in the operator syntax of ymf.symbolic:
-        # "rho*dt(v) + div(rho*outer(v, v)) - div(mu*grad(v)) + grad(p) = f".
-        # Ordered like the unknowns; strong_form_expression stays for people.
+        # The equations, one string per (vector or scalar) equation, in the
+        # notation of ymf.symbolic.notation -- "∂T/∂t = ∇·(κ∇T)  in Ω",
+        # "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f" -- ordered like the unknowns.
         Optional("equations"): Seq(Str()),
     }
 )
@@ -319,11 +314,6 @@ ProblemDef = Map(
         Optional("units"): UnitsDef,
         Optional("unit_systems"): MapPattern(Str(), UnitSystemDef),
         Optional("mesh_generation"): MeshGenerationDef,
-        # Machine-readable domain. For now an axis-aligned box, whose
-        # length also fixes the space dimension.
-        Optional("geometry"): Map({
-            "box": Map({"lower": Seq(Float()), "upper": Seq(Float())}),
-        }),
     }
 )
 

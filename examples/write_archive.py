@@ -5,7 +5,7 @@
     paraview /tmp/ymf-demo/heat.xmf
 
 There is no solver here. The temperature at each output time is the exact
-solution from ``examples/heat_equation.yaml``, evaluated at the mesh nodes,
+solution from ``examples/heat_equation.ymf``, evaluated at the mesh nodes,
 so the example is about the archive and nothing else. A real solver writes
 its own arrays in exactly the same way.
 
@@ -55,7 +55,7 @@ from ymf.cli import ymf2xmf
 
 EXAMPLES = Path(__file__).resolve().parent
 
-# From heat_equation.yaml. Kept as constants rather than parsed from the
+# From heat_equation.ymf. Kept as constants rather than parsed from the
 # formula strings, because the spec's formulas are for people and LLMs to
 # read; turning them into code is the symbolic layer's job, which ymf
 # doesn't have yet.
@@ -221,7 +221,7 @@ def main(argv=None) -> int:
     # The problem spec rides along in the archive. Plain yaml.safe_load,
     # not ymf.load_ymf: the writer trusts its input and so does not need
     # the strictyaml front-end. Validate specs before a run, not during.
-    problem = yaml.safe_load((EXAMPLES / "heat_equation.yaml").read_text())
+    problem = yaml.safe_load((EXAMPLES / "heat_equation.ymf").read_text())
 
     nodes, elements = unit_square_mesh(args.n)
     times = [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]

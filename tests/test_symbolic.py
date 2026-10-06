@@ -32,9 +32,9 @@ def test_poisson_is_diagonal_diffusion_and_a_constant_reaction():
     assert set(eq) == {"component", "diffusion", "reaction"}
     d = eq["diffusion"]["u"]
     assert (d["rowptr"], d["colind"], d["a"]) == ([0, 1, 2], [0, 1], ["1", "1"])
-    assert d["flags"] == {"u": "constant"}
+    assert d["depends_on"] == {}            # constant in the unknowns
     assert eq["reaction"]["r"] == "-2*numpy.pi**2*numpy.sin(numpy.pi*x)*numpy.sin(numpy.pi*y)"
-    assert eq["reaction"]["flags"] == {"u": "constant"}
+    assert eq["reaction"]["depends_on"] == {}
 
 
 def test_a_variable_coefficient_is_differentiated_not_pulled_out():
@@ -47,10 +47,10 @@ def test_a_variable_coefficient_is_differentiated_not_pulled_out():
 def test_transient_nonlinear_advection_diffusion():
     out = classify("dt(u) + div(u**2*(1, 0)) - div(grad(u)) = 0", {"u": 0})
     eq = out["equations"][0]
-    assert eq["mass"] == {"m": "u", "dm": {"u": "1"}, "flags": {"u": "linear"}}
+    assert eq["mass"] == {"m": "u", "dm": {"u": "1"}, "depends_on": {"u": "linear"}}
     assert eq["advection"]["f"] == ["u**2", "0"]
     assert eq["advection"]["df"] == {"u": ["2*u", "0"]}
-    assert eq["advection"]["flags"] == {"u": "nonlinear"}
+    assert eq["advection"]["depends_on"] == {"u": "nonlinear"}
 
 
 def test_navier_stokes_matches_proteus_structure():
@@ -60,13 +60,13 @@ def test_navier_stokes_matches_proteus_structure():
                    {"rho": sympy.Float(1), "mu": sympy.Float(0.1), "f": sympy.Matrix([0, 0])})
     assert out["components"] == ["v_0", "v_1", "p"]
     v0, v1, p = out["equations"]
-    assert v0["mass"]["flags"] == {"v_0": "linear"}
-    assert v0["advection"]["flags"] == {"v_0": "nonlinear", "v_1": "nonlinear", "p": "linear"}
+    assert v0["mass"]["depends_on"] == {"v_0": "linear"}
+    assert v0["advection"]["depends_on"] == {"v_0": "nonlinear", "v_1": "nonlinear", "p": "linear"}
     assert v0["diffusion"]["v_0"]["a"] == ["0.1", "0.1"]
     # continuity: the velocity is the advective flux of the pressure equation
     assert set(p) == {"component", "advection"}
     assert p["advection"]["f"] == ["v_0", "v_1"]
-    assert p["advection"]["flags"] == {"v_0": "linear", "v_1": "linear"}
+    assert p["advection"]["depends_on"] == {"v_0": "linear", "v_1": "linear"}
 
 
 def test_a_gradient_hamiltonian_and_its_derivatives():
@@ -75,7 +75,7 @@ def test_a_gradient_hamiltonian_and_its_derivatives():
     h = out["equations"][0]["hamiltonian"]
     assert h["H"] == "grad_u_0**2 + grad_u_1**2"
     assert h["dH"] == {"u": ["2*grad_u_0", "2*grad_u_1"]}
-    assert h["flags"] == {"u": "nonlinear"}
+    assert h["depends_on"] == {"u": "nonlinear"}
 
 
 def test_the_output_is_plain_data():
@@ -90,7 +90,7 @@ def test_the_output_is_plain_data():
 
 
 @pytest.mark.parametrize("equations, unknowns, message", [
-    ("-div(grad(u)) = g", {"u": 0}, r"undefined names g"),
+    ("-div(grad(u)) = g", {"u": 0}, r"unknown name 'g'"),
     # (dx(dx(u)) alone *is* a divergence: dx(1*dx(u)), diffusion a = diag(-1, 0))
     ("u*dx(dx(u)) = 0", {"u": 0}, r"second derivatives .* not in divergence form"),
     # the convective form: the Hamiltonian would depend on v, not only grad v
@@ -105,7 +105,7 @@ def test_unsupported_forms_are_refused_with_a_reason(equations, unknowns, messag
 
 
 def test_parse_errors_name_the_text():
-    with pytest.raises(SymbolicError, match=r"cannot parse 'div\(\('"):
+    with pytest.raises(SymbolicError, match=r"expected a number, a name or '\(' at position 5 in 'div\(\('"):
         parse_expression("div((", Space(2, {"u": 0}))
 
 
@@ -113,33 +113,35 @@ def test_parse_errors_name_the_text():
 
 
 def test_the_poisson_example_becomes_a_runnable_problem():
-    problem = adr_problem(load_ymf(EXAMPLES / "poisson.yaml"))
+    problem = adr_problem(load_ymf(EXAMPLES / "poisson.ymf"))
     assert problem["geometry"] == {"lower": [0.0, 0.0], "upper": [1.0, 1.0]}
     assert problem["dirichlet"] == [{"component": "u", "region": "all_boundaries",
                                      "where": None, "value": "0.0"}]
     assert problem["exact"] == {"u": "(1/2)*numpy.sin(numpy.pi*x)*numpy.sin(numpy.pi*y)"}
-    assert problem["transient"] is False
+    assert problem["time"] is None
 
 
 def test_the_heat_example_is_transient_with_an_initial_condition():
-    problem = adr_problem(load_ymf(EXAMPLES / "heat_equation.yaml"))
-    assert problem["transient"] is True
+    problem = adr_problem(load_ymf(EXAMPLES / "heat_equation.ymf"))
+    # the time interval comes from the domain, "t ∈ (0, 50]"
+    assert problem["time"] == [0.0, 50.0]
+    assert problem["has_mass"] is True
     assert problem["initial"]["T"] == "10*numpy.sin(numpy.pi*x)*numpy.sin(numpy.pi*y) + 300"
-    # kappa came from the coefficients, numerically
+    # κ came from the coefficients, numerically
     assert problem["adr"]["equations"][0]["diffusion"]["T"]["a"] == ["0.001", "0.001"]
 
 
 def test_a_composed_navier_stokes_problem_with_periodic_ends():
-    problem = adr_problem(load_ymf(EXAMPLES / "navier_stokes" / "plane_poiseuille_re100.yaml"))
+    problem = adr_problem(load_ymf(EXAMPLES / "navier_stokes" / "plane_poiseuille_re100.ymf"))
     assert problem["unknowns"] == {"v": ["v_0", "v_1"], "p": ["p"]}
     assert {(e["component"], tuple(e["axes"])) for e in problem["periodic"]} == {
         ("v_0", (0,)), ("v_1", (0,)), ("p", (0,))}
     # the forcing (G, 0) with G overridden to 0.08 is a reaction -0.08
     assert problem["adr"]["equations"][0]["reaction"]["r"] == "-0.08"
-    # mu overridden to 0.01, so the exact centreline speed stays 1
-    assert problem["exact"]["v_0"] == "4.0*y*(1 - y)"
+    # μ overridden to 0.01, so the exact centreline speed stays 1
+    assert problem["exact"]["v_0"] == "4.0*y*(1.0 - y)"
     walls = [e for e in problem["dirichlet"] if e["region"] == "walls"]
-    assert walls[0]["where"] == "(abs(y) <= tol) or (abs(y - 1) <= tol)"
+    assert walls[0]["where"] == "(abs(y) <= tol) or (abs(y - 1.0) <= tol)"   # y = H
 
 
 def test_coefficient_formulas_may_use_each_other_in_any_order():

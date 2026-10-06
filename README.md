@@ -49,10 +49,11 @@ Pre-release (0.2.x). The repository is private while the format settles.
 | `.ymf` → `.xmf` conversion (`ymf2xmf`, `ymf.xdmf`) | **Implemented.** Lossless round trip; output opens in ParaView. Reads XDMF from other tools too, refusing by name what the model can't hold ([docs/xdmf-model.yaml](docs/xdmf-model.yaml)) |
 | Self-contained archives: arrays inline, no HDF5 | **Implemented.** `data_item_for(array, inline=True)`; `write_archive.py --inline` |
 | Problem-spec schema v0.2 (`ymf.schema`) | **Implemented.** See the [known gaps](docs/problem-specification.md#known-gaps) |
+| The notation, and strong form → advection-diffusion-reaction form (`ymf.symbolic`) | **Implemented.** Specs run end to end in Proteus, reproducibly, via `ymf_run` |
 | Composing a spec from several files: a model extended into problems (`ymf.compose`) | **Implemented.** Overrides are recorded in the composed document |
 | Units, scales, dimensionless numbers (`ymf.units`) | **Implemented**, apart from rewriting the PDE in dimensionless form |
 | Manning's n lookup and data-source catalog (`ymf.data_sources`) | Implemented; data fetching is a stub |
-| Symbolic layer: parsing the strong and weak forms (sympy/ibvp) | **Planned.** The mathematics in a spec is free text today |
+| Parsing the weak forms; dimensionless rewriting of the equations | **Planned.** Weak forms are free text; the solver derives its weak form from the strong one |
 | Dispatch to several solver backends | Planned |
 | Multi-component coupling through BMI (`System:` block) | Deferred to v0.3 |
 
@@ -76,7 +77,7 @@ what each example demonstrates.
 ## A first look
 
 A specification, abridged from
-[examples/kovasznay_flow.yaml](examples/kovasznay_flow.yaml):
+[examples/kovasznay_flow.ymf](examples/kovasznay_flow.ymf):
 
 ```yaml
 Problem:
@@ -85,17 +86,21 @@ Problem:
     provenance: llm_derived
     processes: [incompressible_flow]
     assumptions: [steady, newtonian, constant_density, two_dimensional]
-  characteristic_scales:
-    length: {value: 1.0, units: m}
-    velocity: {value: 1.0, units: m/s}
-    density: {value: 1.0, units: kg/m3}
-    viscosity: {value: 0.025, units: Pa*s}
   dimensionless_numbers:
-    Re: {formula: "rho * U * L / mu"}           # resolved to 40.0
+    Re: {formula: "ρ U L / μ"}                  # resolved to 40.0
   strong_form:
-    unknowns: [{name: v, units: m/s}, {name: p, units: Pa}]
-    strong_form_expression: |-
-      ρ (v·∇)v - μ Δv + ∇p = 0,   ∇·v = 0   in Ω
+    unknowns: [{name: v, units: m/s, rank: 1}, {name: p, units: Pa}]
+    equations:
+      - "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = 0  in Ω"
+      - "∇·v = 0  in Ω"
+    domain: "Ω = [-0.5, 1.0] × [-0.5, 1.5]"
+    boundary_conditions:
+      - {region: outer, variable: v, type: dirichlet,
+         formula: "(1 - exp(λx) cos(2πy), λ/(2π) exp(λx) sin(2πy))"}
+    coefficients:
+      ρ: {value: 1.0, units: kg/m3}
+      μ: {value: 0.025, units: Pa*s}
+      λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"
     ...
   weak_forms:
     - label: "mixed"                            # needs an inf-sup stable pair
@@ -109,6 +114,12 @@ solution_paths:
       from_weak_form: "stabilized_equal_order"
       finite_element: {velocity: {family: CG, order: 1}, pressure: {family: CG, order: 1}}
 ```
+
+Every equation, domain, region, coefficient and formula is written once,
+in Unicode mathematics that `ymf[symbolic]` parses, so this file is also
+what runs: Proteus's `ymf_run` solves it with each discretization and
+measures the error against the exact solution
+([Running a spec](docs/problem-specification.md#running-a-spec)).
 
 Writing an archive, from
 [examples/write_archive.py](examples/write_archive.py):

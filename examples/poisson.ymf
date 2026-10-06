@@ -1,5 +1,12 @@
 # ============================================================
-# YMF Example: Poisson on unit square (v0.1-compatible)
+# YMF Example: Poisson on the unit square
+#
+# The smallest complete spec, and runnable: every equation, region,
+# condition and solution below is written once, in the notation
+# ymf.symbolic reads (see docs/problem-specification.md), so
+#     ymf_run examples/poisson.ymf
+# solves it with Proteus and measures the error against the exact
+# solution. Bare-string unknowns ([u]) are the v0.1 form, still valid.
 # ============================================================
 
 Problem:
@@ -9,19 +16,13 @@ Problem:
     processes: [heat_conduction]
     assumptions: [steady, constant_properties]
 
-  # Machine-readable domain, equations, conditions and solution: these are
-  # what ymf.symbolic reads to run the problem (see ymf_run in Proteus).
-  geometry:
-    box: {lower: [0.0, 0.0], upper: [1.0, 1.0]}
-
   strong_form:
     provenance: llm_derived
     unknowns: [u]
     equation_formulation: "Poisson"
-    strong_form_expression: |-
-      -Δu = f  in Ω
-    domain: |-
-      Ω = [0,1] × [0,1]
+    equations:
+      - "-Δu = f  in Ω"
+    domain: "Ω = [0, 1] × [0, 1]"
     boundary_regions:
       - name: "all_boundaries"
         geometry: "∂Ω"
@@ -31,9 +32,7 @@ Problem:
         type: dirichlet
         value: 0.0
     coefficients:
-      f: {formula: "pi**2*sin(pi*x)*sin(pi*y)"}
-    equations:
-      - "-div(grad(u)) = f"
+      f: "π² sin(πx) sin(πy)"
 
   weak_forms:
     - label: "global"
@@ -52,8 +51,6 @@ Problem:
         a(u,v) = ∫Ω ∇u·∇v dx
       linear: |-
         l(v) = ∫Ω f·v dx
-      boundary_conditions: |-
-        u|∂Ω = 0  (essential)
       stabilization_method: "none"
 
 solution_paths:
@@ -67,10 +64,7 @@ solution_paths:
       provenance: human_edited
       method: "separation_of_variables"
       solution:
-        formula: |-
-          u(x,y) = sin(πx)sin(πy) / 2
-        expressions:
-          u: "sin(pi*x)*sin(pi*y)/2"
+        formula: "u(x, y) = sin(πx) sin(πy) / 2"
         derivation_source: "sympy.dsolve"
 
   discretizations:

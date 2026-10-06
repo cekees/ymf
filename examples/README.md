@@ -14,10 +14,10 @@ python examples/read_archive.py /tmp/ymf-demo/heat.ymf    # read one back
 
 | File | Shows |
 |---|---|
-| [poisson.yaml](poisson.yaml) | The smallest complete spec: one weak form, one discretization, an exact solution. v0.1-style bare unknowns. |
-| [poisson_v02_enriched.yaml](poisson_v02_enriched.yaml) | The same problem with v0.2 additions: units, a standard name, characteristic scales, a typed boundary condition. |
-| [heat_equation.yaml](heat_equation.yaml) | A time-dependent problem: initial and boundary conditions with units, a time integrator, an analytical solution. The archive examples embed this spec. |
-| [kovasznay_flow.yaml](kovasznay_flow.yaml) | Branching: Navier–Stokes with two weak forms (Taylor–Hood, stabilized equal-order), a discretization for each, a Reynolds number computed from the scales, and a verification plan against the exact solution. |
+| [poisson.ymf](poisson.ymf) | The smallest complete spec: one weak form, one discretization, an exact solution. v0.1-style bare unknowns. |
+| [poisson_v02_enriched.ymf](poisson_v02_enriched.ymf) | The same problem with v0.2 additions: units, a standard name, characteristic scales, a typed boundary condition. |
+| [heat_equation.ymf](heat_equation.ymf) | A time-dependent problem: initial and boundary conditions with units, a time integrator, an analytical solution. The archive examples embed this spec. |
+| [kovasznay_flow.ymf](kovasznay_flow.ymf) | Branching: Navier–Stokes with two weak forms (Taylor–Hood, stabilized equal-order), a discretization for each, a Reynolds number computed from the scales, and a verification plan against the exact solution. |
 
 ### Composed from several files: [navier_stokes/](navier_stokes/)
 
@@ -26,10 +26,10 @@ One model, extended into three problems with `extends`. See
 
 | File | Shows |
 |---|---|
-| [navier_stokes_model.yaml](navier_stokes/navier_stokes_model.yaml) | A `kind: model` file: the physics, the equations, the unknowns, and the units of the coefficients, with no domain, conditions or values. Not a problem on its own. |
-| [planar_couette.yaml](navier_stokes/planar_couette.yaml) | Extends the model into shear-driven flow between plates: geometry, periodic BCs, coefficient values, the exact (linear) solution, a Galerkin weak form and Taylor–Hood, which should reproduce the exact solution on any grid. |
-| [plane_poiseuille.yaml](navier_stokes/plane_poiseuille.yaml) | Extends the model into pressure-driven flow: the parabolic exact solution, a stabilized weak form and equal-order P1, with a grid-convergence plan. |
-| [plane_poiseuille_re100.yaml](navier_stokes/plane_poiseuille_re100.yaml) | Extends Poiseuille to change the viscosity and the driving gradient only (Re 1 → 100). Loading it records each overridden value in `composition.overrides`. |
+| [navier_stokes_model.ymf](navier_stokes/navier_stokes_model.ymf) | A `kind: model` file: the physics, the equations, the unknowns, and the units of the coefficients, with no domain, conditions or values. Not a problem on its own. |
+| [planar_couette.ymf](navier_stokes/planar_couette.ymf) | Extends the model into shear-driven flow between plates: geometry, periodic BCs, coefficient values, the exact (linear) solution, a Galerkin weak form and Taylor–Hood, which should reproduce the exact solution on any grid. |
+| [plane_poiseuille.ymf](navier_stokes/plane_poiseuille.ymf) | Extends the model into pressure-driven flow: the parabolic exact solution, a stabilized weak form and equal-order P1, with a grid-convergence plan. |
+| [plane_poiseuille_re100.ymf](navier_stokes/plane_poiseuille_re100.ymf) | Extends Poiseuille to change the viscosity and the driving gradient only (Re 1 → 100). Loading it records each overridden value in `composition.overrides`. |
 
 ## Scripts
 

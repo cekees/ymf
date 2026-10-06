@@ -1,10 +1,10 @@
 # ============================================================
 # YMF problem: plane Poiseuille flow at Re = 100
 #
-# A parameter variant. It extends plane_poiseuille.yaml and changes only
+# A parameter variant. It extends plane_poiseuille.ymf and changes only
 # the viscosity and the driving gradient, keeping the centreline speed
 # G H² / (8 μ) at 1 m/s so that Re = ρ U H / μ goes from 1 to 100.
-# The parent derives its viscosity and velocity scales from mu and G, so
+# The parent derives its viscosity and velocity scales from μ and G, so
 # those two coefficients are the only physical values to change here. That is
 # well below transition: linear instability sets in at Re ≈ 5772 on the
 # centreline speed and half-gap (≈ 11 500 on the full gap used here), and
@@ -17,11 +17,11 @@
 # name, so a reviewer sees exactly what the variant changes.
 # ============================================================
 
-extends: plane_poiseuille.yaml
+extends: plane_poiseuille.ymf
 
 Problem:
   name: "Plane Poiseuille flow, Re = 100"
   strong_form:
     coefficients:
-      mu: {value: 0.01}
+      μ: {value: 0.01}
       G: {value: 0.08}

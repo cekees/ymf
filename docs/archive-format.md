@@ -59,7 +59,7 @@ extra:                        # optional: anything with no XDMF equivalent
 ```
 
 `extra` is free-form, and is where an archive records its provenance. The
-example archives carry the whole `examples/heat_equation.yaml` problem
+example archives carry the whole `examples/heat_equation.ymf` problem
 specification, so the output says what problem it solved. The archive
 writer doesn't interpret `extra`; it stores it.
 

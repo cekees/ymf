@@ -2,7 +2,7 @@
 
 A document may name another document it builds on::
 
-    extends: navier_stokes_model.yaml     # relative to this file
+    extends: navier_stokes_model.ymf     # relative to this file
 
 The usual shape is a **model** file that states the physics and the
 equations but is not yet a well-posed problem (no domain, boundary
@@ -39,12 +39,12 @@ and it is recorded rather than refused. The composed document gets a
 ``composition`` block naming every source file and every override::
 
     composition:
-      sources: [navier_stokes_model.yaml, plane_poiseuille.yaml, ...]
+      sources: [navier_stokes_model.ymf, plane_poiseuille.ymf, ...]
       overrides:
         - path: Problem.characteristic_scales.viscosity.value
           was: 1.0
           now: 0.01
-          set_by: plane_poiseuille_re100.yaml
+          set_by: plane_poiseuille_re100.ymf
 
 ``extends`` and ``kind`` describe a file, not the problem, and are not
 merged: the composed document is self-contained. A composed *model* is

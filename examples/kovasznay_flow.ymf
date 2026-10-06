@@ -27,39 +27,50 @@ Problem:
   characteristic_scales:
     length: {value: 1.0, units: m}
     velocity: {value: 1.0, units: m/s}
-    density: {value: 1.0, units: kg/m3}
-    viscosity: {value: 0.025, units: Pa*s}
+    density: {derived: true, formula: "ρ", units: kg/m3}
+    viscosity: {derived: true, formula: "μ", units: Pa*s}
     time: {derived: true, formula: "L_char / U_char"}
 
   dimensionless_numbers:
-    Re: {formula: "rho * U * L / mu"}
+    Re: {formula: "ρ U L / μ"}
 
   strong_form:
     provenance: llm_derived
     unknowns:
       - name: v
         units: m/s
+        rank: 1
       - name: p
         units: Pa
     equation_formulation: "incompressible Navier-Stokes, primitive variables"
-    strong_form_expression: |-
-      ρ (v·∇)v - μ Δv + ∇p = 0   in Ω
-      ∇·v = 0                     in Ω
-    domain: |-
-      Ω = [-0.5, 1.0] × [-0.5, 1.5]
+    # The full momentum equation, solved steadily (which drops ρ ∂v/∂t);
+    # conservative form: ∇·(ρ v⊗v) = ρ(v·∇)v because ∇·v = 0.
+    equations:
+      - "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = 0  in Ω"
+      - "∇·v = 0  in Ω"
+    domain: "Ω = [-0.5, 1.0] × [-0.5, 1.5]"
     boundary_regions:
       - name: "outer"
         geometry: "∂Ω"
-    # The Dirichlet data on "outer" is the exact velocity, which varies
-    # along the boundary. boundary_conditions entries take a constant
-    # value only, so the condition is stated in the weak forms instead.
-    known_analytical_solution:
-      formula: |-
-        λ = Re/2 - sqrt(Re²/4 + 4π²)
-        v_x = 1 - exp(λx) cos(2πy)
-        v_y = λ/(2π) exp(λx) sin(2πy)
-        p   = (1 - exp(2λx)) / 2
-      reference: "L. I. G. Kovasznay, Proc. Camb. Phil. Soc. 44 (1948) 58-62"
+      # one point fixes the pressure's constant
+      - name: "pressure_datum"
+        geometry: "x = -0.5 and y = -0.5"
+    # Dirichlet data from the exact solution (Kovasznay 1948): the velocity
+    # all round, and the pressure at one point.
+    boundary_conditions:
+      - region: "pressure_datum"
+        variable: p
+        type: dirichlet
+        formula: "(1 - exp(2λx))/2"
+      - region: "outer"
+        variable: v
+        type: dirichlet
+        formula: "(1 - exp(λx) cos(2πy), λ/(2π) exp(λx) sin(2πy))"
+    coefficients:
+      ρ: {value: 1.0, units: kg/m3}
+      μ: {value: 0.025, units: Pa*s}
+      # with unit length and velocity scales, Re = ρ/μ = 40
+      λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"
 
   weak_forms:
     - label: "mixed"
@@ -77,9 +88,6 @@ Problem:
         b(w,p) = ∫Ω p ∇·w dx
       linear: |-
         l(w) = 0
-      boundary_conditions: |-
-        v|∂Ω = exact Kovasznay velocity  (essential)
-        mean pressure fixed to the exact solution's mean
       stabilization_method: "none"
 
     - label: "stabilized_equal_order"
@@ -95,8 +103,6 @@ Problem:
         (mixed form) + Σ_K τ_K ∫K R(v,p)·(ρ (v·∇)w + ∇q) dx
       linear: |-
         l(w) = 0
-      boundary_conditions: |-
-        v|∂Ω = exact Kovasznay velocity  (essential)
       stabilization_method: "SUPG/PSPG"
 
 solution_paths:
@@ -105,8 +111,10 @@ solution_paths:
       provenance: human_specified
       method: "closed_form"
       solution:
-        formula: "see Problem.strong_form.known_analytical_solution"
-        notes: "Exact for every Re; used here as the verification reference."
+        formula: |-
+          v = (1 - exp(λx) cos(2πy), λ/(2π) exp(λx) sin(2πy))
+          p = (1 - exp(2λx))/2
+        notes: "L. I. G. Kovasznay, Proc. Camb. Phil. Soc. 44 (1948) 58-62. Exact for every Re."
 
   discretizations:
     - name: "taylor_hood"

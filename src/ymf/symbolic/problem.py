@@ -1,9 +1,10 @@
 """A YMF problem specification -> an ADR problem a solver can run.
 
-:func:`adr_problem` reads the machine-readable parts of a spec --
-``geometry``, ``strong_form.equations``, the coefficients, boundary
-regions with ``where``, boundary and initial conditions, and analytical
-``expressions`` -- and returns a plain-data description:
+:func:`adr_problem` reads a spec -- ``strong_form.domain`` and
+``equations``, the coefficients, the boundary regions' ``geometry``,
+boundary and initial conditions, and the analytical solution's
+``formula``, each written once in the notation of
+:mod:`ymf.symbolic.notation` -- and returns a plain-data description:
 
     {"adr": {...},            # ymf.symbolic.adr.adr_form
      "unknowns": {name: [component, ...]},
@@ -12,7 +13,7 @@ regions with ``where``, boundary and initial conditions, and analytical
      "periodic": [{"component", "region", "axes"}, ...],
      "initial": {component: code},
      "exact": {component: code},
-     "transient": bool}
+     "time": [t0, t1] or None}
 
 Every expression in it is a numpy code string in x, y, z, t (and, in the
 ADR coefficients, the unknowns), so the solver side needs numpy and nothing
@@ -22,7 +23,7 @@ consumer supplies (a length tolerance for testing points on a boundary).
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import sympy
 
@@ -100,28 +101,44 @@ def _components(value, name: str, rank: int, space: Space, where: str) -> Dict[s
     return {"%s_%d" % (name, i): to_code(value[i]) for i in range(space.dim)}
 
 
-def _where(text: str, space: Space) -> str:
-    """'x = 0 and y = 1 or x = 4' -> numpy-free boolean code using tol."""
-    alternatives = []
-    for alternative in text.split(" or "):
-        tests = []
-        for atom in alternative.split(" and "):
-            if "=" not in atom:
-                raise SymbolicError("boundary predicate %r: each test is 'a = b'" % (atom,))
-            lhs, rhs = atom.split("=", 1)
-            diff = parse_expression(lhs, space) - parse_expression(rhs, space)
-            tests.append("abs(%s) <= tol" % to_code(diff))
-        alternatives.append("(" + " and ".join(tests) + ")")
-    return " or ".join(alternatives)
+def _where(text: str, space: Space) -> Optional[str]:
+    """A region's geometry -> boolean code using ``tol`` (None: the whole boundary)."""
+    from ymf.symbolic.notation import NotationError, Parser
+    try:
+        return Parser(space).predicate(text)
+    except NotationError as exc:
+        raise SymbolicError("boundary region %r: %s" % (text, exc)) from exc
+
+
+def _domain_dimension(text: str) -> int:
+    """Count the space intervals of a domain before reading their bounds.
+
+    Coefficient formulas need the dimension (they may use x, y, z) and a
+    domain's bounds may name coefficients, so the dimension comes first,
+    from the number of '×' factors before any ', t ∈ ...'.
+    """
+    from ymf.symbolic.notation import tokens
+    count, depth = 1, 0
+    for kind, value, _ in tokens(text):
+        if value in "([":
+            depth += 1
+        elif value in ")]":
+            depth -= 1
+        elif value == "×" and depth == 0:
+            count += 1
+        elif value == "," and depth == 0:
+            break
+    return count
 
 
 def _periodic_axes(where, lower, upper, space: Space, region: str) -> List[int]:
     """The axes whose two opposite faces both lie in a periodic region."""
-    if not where:
-        raise SymbolicError("periodic region %s needs a where predicate naming its "
-                            "two faces, e.g. 'x = 0 or x = 4'" % (region,))
+    code = _where(where, space)
+    if code is None:
+        raise SymbolicError("periodic region %s must name its two faces, e.g. "
+                            "'x = 0 or x = 4', not the whole boundary" % (region,))
     import math
-    test = compile(_where(where, space), "<where>", "eval")
+    test = compile(code, "<where>", "eval")
     names = "xyz"[:space.dim]
     tol = 1e-8 * max(u - l for u, l in zip(upper, lower))
     axes = []
@@ -144,16 +161,11 @@ def _periodic_axes(where, lower, upper, space: Space, region: str) -> List[int]:
 
 def adr_problem(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Build the plain-data ADR problem for a validated (composed) spec."""
-    problem = doc["Problem"]
-    if "geometry" not in problem:
-        raise SymbolicError("Problem.geometry is needed to run a spec (a box)")
-    box = problem["geometry"]["box"]
-    lower, upper = [float(v) for v in box["lower"]], [float(v) for v in box["upper"]]
-    if len(lower) != len(upper):
-        raise SymbolicError("geometry.box: lower and upper differ in length")
-    dim = len(lower)
+    from ymf.symbolic.notation import NotationError, Parser
 
+    problem = doc["Problem"]
     strong = problem["strong_form"]
+    dim = _domain_dimension(strong["domain"])
     if not strong.get("equations"):
         raise SymbolicError("strong_form.equations is needed to run a spec")
     ranks = {}
@@ -165,13 +177,17 @@ def adr_problem(doc: Dict[str, Any]) -> Dict[str, Any]:
 
     coefficients = _coefficients(strong.get("coefficients") or {}, dim)
     space = Space(dim, ranks, coefficients)
+    try:
+        lower, upper, time = Parser(Space(dim, {}, coefficients)).domain(strong["domain"])
+    except NotationError as exc:
+        raise SymbolicError("strong_form.domain: %s" % exc) from exc
 
     residuals: List[sympy.Expr] = []
     for text in strong["equations"]:
         residuals.extend(parse_equation(text, space))
     adr = adr_form(residuals, space)
 
-    regions = {r["name"]: r.get("where") for r in strong.get("boundary_regions", [])}
+    regions = {r["name"]: r["geometry"] for r in strong.get("boundary_regions", [])}
     dirichlet = []
     periodic = []
     for bc in strong.get("boundary_conditions") or []:
@@ -201,7 +217,7 @@ def adr_problem(doc: Dict[str, Any]) -> Dict[str, Any]:
         for component, code in _components(value, name, ranks[name], space,
                                            "boundary condition on %s" % bc["region"]).items():
             dirichlet.append({"component": component, "region": bc["region"],
-                              "where": _where(where, space) if where else None,
+                              "where": _where(where, space),
                               "value": code})
 
     initial = {}
@@ -216,18 +232,22 @@ def adr_problem(doc: Dict[str, Any]) -> Dict[str, Any]:
 
     exact = {}
     for entry in (doc.get("solution_paths") or {}).get("analytical") or []:
-        expressions = entry["solution"].get("expressions")
-        if expressions:
-            for name, text in expressions.items():
-                exact.update(_components(parse_expression(text, space), name,
-                                         ranks.get(name, 0), space,
-                                         "analytical solution %s" % entry["name"]))
-            break
+        try:
+            values = Parser(space).assignments(entry["solution"]["formula"], ranks)
+        except NotationError as exc:
+            raise SymbolicError("analytical solution %s: %s" % (entry["name"], exc)) from exc
+        for name, value in values.items():
+            exact.update(_components(value, name, ranks[name], space,
+                                     "analytical solution %s" % entry["name"]))
+        break
 
-    transient = any("mass" in e for e in adr["equations"])
+    has_mass = any("mass" in e for e in adr["equations"])
     unknowns = {name: ([name] if rank == 0 else ["%s_%d" % (name, i) for i in range(dim)])
                 for name, rank in ranks.items()}
     return {"adr": adr, "unknowns": unknowns,
             "geometry": {"lower": lower, "upper": upper},
             "dirichlet": dirichlet, "periodic": periodic, "initial": initial, "exact": exact,
-            "transient": transient}
+            # The time interval the problem is posed on; None for a steady
+            # problem. A time derivative in a model used steadily (Couette
+            # from the Navier-Stokes model) is dropped by a steady solve.
+            "time": list(time) if time else None, "has_mass": has_mass}

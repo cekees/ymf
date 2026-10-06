@@ -77,11 +77,11 @@ def main(argv=None) -> int:
 
     domain, extra = read_ymf(args.archive)
     problem = extra["Problem"]
-    kappa_spec = problem["strong_form"]["coefficients"]["kappa"]["value"]
+    kappa_spec = float(problem["strong_form"]["coefficients"]["κ"]["value"])
     t_wall = problem["strong_form"]["boundary_conditions"][0]["value"]
     print("problem: %s" % problem["name"])
     print("kappa in the spec: %g %s"
-          % (kappa_spec, problem["strong_form"]["coefficients"]["kappa"]["units"]))
+          % (kappa_spec, problem["strong_form"]["coefficients"]["κ"]["units"]))
 
     collection = domain["TimeCollections"][0]
     times, peaks = [], []

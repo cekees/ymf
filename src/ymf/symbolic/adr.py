@@ -196,9 +196,11 @@ def adr_form(equations: Sequence[sympy.Expr], space: Space) -> Dict[str, Any]:
     component order) it holds, for each nonzero slot, the coefficient as a
     numpy code string over the names ``x, y, z, t``, the component names,
     and ``grad_<component>_<axis>`` (Hamiltonian only), plus its derivative
-    with respect to each component it depends on, and Proteus's dependence
-    flag for each. Diffusion tensors are given in CSR form over their
-    symbolic nonzeros, since that is how Proteus stores them.
+    with respect to each component it depends on, and ``depends_on``: how
+    it depends on each (``linear`` or ``nonlinear``; an empty map is a
+    constant). How a solver encodes that -- Proteus's flag dictionaries,
+    say -- is the solver's business. Diffusion tensors are given in CSR
+    form over their symbolic nonzeros.
     """
     if len(equations) != len(space.components):
         raise SymbolicError(
@@ -220,7 +222,7 @@ def adr_form(equations: Sequence[sympy.Expr], space: Space) -> Dict[str, Any]:
             entry["mass"] = {
                 "m": to_code(eq.mass),
                 "dm": {c: to_code(sympy.diff(eq.mass, s)) for c, s in _syms(space, deps)},
-                "flags": deps,
+                "depends_on": deps,
             }
 
         if any(f != 0 for f in eq.advection):
@@ -232,7 +234,7 @@ def adr_form(equations: Sequence[sympy.Expr], space: Space) -> Dict[str, Any]:
                 "f": [to_code(f) for f in eq.advection],
                 "df": {c: [to_code(sympy.diff(f, s)) for f in eq.advection]
                        for c, s in _syms(space, deps)},
-                "flags": deps or {comps[i]: "constant"},
+                "depends_on": deps,
             }
 
         if eq.diffusion:
@@ -242,13 +244,13 @@ def adr_form(equations: Sequence[sympy.Expr], space: Space) -> Dict[str, Any]:
                 deps = {}
                 for v in values:
                     for c, d in _flag(v, space).items():
-                        deps[c] = "nonlinear"
+                        deps[c] = "nonlinear" if "nonlinear" in (d, deps.get(c)) else d
                 diffusion[phi] = {
                     "rowptr": rows, "colind": cols,
                     "a": [to_code(v) for v in values],
                     "da": {c: [to_code(sympy.diff(v, s)) for v in values]
                            for c, s in _syms(space, deps)},
-                    "flags": deps or {phi: "constant"},
+                    "depends_on": deps,
                 }
             entry["diffusion"] = diffusion
 
@@ -257,7 +259,7 @@ def adr_form(equations: Sequence[sympy.Expr], space: Space) -> Dict[str, Any]:
             entry["reaction"] = {
                 "r": to_code(eq.reaction),
                 "dr": {c: to_code(sympy.diff(eq.reaction, s)) for c, s in _syms(space, deps)},
-                "flags": deps or {comps[i]: "constant"},
+                "depends_on": deps,
             }
 
         if eq.hamiltonian != 0:
@@ -277,7 +279,7 @@ def adr_form(equations: Sequence[sympy.Expr], space: Space) -> Dict[str, Any]:
                     "equation for %s: the Hamiltonian %s depends on the unknowns "
                     "themselves, not only their gradients; Proteus's H(grad u) can't "
                     "hold that -- write the term in divergence form" % (comps[i], eq.hamiltonian))
-            entry["hamiltonian"] = {"H": to_code(h), "dH": dH, "flags": flags}
+            entry["hamiltonian"] = {"H": to_code(h), "dH": dH, "depends_on": flags}
 
         out_equations.append(entry)
     return {"dim": space.dim, "components": list(comps), "equations": out_equations}

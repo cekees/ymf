@@ -31,7 +31,6 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Sequence
 
 import sympy
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations
 
 __all__ = [
     "D", "Dt", "Space", "SymbolicError", "parse_expression", "parse_equation",
@@ -182,79 +181,19 @@ class Space:
         return ns
 
 
-def _tuples_to_vectors(tokens, local_dict, global_dict):
-    """Turn every parenthesized, comma-separated group into vec(...).
-
-    A '(' opens a call when it follows a name or a closing bracket; any
-    other '(' whose group holds a top-level comma is a tuple literal, and
-    becomes a column vector, so ``(1, 0)`` works inside expressions too.
-    """
-    from tokenize import NAME, OP
-    out = []
-    for i, (kind, value) in enumerate(tokens):
-        if kind == OP and value == "(":
-            previous = out[-1] if out else None
-            is_call = previous is not None and (
-                previous[0] == NAME or (previous[0] == OP and previous[1] in ")]"))
-            if not is_call:
-                depth, comma = 0, False
-                for kind2, value2 in tokens[i:]:
-                    if kind2 == OP and value2 in "([":
-                        depth += 1
-                    elif kind2 == OP and value2 in ")]":
-                        depth -= 1
-                        if depth == 0:
-                            break
-                    elif kind2 == OP and value2 == "," and depth == 1:
-                        comma = True
-                if comma:
-                    out.append((NAME, "vec"))
-        out.append((kind, value))
-    return out
-
-
-def _vector(value, space: Space):
-    """A parsed tuple becomes a column vector."""
-    if isinstance(value, tuple):
-        return sympy.Matrix([sympy.sympify(v) for v in value])
-    return value
-
-
 def parse_expression(text: str, space: Space):
-    """Parse one expression (no ``=``). Tuples become column vectors."""
+    """Parse one expression in the spec notation (see :mod:`ymf.symbolic.notation`)."""
+    from ymf.symbolic.notation import NotationError, Parser
     try:
-        value = parse_expr(text, local_dict=space.namespace(),
-                           global_dict={"__builtins__": {}, "Integer": sympy.Integer,
-                                        "Float": sympy.Float, "Rational": sympy.Rational,
-                                        "Symbol": sympy.Symbol},
-                           transformations=standard_transformations + (_tuples_to_vectors,),
-                           evaluate=True)
-    except SymbolicError:
-        raise
-    except Exception as exc:
-        raise SymbolicError("cannot parse %r: %s" % (text, exc)) from exc
-    return _vector(value, space)
+        return Parser(space).expression(str(text))
+    except NotationError as exc:
+        raise SymbolicError(str(exc)) from exc
 
 
 def parse_equation(text: str, space: Space) -> List[sympy.Expr]:
-    """Parse ``lhs = rhs`` into scalar residuals ``lhs - rhs`` (one per component)."""
-    parts = text.split("=")
-    if len(parts) == 1:
-        lhs, rhs = parts[0], "0"
-    elif len(parts) == 2:
-        lhs, rhs = parts
-    else:
-        raise SymbolicError("equation %r has more than one '='" % (text,))
-    left, right = parse_expression(lhs, space), parse_expression(rhs, space)
-    if isinstance(right, sympy.MatrixBase) != isinstance(left, sympy.MatrixBase):
-        # 0 on the right of a vector equation means the zero vector
-        if isinstance(left, sympy.MatrixBase) and sympy.sympify(right) == 0:
-            right = sympy.zeros(*left.shape)
-        else:
-            raise SymbolicError("equation %r mixes a vector and a scalar" % (text,))
-    residual = left - right
-    if isinstance(residual, sympy.MatrixBase):
-        if residual.shape[1] != 1:
-            raise SymbolicError("equation %r is a tensor equation" % (text,))
-        return [sympy.sympify(r) for r in residual]
-    return [sympy.sympify(residual)]
+    """Parse ``lhs = rhs [in region]`` into scalar residuals ``lhs - rhs``."""
+    from ymf.symbolic.notation import NotationError, Parser
+    try:
+        return Parser(space).equation(str(text))
+    except NotationError as exc:
+        raise SymbolicError(str(exc)) from exc

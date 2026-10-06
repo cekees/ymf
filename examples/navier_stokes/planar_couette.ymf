@@ -1,13 +1,13 @@
 # ============================================================
 # YMF problem: planar Couette flow, Re = 10
 #
-# Extends the Navier-Stokes model with a geometry, boundary conditions,
+# Extends the Navier-Stokes model with a domain, boundary conditions,
 # coefficient values, an exact solution, a weak form and a discretization.
 # The bottom plate is fixed and the top plate slides at speed U; the flow
 # is periodic in x. The exact velocity is linear in y.
 # ============================================================
 
-extends: navier_stokes_model.yaml
+extends: navier_stokes_model.ymf
 
 Problem:
   name: "Planar Couette flow, Re = 10"
@@ -15,35 +15,29 @@ Problem:
     provenance: human_specified
     assumptions: [steady, fully_developed]   # added to the model's
 
+  # Derived from the coefficients, so each value is stated once.
   characteristic_scales:
-    length: {value: 1.0, units: m}           # the gap H
-    velocity: {value: 1.0, units: m/s}       # the top plate's speed U
-    # Derived from the coefficients, so each value is stated once.
-    density: {derived: true, formula: "rho", units: kg/m3}
-    viscosity: {derived: true, formula: "mu", units: Pa*s}
+    length: {derived: true, formula: "H", units: m}
+    velocity: {derived: true, formula: "U", units: m/s}
+    density: {derived: true, formula: "ρ", units: kg/m3}
+    viscosity: {derived: true, formula: "μ", units: Pa*s}
 
   dimensionless_numbers:
-    Re: {formula: "rho * U * L / mu"}
-
-  geometry:
-    box: {lower: [0.0, 0.0], upper: [4.0, 1.0]}
+    Re: {formula: "ρ U H / μ"}
 
   strong_form:
-    domain: |-
-      Ω = [0, 4] × [0, 1]  (m),  gap H = 1 m
+    domain: "Ω = [0, 4] × [0, H]"
     boundary_regions:
       - name: "bottom"
         geometry: "y = 0"
-        where: "y = 0"
       - name: "top"
         geometry: "y = H"
-        where: "y = 1"
       - name: "ends"
-        geometry: "x = 0 and x = 4, identified"
-        where: "x = 0 or x = 4"
+        geometry: "x = 0 or x = 4"
+      # A single point fixes the pressure's constant: the corner, with its
+      # periodic copy.
       - name: "pressure_datum"
-        geometry: "the corner (0, 0), and its periodic copy (4, 0)"
-        where: "x = 0 and y = 0 or x = 4 and y = 0"
+        geometry: "x = 0 and y = 0 or x = 4 and y = 0"
     boundary_conditions:
       - region: "ends"
         variable: v
@@ -58,24 +52,19 @@ Problem:
       - region: "top"
         variable: v
         type: dirichlet
-        formula: "(1, 0)"            # the plate's speed U = 1 m/s
-      # Periodic ends and velocity walls leave the pressure free up to a
-      # constant; fixing it at one point (both periodic copies of it)
-      # picks p0 = 0.
+        formula: "(U, 0)"
       - region: "pressure_datum"
         variable: p
         type: dirichlet
         value: 0.0
-    # Values for the coefficients the model declared. Units come from the
-    # model, so they are not repeated here.
+    # Values for the coefficients the model declared (units come from the
+    # model), and the two this problem adds.
     coefficients:
-      rho: {value: 1.0}
-      mu: {value: 0.1}
+      ρ: {value: 1.0}
+      μ: {value: 0.1}
       f: {formula: "(0, 0)"}
-    known_analytical_solution:
-      formula: |-
-        v = (U y / H, 0),  p = p0
-      reference: "Any fluid mechanics text; satisfies the equations exactly for every Re."
+      U: {value: 1.0, units: m/s}      # the top plate's speed
+      H: {value: 1.0, units: m}        # the gap
 
   weak_forms:
     - label: "galerkin_periodic"
@@ -86,16 +75,13 @@ Problem:
         Boundary terms vanish on the plates (w = 0) and cancel on the
         periodic ends.
       solution_spaces:
-        trial: "H1_per(Ω)² × L2_0(Ω), v = (0,0) on bottom, v = (U,0) on top"
-        test: "H1_per,0(Ω)² × L2_0(Ω)"
+        trial: "H1_per(Ω)² × L2(Ω)"
+        test: "H1_per,0(Ω)² × L2(Ω)"
       inf_sup_stability: "requires an inf-sup stable pair"
       bilinear: |-
         ∫Ω ρ (v·∇)v·w dx + ∫Ω μ ∇v:∇w dx - ∫Ω p ∇·w dx + ∫Ω q ∇·v dx
       linear: |-
         l(w) = 0
-      boundary_conditions: |-
-        v = (0, 0) on bottom, v = (U, 0) on top  (essential)
-        periodic in x on ends
       stabilization_method: "none"
 
 solution_paths:
@@ -104,11 +90,11 @@ solution_paths:
       provenance: human_specified
       method: "closed_form"
       solution:
+        # p is 0 because the pressure datum fixes it there
         formula: |-
-          v = (U y / H, 0),  p = p0
-        expressions:
-          v: "(y, 0)"
-          p: "0"
+          v = (U y / H, 0)
+          p = 0
+        notes: "Satisfies the equations exactly for every Re."
   discretizations:
     - name: "taylor_hood"
       provenance: human_specified

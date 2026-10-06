@@ -7,10 +7,10 @@
 # coefficient values. Each problem file in this directory extends it into
 # a complete, well-posed problem:
 #
-#   navier_stokes_model.yaml
-#   ├── planar_couette.yaml          shear-driven flow between plates
-#   └── plane_poiseuille.yaml        pressure-driven flow between plates
-#       └── plane_poiseuille_re100.yaml    the same flow at Re = 100
+#   navier_stokes_model.ymf
+#   ├── planar_couette.ymf          shear-driven flow between plates
+#   └── plane_poiseuille.ymf        pressure-driven flow between plates
+#       └── plane_poiseuille_re100.ymf    the same flow at Re = 100
 #
 # For multiphysics the model is where most of the work goes, so it is
 # written once and reviewed once.
@@ -37,20 +37,16 @@ Problem:
       - name: p
         units: Pa
     equation_formulation: "incompressible Navier-Stokes, primitive variables"
-    strong_form_expression: |-
-      ρ (∂v/∂t + (v·∇)v) - μ Δv + ∇p = f   in Ω × (0, t_end]
-      ∇·v = 0                             in Ω × (0, t_end]
+    # The momentum equation is in conservative form: ∇·(ρ v⊗v) equals
+    # ρ(v·∇)v when ∇·v = 0, and as a divergence it is an advective flux the
+    # weak form integrates by parts. ∇p is part of that flux too (∇·(pI)),
+    # so the natural boundary condition is the traction.
+    equations:
+      - "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f  in Ω"
+      - "∇·v = 0  in Ω"
     # The coefficients the equations use, with units and no values: a
     # problem supplies the values.
     coefficients:
-      rho: {units: kg/m3}
-      mu: {units: Pa*s}
+      ρ: {units: kg/m3}
+      μ: {units: Pa*s}
       f: {units: N/m3}
-    # Machine-readable, in conservative form: div(rho v⊗v) equals
-    # rho (v·∇)v when div(v) = 0, and as a divergence it is an advective
-    # flux the transport form can integrate by parts. The pressure is part
-    # of that flux too (div(p I) = grad p), so the natural boundary
-    # condition is the traction.
-    equations:
-      - "rho*dt(v) + div(rho*outer(v, v)) - div(mu*grad(v)) + grad(p) = f"
-      - "div(v) = 0"

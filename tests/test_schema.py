@@ -9,14 +9,14 @@ EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 
 
 def test_load_v01_compatible_example():
-    doc = load_ymf(EXAMPLES_DIR / "poisson.yaml")
+    doc = load_ymf(EXAMPLES_DIR / "poisson.ymf")
     assert doc["Problem"]["name"] == "Poisson unit square"
     # v0.1-style bare string unknowns must still validate
     assert doc["Problem"]["strong_form"]["unknowns"] == ["u"]
 
 
 def test_load_v02_enriched_example():
-    doc = load_ymf(EXAMPLES_DIR / "poisson_v02_enriched.yaml")
+    doc = load_ymf(EXAMPLES_DIR / "poisson_v02_enriched.ymf")
     unknowns = doc["Problem"]["strong_form"]["unknowns"]
     assert unknowns[0]["name"] == "T"
     assert unknowns[0]["units"] == "K"
