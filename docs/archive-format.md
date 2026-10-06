@@ -9,6 +9,10 @@ on its `ymf_io` branch.
 The code is `ymf.archive` (data model and YAML I/O), `ymf.xdmf` (conversion
 to XDMF), and the `ymf2xmf` command. All three depend on `pyyaml` alone.
 
+If you know XDMF, [xdmf-model.yaml](xdmf-model.yaml) goes through XDMF's
+model element by element, in the order of its specification, and says
+which parts a `.ymf` archive represents.
+
 - [Files on disk](#files-on-disk)
 - [The `.ymf` document](#the-ymf-document)
 - [The domain model](#the-domain-model)

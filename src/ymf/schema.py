@@ -2,9 +2,11 @@
 
 This module implements the schema described in
 ``docs/ymf-schema-v0.2-delta.md``, merged on top of the v0.1 schema in
-``docs/ymf-schema.md``. Only ``unknowns`` widens its accepted type
-(bare string OR structured map) relative to v0.1; every other v0.2
-addition is optional and preserves v0.1 documents unchanged.
+``docs/ymf-schema.md``. Relative to v0.1, ``unknowns`` widens its
+accepted type (bare string OR structured map), and the strong form's
+``unknown_provenance`` is replaced by ``provenance``, the key every other
+block uses; a structured unknown may carry its own ``provenance`` to
+override it. Every other v0.2 addition is optional.
 """
 
 from __future__ import annotations
@@ -161,6 +163,8 @@ UnknownDef = Str() | Map(
         "name": Str(),
         Optional("units"): Str(),
         Optional("std_name"): Str(),
+        # Overrides strong_form.provenance for this unknown alone.
+        Optional("provenance"): ProvenanceEnum,
     }
 )
 
@@ -261,8 +265,10 @@ MeshGenerationDef = Map(
 
 StrongFormDef = Map(
     {
+        # Covers the equations and the choice of unknowns. Earlier drafts
+        # called this "unknown_provenance", which read as "provenance unknown".
+        "provenance": ProvenanceEnum,
         "unknowns": Seq(UnknownDef),  # CHANGED in v0.2: was Seq(Str())
-        "unknown_provenance": ProvenanceEnum,
         "equation_formulation": Str(),
         "strong_form_expression": Str(),
         "domain": Str(),
@@ -308,8 +314,37 @@ YMF_SCHEMA = Map(
         ),
         Optional("archive"): Any(),
         Optional("Xdmf"): Any(),
+        # File-level keys, see ymf.compose. "extends" names the document
+        # this one builds on; "kind: model" marks a file that states the
+        # physics but is not yet a well-posed problem; "composition" is
+        # written by the loader into a composed document.
+        Optional("extends"): Str(),
+        Optional("kind"): Enum(["model", "problem"]),
+        Optional("composition"): Any(),
     }
 )
+
+
+def _partial(validator):
+    """The same validator with every mapping key made optional.
+
+    Used for files that hold only part of a problem: a model, or a problem
+    that extends one. Only mappings reached through mapping keys are
+    relaxed. Entries of lists (an unknown, a weak form, a discretization)
+    and of pattern maps keep their required keys, since an entry that is
+    present at all should be complete.
+    """
+    if isinstance(validator, Map):
+        return Map({
+            (key if isinstance(key, Optional) else Optional(key)): _partial(value)
+            for key, value in validator._validator.items()
+        })
+    return validator
+
+
+#: :data:`YMF_SCHEMA` with every section and field optional, for model files
+#: and for the individual files of an ``extends`` chain.
+PARTIAL_YMF_SCHEMA = _partial(YMF_SCHEMA)
 
 
 # YMF documents and examples use YAML flow-style collections extensively
@@ -323,20 +358,22 @@ _ALLOW_FLOW_STYLE = True
 def load_ymf(path: str | Path) -> AnyType:
     """Load and validate a YMF YAML file, returning a plain Python object.
 
-    Raises ``strictyaml.YAMLValidationError`` on schema violations.
+    A file with ``extends`` is composed with the documents it builds on, and
+    a ``kind: model`` file is validated as a partial document; see
+    :mod:`ymf.compose`. Raises ``strictyaml.YAMLValidationError`` on schema
+    violations, naming the file that holds the error.
     """
-    text = Path(path).read_text()
-    # NB: strictyaml.load() does not forward allow_flow_style; use
-    # dirty_load(), which is the same generic_load() implementation with
-    # the flow-style option exposed.
-    parsed = strictyaml.dirty_load(
-        text, YMF_SCHEMA, allow_flow_style=_ALLOW_FLOW_STYLE
-    )
-    return parsed.data
+    from ymf.compose import load_composed  # ymf.compose imports this module
+
+    return load_composed(path)
 
 
 def validate_ymf(text: str) -> AnyType:
-    """Validate a YMF document already loaded as a string; returns plain data."""
+    """Validate a YMF document already loaded as a string; returns plain data.
+
+    Does not follow ``extends``, which needs a file to resolve paths
+    against; use :func:`load_ymf` for that.
+    """
     parsed = strictyaml.dirty_load(
         text, YMF_SCHEMA, allow_flow_style=_ALLOW_FLOW_STYLE
     )

@@ -35,17 +35,17 @@ Problem:
     Re: {formula: "rho * U * L / mu"}
 
   strong_form:
+    provenance: llm_derived
     unknowns:
       - name: v
         units: m/s
       - name: p
         units: Pa
-    unknown_provenance: llm_derived
     equation_formulation: "incompressible Navier-Stokes, primitive variables"
-    strong_form_expression: |
+    strong_form_expression: |-
       ρ (v·∇)v - μ Δv + ∇p = 0   in Ω
       ∇·v = 0                     in Ω
-    domain: |
+    domain: |-
       Ω = [-0.5, 1.0] × [-0.5, 1.5]
     boundary_regions:
       - name: "outer"
@@ -54,7 +54,7 @@ Problem:
     # along the boundary. boundary_conditions entries take a constant
     # value only, so the condition is stated in the weak forms instead.
     known_analytical_solution:
-      formula: |
+      formula: |-
         λ = Re/2 - sqrt(Re²/4 + 4π²)
         v_x = 1 - exp(λx) cos(2πy)
         v_y = λ/(2π) exp(λx) sin(2πy)
@@ -64,38 +64,38 @@ Problem:
   weak_forms:
     - label: "mixed"
       provenance: llm_derived
-      derivation: |
+      derivation: |-
         Multiply momentum by w ∈ H1_0(Ω)², continuity by q ∈ L2_0(Ω),
         integrate, and integrate the viscous and pressure terms by parts.
       solution_spaces:
         trial: "H1(Ω)² × L2_0(Ω)"
         test: "H1_0(Ω)² × L2_0(Ω)"
       inf_sup_stability: "requires an inf-sup stable pair, e.g. Taylor-Hood"
-      bilinear: |
+      bilinear: |-
         a(v,w) + c(v; v,w) - b(w,p) + b(v,q),
         a(v,w) = ∫Ω μ ∇v:∇w dx,  c(z; v,w) = ∫Ω ρ (z·∇)v·w dx,
         b(w,p) = ∫Ω p ∇·w dx
-      linear: |
+      linear: |-
         l(w) = 0
-      boundary_conditions: |
+      boundary_conditions: |-
         v|∂Ω = exact Kovasznay velocity  (essential)
         mean pressure fixed to the exact solution's mean
       stabilization_method: "none"
 
     - label: "stabilized_equal_order"
       provenance: llm_derived
-      derivation: |
+      derivation: |-
         As "mixed", plus residual-based SUPG/PSPG terms so that equal-order
         velocity and pressure spaces are stable.
       solution_spaces:
         trial: "H1(Ω)² × H1(Ω)"
         test: "H1_0(Ω)² × H1(Ω)"
       inf_sup_stability: "circumvented by PSPG stabilization"
-      bilinear: |
+      bilinear: |-
         (mixed form) + Σ_K τ_K ∫K R(v,p)·(ρ (v·∇)w + ∇q) dx
-      linear: |
+      linear: |-
         l(w) = 0
-      boundary_conditions: |
+      boundary_conditions: |-
         v|∂Ω = exact Kovasznay velocity  (essential)
       stabilization_method: "SUPG/PSPG"
 

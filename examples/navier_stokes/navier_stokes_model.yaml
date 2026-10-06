@@ -1,0 +1,47 @@
+# ============================================================
+# YMF model: incompressible Navier-Stokes
+#
+# A model, not a problem. It fixes the physics, the equations and the
+# unknowns, and declares which coefficients the equations need and in what
+# units, but gives no domain, no boundary or initial conditions and no
+# coefficient values. Each problem file in this directory extends it into
+# a complete, well-posed problem:
+#
+#   navier_stokes_model.yaml
+#   ├── planar_couette.yaml          shear-driven flow between plates
+#   └── plane_poiseuille.yaml        pressure-driven flow between plates
+#       └── plane_poiseuille_re100.yaml    the same flow at Re = 100
+#
+# For multiphysics the model is where most of the work goes, so it is
+# written once and reviewed once.
+# ============================================================
+
+kind: model
+
+Problem:
+  physical_model:
+    provenance: human_specified
+    processes: [incompressible_flow]
+    assumptions: [newtonian, constant_density, isothermal]
+
+  units:
+    convention: SI
+    default: true
+
+  strong_form:
+    provenance: human_specified
+    unknowns:
+      - name: v
+        units: m/s
+      - name: p
+        units: Pa
+    equation_formulation: "incompressible Navier-Stokes, primitive variables"
+    strong_form_expression: |-
+      ρ (∂v/∂t + (v·∇)v) - μ Δv + ∇p = f   in Ω × (0, t_end]
+      ∇·v = 0                             in Ω × (0, t_end]
+    # The coefficients the equations use, with units and no values: a
+    # problem supplies the values.
+    coefficients:
+      rho: {units: kg/m3}
+      mu: {units: Pa*s}
+      f: {units: N/m3}

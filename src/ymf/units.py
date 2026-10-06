@@ -24,6 +24,7 @@ on the parsed document.
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
@@ -167,6 +168,10 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
       the ``unknowns[].units`` of the variable it references.
     - Each ``initial_conditions[].units`` is dimensionally compatible with
       the ``unknowns[].units`` of the field it initializes.
+    - A ``density`` or ``viscosity`` scale given as a number while a ``rho``
+      or ``mu`` coefficient is also given: ``error`` if they differ,
+      ``warning`` if they agree. Derive the scale from the coefficient
+      instead, so the value is stated once.
 
     Returns a :class:`UnitCheckResult`; ``bool(result)`` is ``True`` iff there
     are no ``error``-severity issues (warnings don't affect truthiness).
@@ -222,7 +227,33 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
             except UnitParseError as exc:
                 result.issues.append(UnitIssue("error", f"coefficients[{name}]", str(exc)))
 
+    # A scale stated as a number beside a coefficient for the same quantity
+    # is one value written twice, and the copies drift apart when someone
+    # changes one (a parameter variant that sets mu but not the viscosity
+    # scale). Matched by the conventional names. Copies that disagree are an
+    # error; copies that agree are a warning, since that agreement is what
+    # has to be maintained by hand.
+    coefficient_values = _coefficient_values(problem)
+    for scale, coefficient in _SCALE_COEFFICIENT_NAMES.items():
+        spec = (problem.get("characteristic_scales") or {}).get(scale)
+        if not isinstance(spec, dict) or spec.get("value") is None:
+            continue
+        if coefficient not in coefficient_values:
+            continue
+        stated, actual = spec["value"], coefficient_values[coefficient]
+        agree = math.isclose(stated, actual, rel_tol=1e-12)
+        agreement = "agrees with" if agree else "differs from"
+        result.issues.append(UnitIssue(
+            "warning" if agree else "error", f"characteristic_scales[{scale}]",
+            f"value {stated:g} {agreement} coefficients[{coefficient}] = {actual:g}; "
+            f"state it once with {{derived: true, formula: \"{coefficient}\"}}"))
+
     return result
+
+
+#: Characteristic scales whose physical quantity is conventionally also a
+#: coefficient of the equations, by that coefficient's usual name.
+_SCALE_COEFFICIENT_NAMES = {"density": "rho", "viscosity": "mu"}
 
 
 def _eval_formula(formula: str, scope: Dict[str, float]) -> Optional[float]:
@@ -256,7 +287,12 @@ def characteristic_scale_values(problem: Dict[str, Any]) -> Dict[str, float]:
     §5.2) are resolved by substituting the standard ``*_char`` aliases
     (``L_char``, ``U_char``, ``rho_char``, ``mu_char``, ``T_char``) for
     ``length``, ``velocity``, ``density``, ``viscosity``, ``temperature``
-    respectively. Unresolvable derived scales are omitted, not errored —
+    respectively, and the numeric ``strong_form.coefficients`` by name.
+
+    Deriving a scale from a coefficient (``viscosity: {derived: true,
+    formula: "mu"}``) keeps a physical value in one place: a problem that
+    changes ``mu`` changes the scale, and every dimensionless number built
+    on it, with it. Unresolvable derived scales are omitted, not errored —
     non-dimensionalization is best-effort per report §5.3.
     """
     scales = problem.get("characteristic_scales") or {}
@@ -279,11 +315,14 @@ def characteristic_scale_values(problem: Dict[str, Any]) -> Dict[str, float]:
         "temperature": "T_char",
     }
 
+    coefficients = _coefficient_values(problem)
+
     # Fixed-point resolution: a couple of passes handle chained derived
     # scales (e.g. pressure derived from a derived velocity), though the
     # common case (report examples) resolves in one pass.
     for _ in range(len(derived) + 1):
-        scope = {alias: values[key] for key, alias in alias_of.items() if key in values}
+        scope = dict(coefficients)
+        scope.update({alias: values[key] for key, alias in alias_of.items() if key in values})
         progressed = False
         for name, formula in list(derived.items()):
             v = _eval_formula(formula, scope)
@@ -297,6 +336,42 @@ def characteristic_scale_values(problem: Dict[str, Any]) -> Dict[str, float]:
     return values
 
 
+def _as_number(value: Any) -> Optional[float]:
+    """Return ``value`` as a finite number, or ``None`` if it isn't one.
+
+    ``strong_form.coefficients`` is untyped in the schema (``Any()``), so
+    strictyaml hands back scalars as strings: ``kappa: 1.0e-3`` loads as
+    ``'1.0e-3'``. Numeric strings are coerced here; formula strings such as
+    ``"π²"`` (and ``"nan"``/``"inf"``) are not numbers and yield ``None``.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        try:
+            number = float(value)
+        except ValueError:
+            return None
+        return number if math.isfinite(number) else None
+    return None
+
+
+def _coefficient_values(problem: Dict[str, Any]) -> Dict[str, float]:
+    """The numeric ``strong_form.coefficients``, as ``{name: value}``.
+
+    A coefficient is a bare number or a ``{value: ..., units: ...}`` map;
+    formula-valued ones (``"π²"``, ``{formula: "(G, 0)"}``) are left out.
+    """
+    strong_form = problem.get("strong_form") or {}
+    values: Dict[str, float] = {}
+    for name, spec in (strong_form.get("coefficients") or {}).items():
+        value = _as_number(spec.get("value") if isinstance(spec, dict) else spec)
+        if value is not None:
+            values[name] = value
+    return values
+
+
 def compute_dimensionless_numbers(problem: Dict[str, Any]) -> Dict[str, float]:
     """Evaluate ``Problem.dimensionless_numbers[].formula`` (report §5.2).
 
@@ -305,8 +380,10 @@ def compute_dimensionless_numbers(problem: Dict[str, Any]) -> Dict[str, float]:
     ``rho``, ``mu``, ``T`` as well as the ``*_char`` aliases, matching the
     variable names used in the report's example formulas, e.g.
     ``"rho * U * L / mu"``) plus a fixed gravitational constant ``g`` and any
-    scalar-valued ``strong_form.coefficients`` entries. Numbers whose formula
-    can't be fully resolved (missing scale/coefficient) are omitted.
+    numeric ``strong_form.coefficients`` entries (a bare number or a
+    ``{value: ..., units: ...}`` map; numeric strings, as strictyaml returns
+    them, are coerced). Numbers whose formula can't be fully resolved
+    (missing scale/coefficient) are omitted.
     """
     scales = characteristic_scale_values(problem)
     bare_names = {
@@ -322,12 +399,8 @@ def compute_dimensionless_numbers(problem: Dict[str, Any]) -> Dict[str, float]:
             scope[bare] = scales[key]
     scope.update(scales)  # also expose raw scale names, e.g. "length"
 
-    strong_form = problem.get("strong_form") or {}
-    for name, spec in (strong_form.get("coefficients") or {}).items():
-        if isinstance(spec, dict) and isinstance(spec.get("value"), (int, float)):
-            scope.setdefault(name, spec["value"])
-        elif isinstance(spec, (int, float)):
-            scope.setdefault(name, spec)
+    for name, value in _coefficient_values(problem).items():
+        scope.setdefault(name, value)
 
     numbers: Dict[str, float] = {}
     for name, spec in (problem.get("dimensionless_numbers") or {}).items():

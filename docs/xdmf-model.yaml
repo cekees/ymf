@@ -1,0 +1,441 @@
+# ============================================================
+# The YMF archive model, section by section against XDMF
+#
+# This document follows the structure and order of "XDMF Model and
+# Format" (https://xdmf.org/index.php/XDMF_Model_and_Format.html), so
+# that someone who knows XDMF can find each of its concepts here and see
+# how a YMF archive (.ymf) represents it, or that it doesn't.
+#
+# For every XDMF element and XML attribute:
+#   ymf:     the key that holds it in a .ymf archive
+#   status:  supported | partial | not_supported | not_applicable
+#   values:  for closed sets, the values ymf.archive accepts
+#            (tests/test_xdmf_model.py checks these against the code)
+#   example: the same thing as it appears in a .ymf file
+#
+# The archive format itself is described in archive-format.md. Two
+# naming conventions run through everything below:
+#
+#   - YMF uses the XDMF 2 names Type and DataType, and its .xmf writer
+#     emits Xdmf Version="2.0". XDMF 3 renamed these TopologyType,
+#     GeometryType and NumberType; ymf's .xmf reader does not recognize
+#     the XDMF 3 names.
+#   - A .ymf file holds metadata only. Every array lives outside it, in
+#     HDF5 or a text sidecar, so XDMF's inline "light data" has no
+#     equivalent.
+# ============================================================
+
+source: "https://xdmf.org/index.php/XDMF_Model_and_Format.html"
+
+status_meanings:
+  supported: "Represented in a .ymf archive and written to .xmf by ymf2xmf."
+  partial: "Represented with restrictions, listed in notes."
+  not_supported: "No representation. An archive cannot express it."
+  not_applicable: "An XML mechanism with no counterpart in a YAML document."
+
+# ------------------------------------------------------------
+# XML
+# ------------------------------------------------------------
+XML:
+  Elements:
+    status: not_applicable
+    notes: |-
+      An XDMF element becomes a YAML mapping, and its XML attributes and
+      child elements both become keys of that mapping, under the same
+      names. Repeated children become a list under a plural key
+      (Attribute -> Attributes, Grid in a collection -> Data or
+      SpatialCollection). Element text, which XDMF uses for a DataItem's
+      values or HDF5 path, becomes the Data key.
+    example: |-
+      # <Attribute Name="T" AttributeType="Scalar" Center="Node">
+      #   <DataItem Format="HDF" DataType="Float" Precision="8"
+      #             Dimensions="289">heat.h5:/T_t0</DataItem>
+      # </Attribute>
+      - Name: T
+        AttributeType: Scalar
+        Center: Node
+        DataItem:
+          Format: HDF
+          DataType: Float
+          Precision: 8
+          Dimensions: [289]
+          Data: heat.h5:/T_t0
+
+  XInclude:
+    status: partial
+    ymf: DataItem.Include
+    notes: |-
+      Used for one purpose only: a DataItem with Format XML names a text
+      sidecar file in Include, and ymf2xmf writes it as
+      <xi:include parse="text" href="..."/>. Including another XDMF
+      document, or splitting one archive over several files, is not
+      supported.
+    example: |-
+      DataItem:
+        Format: XML
+        DataType: Float
+        Precision: 8
+        Dimensions: [289]
+        Include: heat_T_t0.txt
+
+  XPath:
+    status: not_supported
+    notes: |-
+      No element can refer to another, so the Reference attribute (below)
+      has no equivalent. Where an XDMF writer would point every time step
+      at one shared Topology, a .ymf archive repeats the topology mapping
+      in each step; the HDF5 datasets it names are still shared.
+
+  Entities:
+    status: not_applicable
+    notes: |-
+      YAML anchors and aliases are the nearest counterpart. The archive
+      writer does not emit them: each step is written out in full.
+
+# ------------------------------------------------------------
+# XDMF Elements
+# ------------------------------------------------------------
+XDMF_Elements:
+
+  Xdmf:
+    ymf: (the .ymf document root)
+    status: partial
+    attributes:
+      Version:
+        status: partial
+        notes: |-
+          ymf2xmf writes Version="2.0". A .ymf file carries its own format
+          version, ymf_archive_version (currently 1), which a reader
+          refuses to read if it doesn't match.
+    example: |-
+      ymf_archive_version: 1
+      domain: {...}
+      extra: {...}
+
+  Domain:
+    ymf: domain
+    status: partial
+    notes: |-
+      Exactly one domain per archive, holding a list of time collections.
+      Domain-level DataItems are not supported. One Information child is
+      written: Name="YMF", carrying the archive's extra section (see
+      Information).
+    attributes:
+      Name: {status: not_supported}
+
+  XdmfItem:
+    ymf: DataItem
+    status: partial
+    notes: |-
+      Only the Uniform item type: one array, stored in HDF5 or in a text
+      sidecar. Values are never inline.
+    attributes:
+      Name: {status: not_supported}
+      ItemType:
+        status: partial
+        notes: "Always Uniform, and not written."
+      Dimensions:
+        ymf: Dimensions
+        status: supported
+        notes: |-
+          A list of integers, slowest-varying first (XDMF's KJI order).
+          data_item_for() reads it off the array, and a flattened
+          declaration ([N*k] for an (N, k) array) is accepted.
+      NumberType:
+        ymf: DataType
+        status: supported
+        values: [Char, Float, Int, UChar, UInt]
+        default: Float
+        notes: |-
+          Written under the XDMF 2 name DataType. The .xmf reader ignores
+          an XDMF 3 NumberType attribute, so Int data in such a file is
+          read as Float.
+      Precision:
+        ymf: Precision
+        status: partial
+        default: 4
+        notes: |-
+          Any positive integer is accepted, where XDMF allows 1, 2 (Int and
+          UInt only), 4 or 8. The default of 4 bytes is XDMF's, and wrong
+          for float64; data_item_for() reads the precision off the array.
+      Format:
+        ymf: Format
+        status: partial
+        values: [Binary, HDF, XML]
+        notes: |-
+          HDF: the dataset reference "file.h5:/dataset" goes in Data, with
+          the file relative to the .ymf. XML: the values go in a text
+          sidecar named by Include, never inline. Binary: accepted by the
+          validator, but none of Endian, Compression or Seek can be stated.
+          When Format is omitted, ymf infers it from which of Data or
+          Include is present. XDMF's default is XML, but ymf's .xmf reader
+          defaults a DataItem with no Format to HDF.
+      Endian: {status: not_supported}
+      Compression: {status: not_supported}
+      Seek: {status: not_supported}
+
+    Uniform:
+      status: supported
+      example: |-
+        DataItem:
+          Format: HDF
+          DataType: Int
+          Precision: 4
+          Dimensions: [512, 3]
+          Data: heat.h5:/elements
+    Collection_and_Tree: {status: not_supported}
+    HyperSlab:
+      status: not_supported
+      notes: |-
+        A grid that is a slice of a larger array has to be written as its
+        own dataset.
+    Coordinate: {status: not_supported}
+    Function:
+      status: not_supported
+      notes: |-
+        The nearest ymf idea is a characteristic scale or dimensionless
+        number with a formula, which belongs to the problem specification,
+        not the archive.
+
+  Grid:
+    status: partial
+    notes: |-
+      The nesting is fixed: a domain holds temporal collections; each
+      collection holds steps; a step is either one uniform grid or a
+      spatial collection of uniform grids. Nothing else nests.
+    attributes:
+      Name:
+        ymf: Name
+        status: supported
+        notes: |-
+          On a temporal collection (defaults to TimeCollection; names must
+          be unique, since they are how a reader tells the meshes apart)
+          and on a grid inside a spatial collection (optional). A uniform
+          step has no name: one given is dropped when the archive is
+          canonicalized.
+      GridType:
+        status: partial
+        values_xdmf: [Uniform, Collection, Tree, Subset]
+        notes: "Uniform and Collection only. Implied by where the grid sits, never written as a key."
+      CollectionType:
+        status: supported
+        values_xdmf: [Spatial, Temporal]
+        notes: "Implied by the key: TimeCollections for Temporal, SpatialCollection for Spatial."
+      Section: {status: not_supported}
+
+    Uniform_Collection_and_Tree:
+      Uniform:
+        ymf: a step, or an entry of SpatialCollection
+        status: supported
+        example: |-
+          - Time: 10.0
+            Topology: {...}
+            Geometry: {...}
+            Attributes: [...]
+      Collection_Temporal:
+        ymf: domain.TimeCollections[]
+        status: supported
+        notes: |-
+          A list, because a solver writes one collection per finite-element
+          space (Proteus: "Mesh Spatial_Domain" and "Mesh_c0p2_Lagrange").
+        example: |-
+          TimeCollections:
+          - Name: Mesh Spatial_Domain
+            Data: [step, step, ...]
+      Collection_Spatial:
+        ymf: step.SpatialCollection
+        status: supported
+        notes: "One grid per subdomain (MPI rank), each with its own local numbering."
+        example: |-
+          - Time: 10.0
+            SpatialCollection:
+            - Name: subdomain_0
+              Topology: {...}
+              Geometry: {...}
+              Attributes: [...]
+            - Name: subdomain_1
+              Topology: {...}
+              Geometry: {...}
+              Attributes: [...]
+      Tree: {status: not_supported}
+
+    SubSet:
+      status: not_supported
+
+  Topology:
+    ymf: Topology
+    status: partial
+    attributes:
+      Name: {status: not_supported}
+      TopologyType:
+        ymf: Type
+        status: supported
+        values: [2DCoRectMesh, 2DRectMesh, 2DSMesh, 3DCoRectMesh, 3DRectMesh, 3DSMesh,
+                 Edge_3, Hex_20, Hexahedron, Hexahedron_20, Mixed, Polygon, Polyline,
+                 Polyvertex, Pyramid, Pyramid_13, Quad_8, Quadrilateral, Quadrilateral_8,
+                 Tet_10, Tetrahedron, Tetrahedron_10, Tri_6, Triangle, Triangle_6, Wedge,
+                 Wedge_15]
+        notes: |-
+          XDMF's list, plus the short aliases Tri_6, Quad_8, Tet_10 and
+          Hex_20 that Proteus writes. Written under the XDMF 2 name Type.
+      NodesPerElement:
+        ymf: NodesPerElement
+        status: supported
+        notes: "Optional; only meaningful for Polyvertex, Polyline and Polygon."
+      NumberOfElements:
+        ymf: NumberOfElements
+        status: supported
+        notes: "Required."
+      Dimensions:
+        status: not_supported
+        notes: "So the structured types below cannot be fully described."
+      Order: {status: not_supported}
+    example: |-
+      Topology:
+        Type: Triangle
+        NumberOfElements: 512
+        DataItem: {Format: HDF, DataType: Int, Precision: 4,
+                   Dimensions: [512, 3], Data: heat.h5:/elements}
+
+    Linear:
+      status: supported
+    Quadratic:
+      status: supported
+      notes: |-
+        Node ordering is whatever the writer used. ymf does not check it
+        against XDMF's ordering.
+    Arbitrary:
+      status: partial
+      notes: |-
+        Polyvertex, Polyline and Polygon with NodesPerElement are
+        supported. Mixed is accepted as a type, but ymf does not interpret
+        the cell-type codes inside its connectivity array.
+    Structured:
+      status: partial
+      notes: |-
+        The six structured types are accepted, but a structured topology is
+        defined by Dimensions and has no connectivity array, while a ymf
+        Topology requires NumberOfElements and a DataItem and has no
+        Dimensions. No Proteus writer emits structured meshes.
+
+  Geometry:
+    ymf: Geometry
+    status: partial
+    attributes:
+      GeometryType:
+        ymf: Type
+        status: partial
+        values: [ORIGIN_DXDY, ORIGIN_DXDYDZ, VXVYVZ, XY, XYZ, X_Y, X_Y_Z]
+        default: XYZ
+        notes: |-
+          Written under the XDMF 2 name Type, and spelt as in the XDMF 2
+          DTD (VXVYVZ, ORIGIN_DXDYDZ) where the page writes VxVyVz,
+          Origin_DxDyDz. Only XYZ and XY are fully representable: a ymf
+          Geometry holds exactly one DataItem, and X_Y_Z, X_Y, VXVYVZ,
+          ORIGIN_DXDYDZ and ORIGIN_DXDY each need two or three.
+    example: |-
+      Geometry:
+        Type: XYZ
+        DataItem: {Format: HDF, DataType: Float, Precision: 8,
+                   Dimensions: [289, 3], Data: heat.h5:/nodes}
+
+  Attribute:
+    ymf: "Attributes[]"
+    status: partial
+    notes: |-
+      Exactly one DataItem per attribute. Names must be unique within a
+      grid; a viewer keys fields by name, so a duplicate would silently
+      hide the first.
+    attributes:
+      Name:
+        ymf: Name
+        status: supported
+      AttributeType:
+        ymf: AttributeType
+        status: supported
+        values: [GlobalID, Matrix, Scalar, Tensor, Tensor6, Vector]
+        default: Scalar
+      Center:
+        ymf: Center
+        status: partial
+        values: [Cell, Edge, Face, Grid, Node]
+        default: Node
+        notes: "XDMF's Other is not accepted."
+      ItemType:
+        status: not_supported
+        notes: |-
+          FiniteElementFunction, with ElementFamily, ElementDegree and
+          ElementCell, is not supported. A higher-order field is archived
+          on a grid of its own space (a separate time collection, such as
+          Mesh_c0p2_Lagrange), not as a dofmap plus values.
+      ElementFamily: {status: not_supported}
+      ElementDegree: {status: not_supported}
+      ElementCell: {status: not_supported}
+
+    Examples_of_usage_of_Attribute:
+      example: |-
+        Attributes:
+        - Name: T
+          AttributeType: Scalar
+          Center: Node
+          DataItem: {Format: HDF, DataType: Float, Precision: 8,
+                     Dimensions: [289], Data: heat.h5:/T_t0}
+        - Name: q
+          AttributeType: Vector
+          Center: Node
+          DataItem: {Format: HDF, DataType: Float, Precision: 8,
+                     Dimensions: [289, 3], Data: heat.h5:/q_t0}
+        - Name: side
+          AttributeType: Scalar
+          Center: Cell
+          DataItem: {Format: HDF, DataType: Int, Precision: 4,
+                     Dimensions: [512], Data: heat.h5:/side}
+
+  Set:
+    status: not_supported
+    notes: |-
+      Boundary and material regions are archived today as ordinary
+      attributes (Proteus writes nodeMaterialTypes and
+      elementMaterialTypes as Node- and Cell-centred Int fields).
+
+  Time:
+    ymf: step.Time
+    status: partial
+    attributes:
+      TimeType:
+        status: partial
+        values_xdmf: [Single, HyperSlab, List, Range]
+        notes: |-
+          Single only: every step carries one float. ymf2xmf writes it as
+          <Time Value="..."/> in each grid of a temporal collection.
+          HyperSlab, List and Range are not supported.
+      Value:
+        ymf: Time
+        status: supported
+    example: |-
+      - Time: 20.0
+        Topology: {...}
+
+  Information:
+    status: partial
+    notes: |-
+      The archive's extra section (typically the problem specification
+      that produced the run) is written into the .xmf as a single
+      <Information Name="YMF" Value="..."/> child of Domain, base64-encoded
+      JSON, which viewers ignore and ymf.xdmf.read_xdmf recovers exactly.
+      Information elsewhere (on a grid, an attribute, a DataItem) is not
+      supported. In the .ymf itself, extra is plain YAML.
+    example: |-
+      extra:
+        Problem:
+          name: Transient heat conduction, unit square
+          strong_form: {...}
+
+  XML_Element_and_Default_XML_Attributes:
+    attributes:
+      Name:
+        status: partial
+        notes: "Only where listed above: time collections, subdomain grids, attributes."
+      Reference:
+        status: not_supported
+        notes: "See XPath."

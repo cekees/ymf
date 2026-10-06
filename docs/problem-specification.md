@@ -11,6 +11,7 @@ rationale, see [ymf-schema.md](ymf-schema.md) (v0.1) and
 - [The idea](#the-idea)
 - [Document structure](#document-structure)
 - [Branching: one problem, several solution paths](#branching-one-problem-several-solution-paths)
+- [Composing documents: models and problems](#composing-documents-models-and-problems)
 - [Provenance](#provenance)
 - [Units, scales and dimensionless numbers](#units-scales-and-dimensionless-numbers)
 - [Validating a document](#validating-a-document)
@@ -58,7 +59,14 @@ solution_paths:              # required
 vvuq: ...                    # optional, free-form: verification/validation plans and results
 archive: ...                 # optional, free-form: reserved for output configuration
 Xdmf: ...                    # optional, free-form: legacy, from the v0.1 draft
+
+extends: model.yaml          # optional: the document this one builds on
+kind: model                  # optional: model | problem (default)
+composition: ...             # written by the loader into a composed document
 ```
+
+The last three describe the file rather than the problem; see
+[Composing documents](#composing-documents-models-and-problems).
 
 The smallest complete example is
 [`examples/poisson.yaml`](../examples/poisson.yaml). The key blocks:
@@ -66,11 +74,11 @@ The smallest complete example is
 **`physical_model`**: `provenance` (required), plus lists of `processes`
 and `assumptions`, and optionally a `source_document`.
 
-**`strong_form`**: `unknowns`, `equation_formulation`,
+**`strong_form`**: `provenance`, `unknowns`, `equation_formulation`,
 `strong_form_expression`, `domain` and `boundary_regions` are required.
 Unknowns are either bare names (`[u, p]`) or structured entries with
-`units` and an optional `std_name`. `ymf.normalize_unknowns()` turns either
-form into the structured one. Optional: `initial_conditions`,
+`units` and optional `std_name` and `provenance`. `ymf.normalize_unknowns()`
+turns either form into the structured one. Optional: `initial_conditions`,
 `boundary_conditions`, `coefficients`, `known_analytical_solution`,
 `dimensional_check`.
 
@@ -78,7 +86,8 @@ form into the structured one. Optional: `initial_conditions`,
 initial_conditions:
   - field: T
     type: function          # constant | function | data_source
-    formula: "300 + 10 sin(πx) sin(πy)"
+    formula: |-
+      300 + 10 sin(πx) sin(πy)
     units: K
 boundary_conditions:
   - region: walls           # a boundary_regions[].name
@@ -123,6 +132,83 @@ Adding a branch adds entries; it never edits existing ones. That is what
 makes a document safe for several contributors, or an LLM and a person, to
 extend.
 
+## Composing documents: models and problems
+
+Branches can also live in separate files. A document names the one it
+builds on with `extends`, and `load_ymf` merges the two. The common shape
+is a **model** that many **problems** extend:
+
+```text
+examples/navier_stokes/
+  navier_stokes_model.yaml          kind: model -- physics, equations, unknowns,
+  │                                 coefficient units; no domain, conditions or values
+  ├── planar_couette.yaml           geometry, BCs, values, exact solution,
+  │                                 a Galerkin weak form, Taylor-Hood
+  └── plane_poiseuille.yaml         the same, driven by a pressure gradient,
+      │                             a stabilized weak form, equal-order P1
+      └── plane_poiseuille_re100.yaml   changes the viscosity and gradient only
+```
+
+For multiphysics, getting the model right (the processes, the coupled
+equations, the unknowns) is often most of the work. Writing it once as a
+model means it is reviewed once, and every well-posed problem built on it
+shares it rather than copying it.
+
+A model is marked `kind: model`. It is validated on its own against a
+**partial** schema, in which any section or field may be missing but
+whatever is present must be well formed. A list entry that is present (an
+unknown, a weak form) must still be complete. A problem file holds only
+what it adds:
+
+```yaml
+extends: navier_stokes_model.yaml   # relative to this file
+Problem:
+  name: "Planar Couette flow, Re = 10"
+  physical_model:
+    provenance: human_specified
+    assumptions: [steady, fully_developed]   # added to the model's
+  strong_form:
+    domain: |-
+      Ω = [0, 4] × [0, 1]  (m)
+    coefficients:
+      mu: {value: 0.1}                       # the model gave the units
+  weak_forms: [...]
+solution_paths: {...}
+```
+
+**Merge rules.** Mappings merge key by key. Lists of entries with a
+`label` or `name` (unknowns, weak forms, discretizations, boundary regions)
+merge entry by entry on it, and new entries are appended. Lists of strings
+(`processes`, `assumptions`) are unioned. Anything else the child sets
+replaces the parent's value. Every file in a chain is checked against the
+partial schema as it is read, so an error is reported against the file and
+line that holds it. The composed result must then pass the full schema,
+unless the file being loaded is itself a model.
+
+**Overrides are recorded, not refused.** When a child changes a value its
+parent set, the composed document's `composition` block records it, and
+also lists every source file:
+
+```yaml
+composition:
+  sources: [navier_stokes_model.yaml, plane_poiseuille.yaml, plane_poiseuille_re100.yaml]
+  overrides:
+    - path: Problem.strong_form.coefficients.mu.value
+      was: '1.0'
+      now: '0.01'
+      set_by: plane_poiseuille_re100.yaml
+    - path: Problem.strong_form.coefficients.G.value
+      ...
+```
+
+(Coefficient values are recorded as strings because the schema leaves
+coefficients untyped; see [Known gaps](#known-gaps).)
+
+This makes a parameter variant a three-line file whose changes a reviewer
+can read off directly. `extends` and `kind` describe a file, not the
+problem, and are dropped from a composed problem. The result is a single
+self-contained document, which is what an archive should carry in `extra`.
+
 ## Provenance
 
 Every decision block carries `provenance`, one of:
@@ -134,10 +220,32 @@ Every decision block carries `provenance`, one of:
 | `human_edited` | LLM-proposed, then changed by a person |
 | `proteus_derived` | derived by a solver (e.g. from a Proteus model) |
 
-It is required on `physical_model`, `strong_form` (as
-`unknown_provenance`), every weak form, and every solution path. Its
-purpose is to calibrate trust: a reviewer can see at a glance which parts
-of a model a person has looked at.
+It is required on `physical_model`, `strong_form`, every weak form, and
+every solution path. Its purpose is to calibrate trust: a reviewer can see
+at a glance which parts of a model a person has looked at.
+
+The rule is the same at every level: a block's `provenance` covers
+everything inside it, and a nested entry may state its own to override it.
+The strong form's `provenance` covers the equations and the choice of
+unknowns. A structured unknown that someone else chose says so:
+
+```yaml
+strong_form:
+  provenance: llm_derived          # the equations, and v
+  unknowns:
+    - name: v
+      units: m/s
+    - name: p
+      units: Pa
+      provenance: human_edited     # a person changed this one
+```
+
+`normalize_unknowns(unknowns, provenance=strong_form["provenance"])` fills
+in each unknown's effective provenance.
+
+Earlier drafts, including [ymf-schema.md](ymf-schema.md), called the
+strong form's key `unknown_provenance`. It was renamed because it read as
+"the provenance is unknown", and the old key is now rejected.
 
 ## Units, scales and dimensionless numbers
 
@@ -156,8 +264,9 @@ Unit strings accept the common notations (`m2/s`, `m²/s`, `m^2/s`,
 `characteristic_scales` takes `length`, `velocity`, `time`, `density`,
 `viscosity` and `temperature`, each either a value with units or `derived:
 true` with a formula over `L_char`, `U_char`, `rho_char`, `mu_char` and
-`T_char`. `dimensionless_numbers` are formulas over `L`, `U`, `rho`, `mu`,
-`T` and `g`:
+`T_char`, and over the numeric `coefficients` by name.
+`dimensionless_numbers` are formulas over `L`, `U`, `rho`, `mu`, `T`, `g`
+and the numeric coefficients:
 
 ```yaml
 characteristic_scales:
@@ -174,6 +283,34 @@ dimensionless_numbers:
 the substitution relations for unknowns whose units it recognizes
 (`v* = v / U_char`, `p* = p / (rho_char * U_char**2)`). It does not rewrite
 the PDE itself. That needs the symbolic layer, which doesn't exist yet.
+
+**State each value once.** Viscosity and density are both coefficients of
+the equations and characteristic scales. Don't write the number twice:
+derive the scale from the coefficient, and a problem that changes the
+coefficient changes the scale and every dimensionless number with it.
+From [`plane_poiseuille.yaml`](../examples/navier_stokes/plane_poiseuille.yaml):
+
+```yaml
+characteristic_scales:
+  length: {value: 1.0, units: m}
+  velocity: {derived: true, formula: "G * L_char**2 / (8 * mu)", units: m/s}
+  density: {derived: true, formula: "rho", units: kg/m3}
+  viscosity: {derived: true, formula: "mu", units: Pa*s}
+strong_form:
+  coefficients:
+    rho: {value: 1.0}
+    mu: {value: 1.0}
+    G: {value: 8.0, units: Pa/m}
+```
+
+Its Re = 100 variant then changes `mu` and `G` and nothing else. The unit
+check enforces this for the conventional names: a `density` or `viscosity`
+scale given as a number beside a `rho` or `mu` coefficient is an **error**
+if the two differ and a **warning** if they agree:
+
+```text
+[error] characteristic_scales[viscosity]: value 1 differs from coefficients[mu] = 0.01; state it once with {derived: true, formula: "mu"}
+```
 
 ## Validating a document
 
@@ -219,9 +356,12 @@ nobody has to rediscover them:
   that names nothing still validates.
 - **Coefficients come back as strings.** `coefficients` is untyped in the
   schema, so after `load_ymf` a value like `kappa: 1.0e-3` is the string
-  `'1.0e-3'`. `compute_dimensionless_numbers` only uses numeric
-  coefficients, so a formula that refers to a coefficient (a Péclet or
-  Fourier number) is silently dropped. Use characteristic scales for now.
+  `'1.0e-3'`. `compute_dimensionless_numbers` coerces numeric strings, both
+  bare and as `{value: ..., units: ...}`, so a Péclet or Fourier formula
+  that refers to `kappa` now evaluates. Every other consumer of
+  `coefficients` still sees strings, and a non-numeric coefficient (a
+  formula such as `"π²"`) is still left out of the formula scope, which
+  silently drops any number that refers to it.
 - **Boundary conditions are constants.** `boundary_conditions[].value` is a
   number. Spatially varying data, such as Kovasznay's exact velocity on the
   boundary, can only be stated in a weak form's free-text
@@ -229,5 +369,16 @@ nobody has to rediscover them:
 - **Write `1.0e-10`, not `1e-10`.** strictyaml accepts both, but PyYAML
   (YAML 1.1), which reads a spec carried inside an archive, treats `1e-10`
   as a string.
+- **Composition can add and change, but not remove.** A problem cannot
+  drop an assumption or a field its model states. That takes a new model.
+- **An error in a composed problem that no single file holds** (say, a
+  required key that none of the files sets) is reported against a line of
+  the merged document, labelled with the chain of files, not against a
+  source file.
+- **Duplicated values are only caught by name.** The check above covers a
+  `density` or `viscosity` scale against a `rho` or `mu` coefficient. A
+  coefficient under another name (`nu`, `eta`), or a velocity scale that
+  restates a boundary speed, isn't checked. Derive scales from coefficients
+  wherever possible.
 - **`characteristic_scales` is a fixed set** of six. There is no slot for a
   diffusivity or a pressure scale.

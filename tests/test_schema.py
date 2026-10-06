@@ -31,8 +31,8 @@ def test_rejects_unknown_bc_type():
 Problem:
   name: "bad"
   strong_form:
+    provenance: llm_derived
     unknowns: [u]
-    unknown_provenance: llm_derived
     equation_formulation: "x"
     strong_form_expression: "x"
     domain: "x"
@@ -51,3 +51,62 @@ solution_paths:
 
     with pytest.raises(strictyaml.YAMLValidationError):
         validate_ymf(bad_yaml)
+
+
+MINIMAL_STRONG_FORM = """
+Problem:
+  name: "p"
+  strong_form:
+{provenance}    unknowns:
+      - name: u
+{per_unknown}    equation_formulation: "x"
+    strong_form_expression: "x"
+    domain: "x"
+    boundary_regions:
+      - name: "a"
+        geometry: "b"
+solution_paths:
+  analytical: []
+  discretizations: []
+"""
+
+
+def _strong_form(provenance="    provenance: llm_derived\n", per_unknown=""):
+    return MINIMAL_STRONG_FORM.format(provenance=provenance,
+                                      per_unknown=per_unknown)
+
+
+def test_minimal_strong_form_validates():
+    from ymf.schema import validate_ymf
+
+    doc = validate_ymf(_strong_form())
+    assert doc["Problem"]["strong_form"]["provenance"] == "llm_derived"
+
+
+def test_strong_form_requires_provenance():
+    from ymf.schema import validate_ymf
+
+    with pytest.raises(strictyaml.YAMLValidationError):
+        validate_ymf(_strong_form(provenance=""))
+
+
+def test_unknown_provenance_key_is_no_longer_accepted():
+    # Renamed to strong_form.provenance; the old key read as "provenance unknown".
+    from ymf.schema import validate_ymf
+
+    with pytest.raises(strictyaml.YAMLValidationError):
+        validate_ymf(_strong_form(provenance="    unknown_provenance: llm_derived\n"))
+
+
+def test_an_unknown_may_override_the_strong_form_provenance():
+    from ymf.schema import validate_ymf
+
+    doc = validate_ymf(_strong_form(per_unknown="        provenance: human_edited\n"))
+    assert doc["Problem"]["strong_form"]["unknowns"][0]["provenance"] == "human_edited"
+
+
+def test_an_unknowns_provenance_must_be_a_known_value():
+    from ymf.schema import validate_ymf
+
+    with pytest.raises(strictyaml.YAMLValidationError):
+        validate_ymf(_strong_form(per_unknown="        provenance: guessed\n"))

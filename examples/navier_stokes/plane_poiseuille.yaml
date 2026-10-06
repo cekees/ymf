@@ -1,0 +1,120 @@
+# ============================================================
+# YMF problem: plane Poiseuille flow, Re = 1
+#
+# Extends the Navier-Stokes model. Both plates are fixed and the flow is
+# driven by a uniform pressure gradient G, applied as the body force
+# f = (G, 0) so that the flow can be periodic in x. The exact velocity is a
+# parabola with peak G H² / (8 μ) = 1 m/s.
+#
+# The discretization is equal-order P1 with stabilization, which cannot
+# represent the parabola exactly, so this problem has a real convergence
+# study to run. plane_poiseuille_re100.yaml extends this file to run the
+# same flow at a higher Reynolds number.
+# ============================================================
+
+extends: navier_stokes_model.yaml
+
+Problem:
+  name: "Plane Poiseuille flow, Re = 1"
+  physical_model:
+    provenance: human_specified
+    assumptions: [steady, fully_developed]
+
+  # Derived from the coefficients rather than restated, so that each
+  # physical value lives in one place: a problem that changes mu or G
+  # changes these scales, and Re, with it.
+  characteristic_scales:
+    length: {value: 1.0, units: m}           # the gap H
+    velocity:                                # the centreline speed G H² / (8 μ)
+      derived: true
+      formula: "G * L_char**2 / (8 * mu)"
+      units: m/s
+    density: {derived: true, formula: "rho", units: kg/m3}
+    viscosity: {derived: true, formula: "mu", units: Pa*s}
+
+  dimensionless_numbers:
+    Re: {formula: "rho * U * L / mu"}
+
+  strong_form:
+    domain: |-
+      Ω = [0, 4] × [0, 1]  (m),  gap H = 1 m
+    boundary_regions:
+      - name: "walls"
+        geometry: "y = 0 and y = H"
+      - name: "ends"
+        geometry: "x = 0 and x = 4, identified"
+    boundary_conditions:
+      - region: "walls"
+        variable: v
+        type: dirichlet
+        value: 0.0
+        units: m/s
+      - region: "ends"
+        variable: v
+        type: periodic
+      - region: "ends"
+        variable: p
+        type: periodic
+    coefficients:
+      rho: {value: 1.0}
+      mu: {value: 1.0}
+      G: {value: 8.0, units: Pa/m}
+      f: {formula: "(G, 0)"}
+    known_analytical_solution:
+      formula: |-
+        v = (G / (2μ) · y (H - y), 0),  p = p0
+      reference: "Any fluid mechanics text; exact for every Re below transition."
+
+  weak_forms:
+    - label: "stabilized_periodic"
+      provenance: human_specified
+      derivation: |-
+        Steady form of the model, with residual-based SUPG/PSPG terms so that
+        equal-order velocity and pressure spaces are stable. R(v,p) is the
+        momentum residual without the body force, ρ (v·∇)v - μ Δv + ∇p, so
+        f appears in the stabilization terms of l(w). Boundary terms
+        vanish on the walls and cancel on the periodic ends.
+      solution_spaces:
+        trial: "H1_per,0(Ω)² × H1_per(Ω)"
+        test: "H1_per,0(Ω)² × H1_per(Ω)"
+      inf_sup_stability: "circumvented by PSPG stabilization"
+      bilinear: |-
+        ∫Ω ρ (v·∇)v·w dx + ∫Ω μ ∇v:∇w dx - ∫Ω p ∇·w dx + ∫Ω q ∇·v dx
+          + Σ_K τ_K ∫K R(v,p)·(ρ (v·∇)w + ∇q) dx
+      linear: |-
+        l(w) = ∫Ω f·w dx + Σ_K τ_K ∫K f·(ρ (v·∇)w + ∇q) dx
+      boundary_conditions: |-
+        v = (0, 0) on walls  (essential)
+        periodic in x on ends
+      stabilization_method: "SUPG/PSPG"
+
+solution_paths:
+  analytical:
+    - name: "poiseuille_exact"
+      provenance: human_specified
+      method: "closed_form"
+      solution:
+        formula: |-
+          v = (G / (2μ) · y (H - y), 0),  p = p0
+  discretizations:
+    - name: "equal_order_p1"
+      provenance: human_specified
+      from_weak_form: "stabilized_periodic"
+      finite_element:
+        velocity: {family: CG, order: 1}
+        pressure: {family: CG, order: 1}
+      solver:
+        type: nonlinear
+        nonlinear_solver: newton
+        linear_solver: petsc
+        tolerance: 1.0e-10
+
+vvuq:
+  verification:
+    method: "grid_convergence"
+    grid_levels: [8, 16, 32, 64]
+    reference:
+      type: "analytical"
+      branch_ref: "poiseuille_exact"
+    expected_rates:  # a priori L2 rates on smooth solutions
+      equal_order_p1: {error_L2_velocity: 2, error_L2_pressure: 1}

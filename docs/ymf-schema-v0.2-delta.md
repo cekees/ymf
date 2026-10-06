@@ -306,8 +306,8 @@ RoughnessSourceDef = Map({
 
 # --- 9. Updated StrongFormDef (widened unknowns, + new sections) ---
 StrongFormDef = Map({
+    "provenance": ProvenanceEnum,                     # RENAMED after this draft: was "unknown_provenance"
     "unknowns": Seq(UnknownDef),                      # CHANGED: was Seq(Str())
-    "unknown_provenance": ProvenanceEnum,
     "equation_formulation": Str(),
     "strong_form_expression": Str(),
     "domain": Str(),

@@ -20,14 +20,15 @@ Problem:
     temperature: {value: 300.0, units: K}
 
   strong_form:
+    provenance: llm_derived
     unknowns:
       - name: T
         units: K
         std_name: land_surface_temperature
-    unknown_provenance: llm_derived
     equation_formulation: "Poisson"
-    strong_form_expression: "-kΔT = Q  in Ω"
-    domain: |
+    strong_form_expression: |-
+      -kΔT = Q  in Ω
+    domain: |-
       Ω = [0,1] × [0,1]
     boundary_regions:
       - name: "all_boundaries"
@@ -40,7 +41,8 @@ Problem:
         units: K
     coefficients:
       k: "1.0"
-      Q: "π²"
+      Q: |-
+        π²
     dimensional_check:
       enabled: true
       method: automatic
@@ -49,15 +51,15 @@ Problem:
   weak_forms:
     - label: "global"
       provenance: llm_derived
-      derivation: |
+      derivation: |-
         Multiply by test function v ∈ H1_0(Ω),
         integrate over Ω, integrate by parts.
       solution_spaces:
         trial: "H1"
         test: "H1_0"
-      bilinear: |
+      bilinear: |-
         a(T,v) = ∫Ω k ∇T·∇v dx
-      linear: |
+      linear: |-
         l(v) = ∫Ω Q·v dx
 
 solution_paths:

@@ -9,7 +9,7 @@ import pytest
 from ymf.schema import load_ymf
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
-SPECS = sorted(EXAMPLES_DIR.glob("*.yaml"))
+SPECS = sorted(EXAMPLES_DIR.rglob("*.yaml"))
 
 
 def run(script, *args):
@@ -19,13 +19,17 @@ def run(script, *args):
 
 @pytest.mark.parametrize("spec", SPECS, ids=[p.name for p in SPECS])
 def test_every_example_spec_validates(spec):
-    assert load_ymf(spec)["Problem"]["name"]
+    doc = load_ymf(spec)
+    # a model is not a problem yet, so only problems carry a name
+    assert doc.get("kind") == "model" or doc["Problem"]["name"]
 
 
 def test_validate_spec_walks_every_example_and_shows_the_unit_error():
     out = run("validate_spec.py")
     for spec in SPECS:
         assert spec.name in out
+    assert "composed from: navier_stokes_model.yaml <- plane_poiseuille.yaml <- plane_poiseuille_re100.yaml" in out
+    assert "override Problem.strong_form.coefficients.mu.value: '1.0' -> '0.01' (plane_poiseuille_re100.yaml)" in out
     assert "schema: INVALID" not in out
     assert "dimensionless numbers: {'Re': 40.0}" in out
     assert "incompatible with 'T''s declared units 'K'" in out

@@ -9,6 +9,7 @@ design drafts and background research, kept for their reasoning.
 |---|---|
 | [problem-specification.md](problem-specification.md) | Writing and validating a problem spec: structure, branching, provenance, units, known gaps |
 | [archive-format.md](archive-format.md) | The archive a solver writes: files on disk, the domain model, parallel output, XDMF conversion, use in Proteus |
+| [xdmf-model.yaml](xdmf-model.yaml) | The archive model laid out in the order of XDMF's own [Model and Format](https://xdmf.org/index.php/XDMF_Model_and_Format.html) page: each XDMF element and attribute, the `.ymf` key that holds it, and whether it is supported. For readers who know XDMF. |
 
 ## Design drafts
 
@@ -16,6 +17,8 @@ design drafts and background research, kept for their reasoning.
 |---|---|
 | [ymf-schema.md](ymf-schema.md) | The original v0.1 schema draft. Still the best statement of the design principles and of the intended `vvuq` shape. Its §4 "Archive Configuration" and §5 "XDMF Preservation" were superseded by the implemented [archive format](archive-format.md), and the title expands the old working name. |
 | [ymf-schema-v0.2-delta.md](ymf-schema-v0.2-delta.md) | The v0.2 changes on top of v0.1, which `ymf.schema` implements. §7 lists what was deferred to v0.3. |
+
+Both drafts use `strong_form.unknown_provenance`. That key has since been renamed to `strong_form.provenance`, matching every other block, and a structured unknown may now carry its own `provenance`. See [Provenance](problem-specification.md#provenance).
 
 ## Background research
 

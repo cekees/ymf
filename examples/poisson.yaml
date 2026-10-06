@@ -10,22 +10,24 @@ Problem:
     assumptions: [steady, constant_properties]
 
   strong_form:
+    provenance: llm_derived
     unknowns: [u]
-    unknown_provenance: llm_derived
     equation_formulation: "Poisson"
-    strong_form_expression: "-Δu = f  in Ω"
-    domain: |
+    strong_form_expression: |-
+      -Δu = f  in Ω
+    domain: |-
       Ω = [0,1] × [0,1]
     boundary_regions:
       - name: "all_boundaries"
         geometry: "∂Ω"
     coefficients:
-      f: "π²sin(πx)sin(πy)"
+      f: |-
+        π²sin(πx)sin(πy)
 
   weak_forms:
     - label: "global"
       provenance: llm_derived
-      derivation: |
+      derivation: |-
         Multiply by test function v ∈ H1_0(Ω),
         integrate over Ω, integrate by parts.
       solution_spaces:
@@ -35,11 +37,11 @@ Problem:
       existence_note: "Lax-Milgram applies (coercive bilinear form)"
       uniqueness_note: "guaranteed by coercivity"
       regularity_note: "u ∈ H2(Ω) on convex domain"
-      bilinear: |
+      bilinear: |-
         a(u,v) = ∫Ω ∇u·∇v dx
-      linear: |
+      linear: |-
         l(v) = ∫Ω f·v dx
-      boundary_conditions: |
+      boundary_conditions: |-
         u|∂Ω = 0  (essential)
       stabilization_method: "none"
 
@@ -49,7 +51,8 @@ solution_paths:
       provenance: llm_derived
       method: "separation_of_variables"
       solution:
-        formula: "u(x,y) = sin(πx)sin(πy) / (2π²)"
+        formula: |-
+          u(x,y) = sin(πx)sin(πy) / (2π²)
         derivation_source: "sympy.dsolve"
 
   discretizations:

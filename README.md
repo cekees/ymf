@@ -28,7 +28,10 @@ each stage a structured, reviewable block, and tags each one with its
 **provenance**: whether an LLM proposed it, a person wrote it, or a person
 edited an LLM's proposal. One document can hold several **branches**
 (competing weak forms and discretizations of the same problem) alongside
-the plan for verifying them against each other.
+the plan for verifying them against each other. Branches can also be
+separate files: a **model** (the physics and equations, often most of the
+work for multiphysics) is written once and extended, file by file, into
+many well-posed problems.
 
 On the output side, solver archives have usually been XDMF XML written by
 hand-built element trees, with no data model behind them and nothing
@@ -45,6 +48,7 @@ Pre-release (0.2.x). The repository is private while the format settles.
 | Archive data model, YAML I/O, structural checks (`ymf.archive`) | **Implemented.** Tested against real Proteus output; used by Proteus's `ymf_io` branch, aimed at Proteus 2.0 |
 | `.ymf` → `.xmf` conversion (`ymf2xmf`, `ymf.xdmf`) | **Implemented.** Lossless round trip; output opens in ParaView |
 | Problem-spec schema v0.2 (`ymf.schema`) | **Implemented.** See the [known gaps](docs/problem-specification.md#known-gaps) |
+| Composing a spec from several files: a model extended into problems (`ymf.compose`) | **Implemented.** Overrides are recorded in the composed document |
 | Units, scales, dimensionless numbers (`ymf.units`) | **Implemented**, apart from rewriting the PDE in dimensionless form |
 | Manning's n lookup and data-source catalog (`ymf.data_sources`) | Implemented; data fetching is a stub |
 | Symbolic layer: parsing the strong and weak forms (sympy/ibvp) | **Planned.** The mathematics in a spec is free text today |
@@ -89,7 +93,7 @@ Problem:
     Re: {formula: "rho * U * L / mu"}           # resolved to 40.0
   strong_form:
     unknowns: [{name: v, units: m/s}, {name: p, units: Pa}]
-    strong_form_expression: |
+    strong_form_expression: |-
       ρ (v·∇)v - μ Δv + ∇p = 0,   ∇·v = 0   in Ω
     ...
   weak_forms:
@@ -152,6 +156,7 @@ src/ymf/
   cli.py            the ymf2xmf command
   normalize.py      normalize_unknowns                               (stdlib)
   schema.py         problem-spec schema                              (strictyaml, ymf[spec])
+  compose.py        `extends`: models, problems built on them        (strictyaml, ymf[spec])
   units.py          unit checks, scales, dimensionless numbers       (pint, ymf[units])
   data_sources.py   Manning's n lookup, data-source catalog          (stdlib)
 docs/               guides, design drafts, background reports -- start at docs/README.md

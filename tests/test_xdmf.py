@@ -137,8 +137,8 @@ SAMPLE_YMF_EXTRA = {
     "Problem": {
         "name": "Poisson 3D (unit cube, tetrahedral mesh)",
         "strong_form": {
+            "provenance": "llm_derived",
             "unknowns": [{"name": "u", "units": "K", "std_name": "land_surface_temperature"}],
-            "unknown_provenance": "llm_derived",
             "equation_formulation": "Poisson",
             "strong_form_expression": "Delta u = f",
             "domain": "unit cube",
@@ -234,8 +234,8 @@ Problem:
     processes: [diffusion]
     assumptions: [steady, constant_properties]
   strong_form:
+    provenance: llm_derived
     unknowns: [u]
-    unknown_provenance: llm_derived
     equation_formulation: "Poisson"
     strong_form_expression: |
       Delta u = f

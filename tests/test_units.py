@@ -170,6 +170,60 @@ def test_compute_dimensionless_numbers_missing_scale_omitted():
     assert "Reynolds" not in numbers
 
 
+def _heat_doc_with_numbers(coefficients_yaml):
+    """examples/heat_equation.yaml with a velocity scale, the given
+    coefficients block, and coefficient-referencing dimensionless numbers."""
+    from pathlib import Path
+
+    text = (Path(__file__).parent.parent / "examples" / "heat_equation.yaml").read_text()
+    scales = "    time: {value: 50.66, units: s}\n"
+    coefficients = "    coefficients:\n      kappa: {value: 1.0e-3, units: m2/s}\n"
+    assert scales in text and coefficients in text
+    text = text.replace(
+        scales,
+        scales
+        + "    velocity: {value: 0.5, units: m/s}\n"
+        + "\n  dimensionless_numbers:\n"
+        + '    Peclet: {formula: "U * L / kappa"}\n'
+        + '    Fourier: {formula: "kappa * time / L**2"}\n',
+    )
+    return text.replace(coefficients, "    coefficients:\n" + coefficients_yaml)
+
+
+@pytest.mark.parametrize(
+    "coefficients_yaml",
+    [
+        "      kappa: {value: 1.0e-3, units: m2/s}\n",
+        "      kappa: 1.0e-3\n",
+        '      kappa: "1.0e-3"\n',
+    ],
+    ids=["value-map", "bare-float", "quoted-float"],
+)
+def test_compute_dimensionless_numbers_uses_validated_coefficients(coefficients_yaml):
+    # Regression: coefficients are MapPattern(Str(), Any()) in the schema, so
+    # strictyaml returns '1.0e-3' (a string) and formulas referencing kappa
+    # used to be silently dropped.
+    from ymf import validate_ymf
+
+    doc = validate_ymf(_heat_doc_with_numbers(coefficients_yaml))
+    numbers = compute_dimensionless_numbers(doc["Problem"])
+    assert numbers["Peclet"] == pytest.approx(0.5 * 1.0 / 1.0e-3)
+    assert numbers["Fourier"] == pytest.approx(1.0e-3 * 50.66 / 1.0**2)
+
+
+def test_compute_dimensionless_numbers_ignores_non_numeric_coefficients():
+    problem = {
+        "characteristic_scales": {"length": {"value": 1.0, "units": "m"}},
+        "strong_form": {"coefficients": {"Q": "π²", "k": "nan", "flag": True}},
+        "dimensionless_numbers": {
+            "A": {"formula": "Q * L"},
+            "B": {"formula": "k * L"},
+            "C": {"formula": "flag * L"},
+        },
+    }
+    assert compute_dimensionless_numbers(problem) == {}
+
+
 # ---------------------------------------------------------------------------
 # non_dimensionalize()
 # ---------------------------------------------------------------------------
@@ -208,3 +262,51 @@ def test_non_dimensionalize_no_units_produces_empty_substitutions():
     doc = {"Problem": {"name": "bare", "strong_form": {"unknowns": ["u", "p"]}}}
     result = non_dimensionalize(doc)
     assert result["substitutions"] == {}
+
+
+# --- scales derived from coefficients ---------------------------------------
+
+
+def _flow(scales, coefficients):
+    return {"Problem": {
+        "characteristic_scales": scales,
+        "dimensionless_numbers": {"Re": {"formula": "rho * U * L / mu"}},
+        "strong_form": {"unknowns": [], "coefficients": coefficients},
+    }}
+
+
+def test_a_scale_can_be_derived_from_coefficients():
+    from ymf.units import characteristic_scale_values, compute_dimensionless_numbers
+
+    # strings, as strictyaml returns coefficient values
+    doc = _flow({"length": {"value": 1.0},
+                 "velocity": {"derived": True, "formula": "G * L_char**2 / (8 * mu)"},
+                 "density": {"derived": True, "formula": "rho"},
+                 "viscosity": {"derived": True, "formula": "mu"}},
+                {"rho": {"value": "1.0"}, "mu": {"value": "0.01"}, "G": {"value": "0.08"}})
+    scales = characteristic_scale_values(doc["Problem"])
+    assert scales["viscosity"] == 0.01
+    assert scales["velocity"] == pytest.approx(1.0)
+    assert compute_dimensionless_numbers(doc["Problem"])["Re"] == pytest.approx(100.0)
+
+
+def test_a_derived_scale_raises_no_duplication_issue():
+    doc = _flow({"viscosity": {"derived": True, "formula": "mu"}}, {"mu": {"value": "0.01"}})
+    assert list(check(doc)) == []
+
+
+def test_a_scale_restating_a_coefficient_with_a_different_value_is_an_error():
+    doc = _flow({"viscosity": {"value": 1.0}}, {"mu": {"value": "0.01"}})
+    result = check(doc)
+    assert not result
+    (issue,) = list(result)
+    assert issue.severity == "error"
+    assert issue.location == "characteristic_scales[viscosity]"
+    assert 'formula: "mu"' in issue.message
+
+
+def test_a_scale_restating_a_coefficient_with_the_same_value_is_a_warning():
+    doc = _flow({"density": {"value": 1.0}}, {"rho": 1.0})
+    result = check(doc)
+    assert result
+    assert [i.severity for i in result] == ["warning"]

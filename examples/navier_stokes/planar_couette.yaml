@@ -1,0 +1,108 @@
+# ============================================================
+# YMF problem: planar Couette flow, Re = 10
+#
+# Extends the Navier-Stokes model with a geometry, boundary conditions,
+# coefficient values, an exact solution, a weak form and a discretization.
+# The bottom plate is fixed and the top plate slides at speed U; the flow
+# is periodic in x. The exact velocity is linear in y.
+# ============================================================
+
+extends: navier_stokes_model.yaml
+
+Problem:
+  name: "Planar Couette flow, Re = 10"
+  physical_model:
+    provenance: human_specified
+    assumptions: [steady, fully_developed]   # added to the model's
+
+  characteristic_scales:
+    length: {value: 1.0, units: m}           # the gap H
+    velocity: {value: 1.0, units: m/s}       # the top plate's speed U
+    # Derived from the coefficients, so each value is stated once.
+    density: {derived: true, formula: "rho", units: kg/m3}
+    viscosity: {derived: true, formula: "mu", units: Pa*s}
+
+  dimensionless_numbers:
+    Re: {formula: "rho * U * L / mu"}
+
+  strong_form:
+    domain: |-
+      Ω = [0, 4] × [0, 1]  (m),  gap H = 1 m
+    boundary_regions:
+      - name: "bottom"
+        geometry: "y = 0"
+      - name: "top"
+        geometry: "y = H"
+      - name: "ends"
+        geometry: "x = 0 and x = 4, identified"
+    boundary_conditions:
+      - region: "ends"
+        variable: v
+        type: periodic
+      - region: "ends"
+        variable: p
+        type: periodic
+    # Values for the coefficients the model declared. Units come from the
+    # model, so they are not repeated here.
+    coefficients:
+      rho: {value: 1.0}
+      mu: {value: 0.1}
+      f: {value: 0.0}
+    known_analytical_solution:
+      formula: |-
+        v = (U y / H, 0),  p = p0
+      reference: "Any fluid mechanics text; satisfies the equations exactly for every Re."
+
+  weak_forms:
+    - label: "galerkin_periodic"
+      provenance: human_specified
+      derivation: |-
+        Steady form of the model. Multiply momentum by w and continuity by q,
+        integrate over Ω, integrate the viscous and pressure terms by parts.
+        Boundary terms vanish on the plates (w = 0) and cancel on the
+        periodic ends.
+      solution_spaces:
+        trial: "H1_per(Ω)² × L2_0(Ω), v = (0,0) on bottom, v = (U,0) on top"
+        test: "H1_per,0(Ω)² × L2_0(Ω)"
+      inf_sup_stability: "requires an inf-sup stable pair"
+      bilinear: |-
+        ∫Ω ρ (v·∇)v·w dx + ∫Ω μ ∇v:∇w dx - ∫Ω p ∇·w dx + ∫Ω q ∇·v dx
+      linear: |-
+        l(w) = 0
+      boundary_conditions: |-
+        v = (0, 0) on bottom, v = (U, 0) on top  (essential)
+        periodic in x on ends
+      stabilization_method: "none"
+
+solution_paths:
+  analytical:
+    - name: "couette_exact"
+      provenance: human_specified
+      method: "closed_form"
+      solution:
+        formula: |-
+          v = (U y / H, 0),  p = p0
+  discretizations:
+    - name: "taylor_hood"
+      provenance: human_specified
+      from_weak_form: "galerkin_periodic"
+      finite_element:
+        velocity: {family: CG, order: 2}
+        pressure: {family: CG, order: 1}
+      solver:
+        type: nonlinear
+        nonlinear_solver: newton
+        linear_solver: mumps
+        tolerance: 1.0e-12
+
+vvuq:
+  verification:
+    method: "exact_comparison"
+    grid_levels: [4, 8]
+    reference:
+      type: "analytical"
+      branch_ref: "couette_exact"
+    expected: >-
+      The exact velocity is linear and the exact pressure constant, so both
+      lie in the Taylor-Hood spaces. The discrete solution should equal the
+      exact one to solver tolerance on every grid, coarse ones included.
