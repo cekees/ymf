@@ -9,6 +9,11 @@ Problem:
     processes: [heat_conduction]
     assumptions: [steady, constant_properties]
 
+  # Machine-readable domain, equations, conditions and solution: these are
+  # what ymf.symbolic reads to run the problem (see ymf_run in Proteus).
+  geometry:
+    box: {lower: [0.0, 0.0], upper: [1.0, 1.0]}
+
   strong_form:
     provenance: llm_derived
     unknowns: [u]
@@ -20,9 +25,15 @@ Problem:
     boundary_regions:
       - name: "all_boundaries"
         geometry: "∂Ω"
+    boundary_conditions:
+      - region: "all_boundaries"
+        variable: u
+        type: dirichlet
+        value: 0.0
     coefficients:
-      f: |-
-        π²sin(πx)sin(πy)
+      f: {formula: "pi**2*sin(pi*x)*sin(pi*y)"}
+    equations:
+      - "-div(grad(u)) = f"
 
   weak_forms:
     - label: "global"
@@ -48,11 +59,18 @@ Problem:
 solution_paths:
   analytical:
     - name: "exact_Poisson"
-      provenance: llm_derived
+      # The LLM-derived formula was sin(πx)sin(πy)/(2π²), which does not
+      # satisfy -Δu = f: -Δ(sin(πx)sin(πy)) = 2π² sin(πx)sin(πy), so with
+      # f = π² sin(πx)sin(πy) the solution is half of sin(πx)sin(πy). The
+      # end-to-end run exposed it: the error plateaued at exactly
+      # (1/2 - 1/(2π²))/2 = 0.2247 on every mesh.
+      provenance: human_edited
       method: "separation_of_variables"
       solution:
         formula: |-
-          u(x,y) = sin(πx)sin(πy) / (2π²)
+          u(x,y) = sin(πx)sin(πy) / 2
+        expressions:
+          u: "sin(pi*x)*sin(pi*y)/2"
         derivation_source: "sympy.dsolve"
 
   discretizations:
@@ -64,4 +82,14 @@ solution_paths:
       solver:
         type: linear
         linear_solver: petsc
-        tolerance: 1e-12
+        tolerance: 1.0e-12
+
+    - name: "P2_quadratic"
+      provenance: human_specified
+      from_weak_form: "global"
+      finite_element:
+        fields: {family: CG, order: 2}
+      solver:
+        type: linear
+        linear_solver: petsc
+        tolerance: 1.0e-12

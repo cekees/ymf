@@ -20,6 +20,9 @@ Problem:
     convention: SI
     default: true
 
+  geometry:
+    box: {lower: [0.0, 0.0], upper: [1.0, 1.0]}
+
   characteristic_scales:
     length: {value: 1.0, units: m}
     temperature: {value: 300.0, units: K}
@@ -42,8 +45,7 @@ Problem:
     initial_conditions:
       - field: T
         type: function
-        formula: |-
-          300 + 10 sin(πx) sin(πy)
+        formula: "300 + 10*sin(pi*x)*sin(pi*y)"
         units: K
     boundary_conditions:
       - region: "walls"
@@ -56,6 +58,8 @@ Problem:
     dimensional_check:
       enabled: true
       method: automatic
+    equations:
+      - "dt(T) - div(kappa*grad(T)) = 0"
 
   weak_forms:
     - label: "galerkin"
@@ -83,6 +87,8 @@ solution_paths:
       solution:
         formula: |-
           T(x,y,t) = 300 + 10 exp(-2π²κt) sin(πx) sin(πy)
+        expressions:
+          T: "300 + 10*exp(-2*pi**2*kappa*t)*sin(pi*x)*sin(pi*y)"
         notes: "Only the (1,1) Fourier mode is excited by the initial condition."
 
   discretizations:
@@ -94,6 +100,7 @@ solution_paths:
       discretization:
         time_integration: backward_euler
         dt: 1.0
+        t_end: 50.0
       solver:
         type: time_marching
         linear_solver: petsc

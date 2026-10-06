@@ -35,14 +35,22 @@ Problem:
   dimensionless_numbers:
     Re: {formula: "rho * U * L / mu"}
 
+  geometry:
+    box: {lower: [0.0, 0.0], upper: [4.0, 1.0]}
+
   strong_form:
     domain: |-
       Ω = [0, 4] × [0, 1]  (m),  gap H = 1 m
     boundary_regions:
       - name: "walls"
         geometry: "y = 0 and y = H"
+        where: "y = 0 or y = 1"
       - name: "ends"
         geometry: "x = 0 and x = 4, identified"
+        where: "x = 0 or x = 4"
+      - name: "pressure_datum"
+        geometry: "the corner (0, 0), and its periodic copy (4, 0)"
+        where: "x = 0 and y = 0 or x = 4 and y = 0"
     boundary_conditions:
       - region: "walls"
         variable: v
@@ -55,6 +63,12 @@ Problem:
       - region: "ends"
         variable: p
         type: periodic
+      # Periodic ends and velocity walls leave the pressure free up to a
+      # constant; fixing it at one point picks p0 = 0.
+      - region: "pressure_datum"
+        variable: p
+        type: dirichlet
+        value: 0.0
     coefficients:
       rho: {value: 1.0}
       mu: {value: 1.0}
@@ -66,6 +80,26 @@ Problem:
       reference: "Any fluid mechanics text; exact for every Re below transition."
 
   weak_forms:
+    - label: "galerkin_periodic"
+      provenance: human_specified
+      derivation: |-
+        Steady form of the model. Multiply momentum by w and continuity by q,
+        integrate over Ω, integrate the viscous and pressure terms by parts.
+        Boundary terms vanish on the walls (w = 0) and cancel on the
+        periodic ends.
+      solution_spaces:
+        trial: "H1_per(Ω)² × L2_0(Ω), v = 0 on walls"
+        test: "H1_per,0(Ω)² × L2_0(Ω)"
+      inf_sup_stability: "requires an inf-sup stable pair"
+      bilinear: |-
+        ∫Ω ρ (v·∇)v·w dx + ∫Ω μ ∇v:∇w dx - ∫Ω p ∇·w dx + ∫Ω q ∇·v dx
+      linear: |-
+        l(w) = ∫Ω f·w dx
+      boundary_conditions: |-
+        v = (0, 0) on walls  (essential)
+        periodic in x on ends
+      stabilization_method: "none"
+
     - label: "stabilized_periodic"
       provenance: human_specified
       derivation: |-
@@ -96,7 +130,22 @@ solution_paths:
       solution:
         formula: |-
           v = (G / (2μ) · y (H - y), 0),  p = p0
+        expressions:
+          v: "(G/(2*mu)*y*(1 - y), 0)"
+          p: "0"
   discretizations:
+    - name: "taylor_hood"
+      provenance: human_specified
+      from_weak_form: "galerkin_periodic"
+      finite_element:
+        velocity: {family: CG, order: 2}
+        pressure: {family: CG, order: 1}
+      solver:
+        type: nonlinear
+        nonlinear_solver: newton
+        linear_solver: mumps
+        tolerance: 1.0e-10
+
     - name: "equal_order_p1"
       provenance: human_specified
       from_weak_form: "stabilized_periodic"
@@ -118,3 +167,6 @@ vvuq:
       branch_ref: "poiseuille_exact"
     expected_rates:  # a priori L2 rates on smooth solutions
       equal_order_p1: {error_L2_velocity: 2, error_L2_pressure: 1}
+    expected: >-
+      The exact velocity is quadratic and the exact pressure constant, so
+      Taylor-Hood should reproduce them to solver tolerance on every grid.

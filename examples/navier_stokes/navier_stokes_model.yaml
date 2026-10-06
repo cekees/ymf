@@ -33,6 +33,7 @@ Problem:
     unknowns:
       - name: v
         units: m/s
+        rank: 1          # a vector, one component per space dimension
       - name: p
         units: Pa
     equation_formulation: "incompressible Navier-Stokes, primitive variables"
@@ -45,3 +46,11 @@ Problem:
       rho: {units: kg/m3}
       mu: {units: Pa*s}
       f: {units: N/m3}
+    # Machine-readable, in conservative form: div(rho v⊗v) equals
+    # rho (v·∇)v when div(v) = 0, and as a divergence it is an advective
+    # flux the transport form can integrate by parts. The pressure is part
+    # of that flux too (div(p I) = grad p), so the natural boundary
+    # condition is the traction.
+    equations:
+      - "rho*dt(v) + div(rho*outer(v, v)) - div(mu*grad(v)) + grad(p) = f"
+      - "div(v) = 0"
