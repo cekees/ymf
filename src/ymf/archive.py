@@ -86,6 +86,11 @@ and the pieces are::
     D    = {"Format": str, "DataType": str, "Precision": int,
             "Dimensions": [int, ...], "Data": str}      # Format="HDF"
          | {"Format": "XML", ..., "Include": str}       # text sidecar file
+         | {"Format": "XML", ..., "Values": [num, ...]} # inline, row-major
+
+Inline ``Values`` make an archive self-contained -- no HDF5 file, no
+sidecar -- which suits small problems and solvers that avoid an HDF5
+dependency. ``ymf2xmf`` writes them as the DataItem's text, as XDMF does.
 
 Build these with the constructor helpers below (:func:`data_item`,
 :func:`attribute`, :func:`topology`, :func:`geometry`, :func:`grid`,
@@ -260,6 +265,7 @@ def data_item(
     data: Optional[str] = None,
     *,
     include: Optional[str] = None,
+    values: Optional[Sequence[Any]] = None,
     data_type: str = "Float",
     precision: int = _DEFAULT_PRECISION,
     fmt: Optional[str] = None,
@@ -275,8 +281,11 @@ def data_item(
         this for ``Format="HDF"`` (the default).
     include:
         Path to a text sidecar file holding the values. Give this instead
-        of ``data`` for ``Format="XML"``, the no-HDF5 fallback. Exactly one
-        of ``data`` / ``include`` must be given.
+        of ``data`` for ``Format="XML"``, the no-HDF5 fallback.
+    values:
+        The values themselves, flattened in row-major order, for an inline
+        ``Format="XML"`` DataItem: the archive then needs no other file.
+        Exactly one of ``data`` / ``include`` / ``values`` must be given.
     data_type:
         One of :data:`DATA_TYPES`.
     precision:
@@ -285,13 +294,15 @@ def data_item(
         :func:`data_item_for`, which reads it off the array.
     fmt:
         One of :data:`DATA_ITEM_FORMATS`. Inferred from which of
-        ``data``/``include`` was given, so it rarely needs passing.
+        ``data``/``include``/``values`` was given, so it rarely needs passing.
     """
-    if (data is None) == (include is None):
+    if sum(x is not None for x in (data, include, values)) != 1:
         raise YmfArchiveError(
             "data_item() needs exactly one of data= (an HDF5 reference like "
-            "'out.h5:/u_t3') or include= (a path to a text sidecar file); "
-            f"got data={data!r}, include={include!r}"
+            "'out.h5:/u_t3'), include= (a path to a text sidecar file) or "
+            "values= (the values inline); "
+            f"got data={data!r}, include={include!r}, "
+            f"values={'<%d values>' % len(values) if values is not None else None}"
         )
     if fmt is None:
         fmt = "HDF" if data is not None else "XML"
@@ -303,9 +314,56 @@ def data_item(
     }
     if data is not None:
         item["Data"] = str(data)
-    else:
+    elif include is not None:
         item["Include"] = str(include)
+    else:
+        item["Values"] = _inline_values(values, data_type, "data_item()")
+        check_dimensions(item, [len(item["Values"])], where="data_item()")
     return item
+
+
+class _FlowList(list):
+    """A list written as one ``[a, b, c]`` line rather than one per item.
+
+    Inline ``Values`` use it so that an array costs one YAML line, not one
+    line per number. It is a plain list in every other respect.
+    """
+
+
+#: DataTypes whose values are integers.
+_INTEGER_DATA_TYPES = frozenset({"Int", "UInt", "Char", "UChar"})
+
+
+def _flatten(values: Any) -> List[Any]:
+    """Flatten nested sequences (or anything with ``.tolist()``) row-major."""
+    if hasattr(values, "tolist"):  # numpy arrays, without importing numpy
+        values = values.tolist()
+    if not isinstance(values, (list, tuple)):
+        return [values]
+    flat: List[Any] = []
+    for v in values:
+        flat.extend(_flatten(v) if isinstance(v, (list, tuple)) else [v])
+    return flat
+
+
+def _inline_values(values: Any, data_type: str, where: str) -> "_FlowList":
+    """Inline values as a flat list of numbers of the declared type."""
+    integral = data_type in _INTEGER_DATA_TYPES
+    result = _FlowList()
+    for i, v in enumerate(_flatten(values)):
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            raise YmfArchiveError(
+                f"{where}.Values[{i}]: {v!r} is not a number")
+        if integral:
+            if v != int(v):
+                raise YmfArchiveError(
+                    f"{where}.Values[{i}]: {v!r} is not an integer, but the "
+                    f"DataType is {data_type}")
+            v = int(v)
+        else:
+            v = float(v)
+        result.append(v)
+    return result
 
 
 #: numpy dtype kind -> XDMF DataType. Covers the kinds that can appear in a
@@ -318,10 +376,15 @@ def data_item_for(
     data: Optional[str] = None,
     *,
     include: Optional[str] = None,
+    inline: bool = False,
     dimensions: Optional[Sequence[int]] = None,
     check: bool = True,
 ) -> Dict[str, Any]:
     """Build a DataItem by reading shape and dtype off ``array``.
+
+    With ``inline=True`` the values are copied into the DataItem itself
+    (``Format="XML"``, ``Values``) instead of being referenced, so the
+    archive needs no HDF5 file or sidecar.
 
     Prefer this over :func:`data_item` whenever the array is in hand. It
     removes the three fields a caller can most easily get wrong --
@@ -361,10 +424,15 @@ def data_item_for(
             f"{sorted(_DTYPE_KIND_TO_DATA_TYPE)}"
         )
 
+    if inline and (data is not None or include is not None):
+        raise YmfArchiveError(
+            "data_item_for(): inline=True copies the values in, so it takes "
+            "no data= or include= reference")
     item = data_item(
         list(shape) if dimensions is None else dimensions,
         data,
         include=include,
+        values=array if inline else None,
         data_type=_DTYPE_KIND_TO_DATA_TYPE[kind],
         precision=dtype.itemsize,
     )
@@ -539,13 +607,14 @@ def _canonicalize_data_item(item: Dict[str, Any], where: str) -> Dict[str, Any]:
     """
     if "Dimensions" not in item:
         raise YmfArchiveError(f"{where}: DataItem has no 'Dimensions'")
-    has_data, has_include = "Data" in item, "Include" in item
-    if has_data == has_include:
+    present = [k for k in ("Data", "Include", "Values") if k in item]
+    if len(present) != 1:
         raise YmfArchiveError(
-            f"{where}: DataItem needs exactly one of 'Data' (HDF5 reference) "
-            f"or 'Include' (text sidecar path); got "
-            f"{'both' if has_data else 'neither'}"
+            f"{where}: DataItem needs exactly one of 'Data' (HDF5 reference), "
+            f"'Include' (text sidecar path) or 'Values' (inline values); got "
+            f"{' and '.join(present) if present else 'none'}"
         )
+    has_data = present == ["Data"]
     fmt = item.get("Format", "HDF" if has_data else "XML")
     canonical: Dict[str, Any] = {
         "Format": fmt,
@@ -555,8 +624,11 @@ def _canonicalize_data_item(item: Dict[str, Any], where: str) -> Dict[str, Any]:
     }
     if has_data:
         canonical["Data"] = str(item["Data"])
-    else:
+    elif "Include" in item:
         canonical["Include"] = str(item["Include"])
+    else:
+        canonical["Values"] = _inline_values(
+            item["Values"], canonical["DataType"], where)
     return canonical
 
 
@@ -716,8 +788,13 @@ def _validate_data_item(item: Dict[str, Any], where: str) -> None:
         raise YmfArchiveError(f"{where}.Dimensions: must not be empty")
     if any(d < 0 for d in dims):
         raise YmfArchiveError(f"{where}.Dimensions: must be non-negative, got {dims}")
-    if fmt == "XML" and "Include" not in item:
-        raise YmfArchiveError(f"{where}: Format='XML' requires 'Include'")
+    if fmt == "XML" and "Include" not in item and "Values" not in item:
+        raise YmfArchiveError(f"{where}: Format='XML' requires 'Include' or 'Values'")
+    if "Values" in item:
+        if fmt != "XML":
+            raise YmfArchiveError(
+                f"{where}: inline 'Values' need Format='XML', not {fmt!r}")
+        check_dimensions(item, [len(item["Values"])], where=where)
     if fmt == "HDF" and "Data" not in item:
         raise YmfArchiveError(f"{where}: Format='HDF' requires 'Data'")
 
@@ -738,7 +815,7 @@ def _validate_grid_like(g: Dict[str, Any], where: str) -> None:
         )
     _validate_data_item(geom["DataItem"], f"{where}.Geometry.DataItem")
 
-    seen: Dict[str, int] = {}
+    seen: Dict[Tuple[str, str], int] = {}
     for i, attr in enumerate(g["Attributes"]):
         at = f"{where}.Attributes[{i}]"
         if attr["AttributeType"] not in ATTRIBUTE_TYPES:
@@ -750,14 +827,19 @@ def _validate_grid_like(g: Dict[str, Any], where: str) -> None:
             raise YmfArchiveError(
                 f"{at}.Center: {attr['Center']!r} is not one of {sorted(CENTERINGS)}"
             )
-        name = attr["Name"]
-        if name in seen:
+        # Viewers keep fields on different entities apart (point data and
+        # cell data are separate namespaces in VTK), so the same name may
+        # appear once per centering -- exporters commonly write T both
+        # cell- and node-centred. Twice on the same entity is a duplicate.
+        key = (attr["Name"], attr["Center"])
+        if key in seen:
             raise YmfArchiveError(
-                f"{at}.Name: duplicate attribute name {name!r} (also at "
-                f"{where}.Attributes[{seen[name]}]); viewers key fields by "
-                "name within a grid, so duplicates silently shadow each other"
+                f"{at}.Name: duplicate {attr['Center']}-centred attribute name "
+                f"{attr['Name']!r} (also at {where}.Attributes[{seen[key]}]); "
+                "viewers key fields by name, so duplicates silently shadow "
+                "each other"
             )
-        seen[name] = i
+        seen[key] = i
         _validate_data_item(attr["DataItem"], f"{at}.DataItem")
 
 
@@ -820,6 +902,16 @@ def check_dimensions(item: Dict[str, Any], shape: Sequence[int], where: str = "D
 # ---------------------------------------------------------------------------
 
 
+class _ArchiveDumper(_YamlDumper):
+    """The libyaml dumper, writing inline ``Values`` on one line."""
+
+
+_ArchiveDumper.add_representer(
+    _FlowList,
+    lambda dumper, data: dumper.represent_sequence(
+        "tag:yaml.org,2002:seq", data, flow_style=True))
+
+
 def _dump(obj: Any) -> str:
     if not HAVE_LIBYAML:
         warnings.warn(
@@ -830,7 +922,8 @@ def _dump(obj: Any) -> str:
             stacklevel=3,
         )
     return yaml.dump(
-        obj, Dumper=_YamlDumper, default_flow_style=False, sort_keys=False, allow_unicode=True
+        obj, Dumper=_ArchiveDumper, default_flow_style=False, sort_keys=False,
+        allow_unicode=True,
     )
 
 

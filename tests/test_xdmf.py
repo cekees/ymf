@@ -556,19 +556,63 @@ def test_a_collection_without_collection_type_is_spatial_as_xdmf_defaults():
     assert "SpatialCollection" in domain["TimeCollections"][0]["Data"][0]
 
 
-def test_inline_values_are_refused_not_read_as_a_file_reference():
+def test_inline_values_with_no_format_are_read_as_xdmf_defaults_them():
     # No Format: XDMF's default is XML, i.e. the text is the values.
     body = ('<Topology Type="Triangle" NumberOfElements="1">'
             '<DataItem Dimensions="1 3" NumberType="Int">0 1 2</DataItem></Topology>' + XYZ)
-    with pytest.raises(YmfArchiveError, match=r"Topology\.DataItem: Format=\"XML\" \(XDMF's default\).*inline"):
-        _read(_uniform(body))
+    item = _read(_uniform(body))["TimeCollections"][0]["Data"][0]["Topology"]["DataItem"]
+    assert item == {"Format": "XML", "DataType": "Int", "Precision": 4,
+                    "Dimensions": [1, 3], "Values": [0, 1, 2]}
 
 
-def test_explicit_inline_xml_values_are_refused():
+def test_explicit_inline_xml_values_are_read_as_floats():
     body = TRIANGLE + ('<Geometry Type="XYZ"><DataItem Format="XML" Dimensions="3 3">'
-                       '0 0 0 1 0 0 0 1 0</DataItem></Geometry>')
-    with pytest.raises(YmfArchiveError, match=r"Geometry\.DataItem: Format=\"XML\" with no xi:include"):
+                       '0 0 0\n1 0 0\n0 1 0.5</DataItem></Geometry>')
+    item = _read(_uniform(body))["TimeCollections"][0]["Data"][0]["Geometry"]["DataItem"]
+    assert item["Values"] == [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5]
+    assert all(isinstance(v, float) for v in item["Values"])
+
+
+def test_inline_values_must_match_their_dimensions():
+    body = ('<Topology Type="Triangle" NumberOfElements="1">'
+            '<DataItem Dimensions="1 3" DataType="Int">0 1</DataItem></Topology>' + XYZ)
+    with pytest.raises(YmfArchiveError, match=r"Topology\.DataItem: Dimensions \[1, 3\] declare 3 values, but 2 are inline"):
         _read(_uniform(body))
+
+
+def test_inline_values_must_be_numbers_of_the_declared_type():
+    body = ('<Topology Type="Triangle" NumberOfElements="1">'
+            '<DataItem Dimensions="1 3" DataType="Int">0 1 2.5</DataItem></Topology>' + XYZ)
+    with pytest.raises(YmfArchiveError, match=r"not all Int numbers"):
+        _read(_uniform(body))
+
+
+def test_a_self_contained_domain_round_trips_through_xmf_exactly():
+    from ymf.archive import data_item as di
+    domain = new_domain("mesh")
+    add_uniform_step(
+        domain, 0.5,
+        topology("Triangle", 2, di([2, 3], values=[[0, 1, 3], [0, 3, 2]], data_type="Int")),
+        geometry(di([4, 2], values=[0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                    precision=8), geometry_type="XY"),
+        # values that only round-trip if written with full precision
+        [attribute("u", di([4], values=[0.1, 1 / 3, 2 ** -40, -1e300], precision=8))],
+    )
+    assert round_trip_equal(domain, {"note": "no other files"}) is True
+
+
+def test_inline_values_are_written_as_rows(tmp_path):
+    from ymf.archive import data_item as di
+    domain = new_domain("mesh")
+    add_uniform_step(
+        domain, 0.0,
+        topology("Triangle", 2, di([2, 3], values=[0, 1, 3, 0, 3, 2], data_type="Int")),
+        geometry(di([4, 3], include="nodes.txt")))
+    path = tmp_path / "m.xmf"
+    write_xdmf(domain, path)
+    text = path.read_text()
+    assert "0 1 3\n0 3 2" in text
+    assert "xi:include" in text  # the sidecar form still works beside it
 
 
 @pytest.mark.parametrize("grid_attrs, body, message", [

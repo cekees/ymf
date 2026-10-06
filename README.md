@@ -46,7 +46,8 @@ Pre-release (0.2.x). The repository is private while the format settles.
 | Piece | State |
 |---|---|
 | Archive data model, YAML I/O, structural checks (`ymf.archive`) | **Implemented.** Tested against real Proteus output; used by Proteus's `ymf_io` branch, aimed at Proteus 2.0 |
-| `.ymf` → `.xmf` conversion (`ymf2xmf`, `ymf.xdmf`) | **Implemented.** Lossless round trip; output opens in ParaView |
+| `.ymf` → `.xmf` conversion (`ymf2xmf`, `ymf.xdmf`) | **Implemented.** Lossless round trip; output opens in ParaView. Reads XDMF from other tools too, refusing by name what the model can't hold ([docs/xdmf-model.yaml](docs/xdmf-model.yaml)) |
+| Self-contained archives: arrays inline, no HDF5 | **Implemented.** `data_item_for(array, inline=True)`; `write_archive.py --inline` |
 | Problem-spec schema v0.2 (`ymf.schema`) | **Implemented.** See the [known gaps](docs/problem-specification.md#known-gaps) |
 | Composing a spec from several files: a model extended into problems (`ymf.compose`) | **Implemented.** Overrides are recorded in the composed document |
 | Units, scales, dimensionless numbers (`ymf.units`) | **Implemented**, apart from rewriting the PDE in dimensionless form |

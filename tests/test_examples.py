@@ -1,5 +1,6 @@
 """The examples are documentation, so they are run here to keep them true."""
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -12,9 +13,9 @@ EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 SPECS = sorted(EXAMPLES_DIR.rglob("*.yaml"))
 
 
-def run(script, *args):
+def run(script, *args, env=None):
     return subprocess.run([sys.executable, str(EXAMPLES_DIR / script), *map(str, args)],
-                          capture_output=True, text=True, check=True).stdout
+                          capture_output=True, text=True, check=True, env=env).stdout
 
 
 @pytest.mark.parametrize("spec", SPECS, ids=[p.name for p in SPECS])
@@ -53,5 +54,28 @@ def test_write_archive_produces_ymf_h5_and_xmf(archive_dir, name):
 @pytest.mark.parametrize("name", ["heat", "heat_split"])
 def test_read_archive_recovers_kappa_and_matches_the_xmf(archive_dir, name):
     out = run("read_archive.py", archive_dir / (name + ".ymf"))
+    assert "kappa fitted from the archived fields: 0.001\n" in out
+    assert "holds the same domain and problem: True" in out
+
+
+@pytest.fixture(scope="module")
+def inline_dir(tmp_path_factory):
+    """Archives written with --inline, with h5py made unimportable."""
+    pytest.importorskip("numpy")
+    blocker = tmp_path_factory.mktemp("block")
+    (blocker / "h5py.py").write_text('raise ImportError("h5py is blocked for this test")\n')
+    env = dict(os.environ, PYTHONPATH=os.pathsep.join(
+        [str(blocker)] + [p for p in os.environ.get("PYTHONPATH", "").split(os.pathsep) if p]))
+    outdir = tmp_path_factory.mktemp("inline")
+    run("write_archive.py", "--outdir", outdir, "-n", "8", "--inline", env=env)
+    return outdir, env
+
+
+@pytest.mark.parametrize("name", ["heat", "heat_split"])
+def test_inline_archives_are_self_contained_and_need_no_h5py(inline_dir, name):
+    outdir, env = inline_dir
+    assert sorted(p.name for p in outdir.iterdir()) == [
+        "heat.xmf", "heat.ymf", "heat_split.xmf", "heat_split.ymf"]
+    out = run("read_archive.py", outdir / (name + ".ymf"), env=env)
     assert "kappa fitted from the archived fields: 0.001\n" in out
     assert "holds the same domain and problem: True" in out

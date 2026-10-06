@@ -19,9 +19,9 @@
 #   - YMF uses the XDMF 2 names Type and DataType, and its .xmf writer
 #     emits Xdmf Version="2.0". XDMF 3 renamed these TopologyType,
 #     GeometryType and NumberType; ymf's .xmf reader accepts either name.
-#   - A .ymf file holds metadata only. Every array lives outside it, in
-#     HDF5 or a text sidecar, so XDMF's inline "light data" has no
-#     equivalent.
+#   - An array lives in HDF5, in a text sidecar, or inline in the
+#     DataItem itself (Values), XDMF's "light data". With every array
+#     inline, the .ymf and .xmf are each self-contained.
 #
 # Reading XDMF written by other tools (ymf.xdmf.read_xdmf): everything
 # marked supported or partial below is read; everything not_supported
@@ -49,7 +49,8 @@ XML:
       names. Repeated children become a list under a plural key
       (Attribute -> Attributes, Grid in a collection -> Data or
       SpatialCollection). Element text, which XDMF uses for a DataItem's
-      values or HDF5 path, becomes the Data key.
+      values or HDF5 path, becomes the Values key (a list of numbers) or
+      the Data key (the path).
     example: |-
       # <Attribute Name="T" AttributeType="Scalar" Center="Node">
       #   <DataItem Format="HDF" DataType="Float" Precision="8"
@@ -131,8 +132,8 @@ XDMF_Elements:
     ymf: DataItem
     status: partial
     notes: |-
-      Only the Uniform item type: one array, stored in HDF5 or in a text
-      sidecar. Values are never inline.
+      Only the Uniform item type: one array, stored in HDF5, in a text
+      sidecar, or inline in the DataItem.
     attributes:
       Name: {status: not_supported}
       ItemType:
@@ -167,18 +168,27 @@ XDMF_Elements:
         values: [Binary, HDF, XML]
         notes: |-
           HDF: the dataset reference "file.h5:/dataset" goes in Data, with
-          the file relative to the .ymf. XML: the values go in a text
-          sidecar named by Include, never inline. Binary: accepted by the
+          the file relative to the .ymf. XML: the values go inline in
+          Values (a flat, row-major list, checked against Dimensions), or in
+          a text sidecar named by Include. Binary: accepted by the
           validator, but none of Endian, Compression or Seek can be stated.
-          In a .ymf, an omitted Format is inferred from which of Data or
-          Include is present. Reading .xmf, an omitted Format is XDMF's
-          default, XML, and a DataItem whose values are inline is refused.
+          In a .ymf, an omitted Format is inferred from which of Data,
+          Include or Values is present. Reading .xmf, an omitted Format is
+          XDMF's default, XML.
       Endian: {status: not_supported}
       Compression: {status: not_supported}
       Seek: {status: not_supported}
 
     Uniform:
       status: supported
+      notes: "Referenced (HDF5), in a sidecar, or inline. Inline:"
+      inline_example: |-
+        DataItem:
+          Format: XML
+          DataType: Int
+          Precision: 4
+          Dimensions: [2, 3]
+          Values: [0, 1, 3, 0, 3, 2]
       example: |-
         DataItem:
           Format: HDF
@@ -354,9 +364,10 @@ XDMF_Elements:
     ymf: "Attributes[]"
     status: partial
     notes: |-
-      Exactly one DataItem per attribute. Names must be unique within a
-      grid; a viewer keys fields by name, so a duplicate would silently
-      hide the first.
+      Exactly one DataItem per attribute. Names must be unique per
+      centering within a grid: a viewer keys point data and cell data by
+      name separately, so T may be both Cell- and Node-centred, but two
+      Node-centred T would silently hide one another.
     attributes:
       Name:
         ymf: Name

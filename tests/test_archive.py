@@ -353,8 +353,19 @@ def test_validate_rejects_duplicate_attribute_names_within_one_grid():
     domain = make_uniform_domain()
     attrs = domain["TimeCollections"][0]["Data"][0]["Attributes"]
     attrs[1]["Name"] = attrs[0]["Name"]
-    with pytest.raises(YmfArchiveError, match="duplicate attribute name"):
+    attrs[1]["Center"] = attrs[0]["Center"]
+    with pytest.raises(YmfArchiveError, match="duplicate .*-centred attribute name"):
         validate_domain(domain)
+
+
+def test_validate_allows_the_same_name_on_different_centerings():
+    # Point data and cell data are separate namespaces in a viewer; an
+    # exporter writing T both cell- and node-centred is legitimate.
+    domain = make_uniform_domain()
+    attrs = domain["TimeCollections"][0]["Data"][0]["Attributes"]
+    attrs[1]["Name"] = attrs[0]["Name"]
+    attrs[0]["Center"], attrs[1]["Center"] = "Cell", "Node"
+    validate_domain(domain)
 
 
 def test_validate_allows_the_same_attribute_name_in_different_subdomains():
@@ -630,3 +641,70 @@ def test_singular_time_collection_is_accepted_as_input_sugar():
     singular = {"TimeCollection": {"Name": "Mesh", "Data": []}}
     plural = {"TimeCollections": [{"Name": "Mesh", "Data": []}]}
     assert canonicalize_domain(singular) == canonicalize_domain(plural)
+
+
+# ---------------------------------------------------------------------------
+# inline values: a self-contained archive, no HDF5 or sidecar
+# ---------------------------------------------------------------------------
+
+
+def test_data_item_takes_values_inline_and_flattens_them_row_major():
+    item = data_item([2, 3], values=[[0, 1, 3], [0, 3, 2]], data_type="Int")
+    assert item == {"Format": "XML", "DataType": "Int", "Precision": 4,
+                    "Dimensions": [2, 3], "Values": [0, 1, 3, 0, 3, 2]}
+
+
+def test_data_item_needs_exactly_one_of_data_include_and_values():
+    with pytest.raises(YmfArchiveError, match="exactly one"):
+        data_item([1], "x.h5:/a", values=[1.0])
+
+
+def test_data_item_for_inline_copies_an_array_in():
+    np = pytest.importorskip("numpy")
+    item = data_item_for(np.arange(6, dtype=np.int32).reshape(2, 3), inline=True)
+    assert item["Values"] == [0, 1, 2, 3, 4, 5]
+    assert (item["Format"], item["DataType"], item["Precision"]) == ("XML", "Int", 4)
+    assert all(type(v) is int for v in item["Values"])
+
+
+def test_data_item_for_inline_takes_no_reference():
+    np = pytest.importorskip("numpy")
+    with pytest.raises(YmfArchiveError, match="no data= or include="):
+        data_item_for(np.zeros(2), "x.h5:/a", inline=True)
+
+
+@pytest.mark.parametrize("values, data_type, message", [
+    ([1, 2], "Float", r"declared \[3\] \(3 values\) but the array has shape \[2\]"),
+    ([1, 2, 2.5], "Int", r"Values\[2\]: 2.5 is not an integer"),
+    ([1, "2", 3], "Float", r"Values\[1\]: '2' is not a number"),
+    ([1, True, 3], "Int", r"Values\[1\]: True is not a number"),
+])
+def test_inline_values_are_checked(values, data_type, message):
+    with pytest.raises(YmfArchiveError, match=message):
+        data_item([3], values=values, data_type=data_type)
+
+
+def test_validate_refuses_inline_values_under_another_format():
+    domain = new_domain()
+    add_uniform_step(domain, 0.0,
+                     topology("Polyvertex", 1, data_item([1], values=[0], data_type="Int"),
+                              nodes_per_element=1),
+                     geometry(data_item([1, 3], values=[0.0, 0.0, 0.0])))
+    domain["TimeCollections"][0]["Data"][0]["Geometry"]["DataItem"]["Format"] = "HDF"
+    with pytest.raises(YmfArchiveError, match=r"Geometry\.DataItem: inline 'Values' need Format='XML'"):
+        validate_domain(domain)
+
+
+def test_an_inline_archive_round_trips_and_writes_each_array_on_few_lines(tmp_path):
+    domain = new_domain("mesh")
+    add_uniform_step(
+        domain, 0.0,
+        topology("Triangle", 2, data_item([2, 3], values=[0, 1, 3, 0, 3, 2], data_type="Int")),
+        geometry(data_item([4, 3], values=[0.0] * 12, precision=8)),
+        [attribute("u", data_item([4], values=[0.1, 1 / 3, 2.0, -1e300], precision=8))])
+    path = tmp_path / "self_contained.ymf"
+    write_ymf(domain, path)
+    text = path.read_text()
+    assert "Values: [0, 1, 3, 0, 3, 2]" in text
+    read_back, _ = read_ymf(path)
+    assert read_back == validate_domain(domain)

@@ -7,8 +7,9 @@ This is the post-processing side. It does three things a collaborator's
 script would do with an archive:
 
 1. Recover the problem specification the run carried in ``extra``.
-2. Follow each DataItem's ``file.h5:/dataset`` reference to the array,
-   for a uniform archive or a per-subdomain one alike.
+2. Get each field's array: follow its ``file.h5:/dataset`` reference, or
+   take its inline values, for a uniform archive or a per-subdomain one
+   alike.
 3. Check the data against the spec: the peak temperature excess should
    decay as exp(-2 pi^2 kappa t), so fitting that rate to the archived
    fields recovers kappa, which is compared with the value in the spec.
@@ -19,7 +20,8 @@ script would do with an archive:
 It finishes by reading the derived ``.xmf`` back and confirming it holds
 exactly the same domain and problem as the ``.ymf``.
 
-Needs ``numpy`` and ``h5py`` beside ymf's core.
+Needs ``numpy`` beside ymf's core, and ``h5py`` for an archive that
+references HDF5 (not for one written with ``--inline``).
 """
 
 from __future__ import annotations
@@ -29,7 +31,6 @@ import math
 import sys
 from pathlib import Path
 
-import h5py
 import numpy as np
 
 from ymf.archive import canonicalize_domain, read_ymf
@@ -37,15 +38,20 @@ from ymf.xdmf import read_xdmf
 
 
 def load_array(data_item, base_dir):
-    """Fetch the array a DataItem points at.
+    """Fetch the array a DataItem holds or points at.
 
-    ``Data`` is ``"<file>:/<dataset>"`` with the file relative to the
-    archive's own directory -- that is what lets an archive be moved as a
-    directory. ``rsplit`` keeps a colon inside the path (a Windows drive
-    letter) from being mistaken for the separator.
+    Inline ``Values`` are the array itself, flattened row-major. ``Data``
+    is ``"<file>:/<dataset>"`` with the file relative to the archive's own
+    directory -- that is what lets an archive be moved as a directory.
+    ``rsplit`` keeps a colon inside the path (a Windows drive letter) from
+    being mistaken for the separator.
     """
+    if "Values" in data_item:
+        return np.array(data_item["Values"]).reshape(data_item["Dimensions"])
     if data_item["Format"] != "HDF":
-        raise NotImplementedError("this example only follows HDF references")
+        raise NotImplementedError("this example follows HDF references and inline values")
+    import h5py  # only needed for archives that reference HDF5
+
     filename, dataset = data_item["Data"].rsplit(":", 1)
     with h5py.File(base_dir / filename, "r") as h5:
         return h5[dataset][()]

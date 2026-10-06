@@ -65,7 +65,7 @@ from __future__ import annotations
 import base64
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from xml.etree.ElementTree import Element, ElementTree, ParseError, SubElement, parse as et_parse
 
 from ymf.archive import YmfArchiveError, canonicalize_domain
@@ -164,15 +164,30 @@ def _data_item_attrs(data_item: Dict[str, Any]) -> Dict[str, str]:
     }
 
 
+def _format_values(values: Any, dimensions: Any) -> str:
+    """Inline values as DataItem text: one row (last dimension) per line.
+
+    Floats use ``repr``, the shortest text that reads back to the same
+    double, so inline values round-trip exactly.
+    """
+    row = int(dimensions[-1]) if len(dimensions) > 1 and int(dimensions[-1]) > 0 else len(values) or 1
+    text = [repr(v) if isinstance(v, float) else str(v) for v in values]
+    lines = [" ".join(text[i:i + row]) for i in range(0, len(text), row)]
+    return "\n" + "\n".join(lines) + "\n"
+
+
 def _add_data_item(parent: Element, data_item: Dict[str, Any]) -> Element:
-    """Write one DataItem, HDF5-referencing or text-including.
+    """Write one DataItem: an HDF5 reference, a text sidecar, or inline values.
 
     ``Format="HDF"`` puts the dataset reference in the element's text.
-    ``Format="XML"`` instead gets an ``<xi:include parse="text">`` child
-    naming a sidecar file -- the no-HDF5 fallback.
+    ``Format="XML"`` either gets an ``<xi:include parse="text">`` child
+    naming a sidecar file, or, for inline ``Values``, the values themselves
+    as the element's text -- a self-contained ``.xmf``.
     """
     elem = SubElement(parent, "DataItem", _data_item_attrs(data_item))
-    if "Include" in data_item:
+    if "Values" in data_item:
+        elem.text = _format_values(data_item["Values"], data_item["Dimensions"])
+    elif "Include" in data_item:
         SubElement(
             elem,
             "xi:include",
@@ -186,12 +201,12 @@ def _add_data_item(parent: Element, data_item: Dict[str, Any]) -> Element:
 def _parse_data_item(elem: Element, where: str = "DataItem") -> Dict[str, Any]:
     """Read one DataItem element.
 
-    Only a uniform item with external values can be held: an HDF5
+    A uniform item, in any of the forms the archive model holds: an HDF5
     reference (``Format="HDF"``, the reference as element text), a text
-    sidecar (``Format="XML"`` with an ``xi:include`` child), or a Binary
-    file name. Values written inline -- XDMF's default, ``Format="XML"``
-    with the numbers as element text -- are refused rather than mistaken
-    for a file reference.
+    sidecar (``Format="XML"`` with an ``xi:include`` child), values inline
+    (``Format="XML"`` -- XDMF's default -- with the numbers as element
+    text), or a Binary file name. Inline values are parsed by DataType and
+    checked against ``Dimensions``.
     """
     _refuse_reference(elem, where)
     item_type = _attr(elem, ("ItemType", "Type"), where, "Uniform")
@@ -220,11 +235,7 @@ def _parse_data_item(elem: Element, where: str = "DataItem") -> Dict[str, Any]:
     if include is not None:
         item["Include"] = include
     elif fmt == "XML":
-        raise YmfArchiveError(
-            "%s: Format=\"XML\"%s with no xi:include, so its values are inline "
-            "in the .xmf; a YMF archive references its data (HDF5 or a text "
-            "sidecar) and cannot hold inline values"
-            % (where, "" if "Format" in elem.attrib else " (XDMF's default)"))
+        item["Values"] = _parse_values(elem.text or "", item, where)
     else:
         item["Data"] = (elem.text or "").strip()
     return item
@@ -255,6 +266,26 @@ def _add_grid_body(grid_elem: Element, grid: Dict[str, Any]) -> None:
             },
         )
         _add_data_item(attr_elem, attr["DataItem"])
+
+
+def _parse_values(text: str, item: Dict[str, Any], where: str) -> List[Any]:
+    """Inline DataItem text as a flat list of numbers, checked for count."""
+    integral = item["DataType"] in ("Int", "UInt", "Char", "UChar")
+    tokens = text.split()
+    try:
+        values = [int(t) if integral else float(t) for t in tokens]
+    except ValueError as exc:
+        raise YmfArchiveError(
+            "%s: inline values are not all %s numbers (%s)"
+            % (where, item["DataType"], exc)) from exc
+    expected = 1
+    for d in item["Dimensions"]:
+        expected *= d
+    if len(values) != expected:
+        raise YmfArchiveError(
+            "%s: Dimensions %s declare %d values, but %d are inline"
+            % (where, item["Dimensions"], expected, len(values)))
+    return values
 
 
 def _parse_grid_body(grid_elem: Element, where: str = "Grid") -> Dict[str, Any]:

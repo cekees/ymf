@@ -50,13 +50,15 @@ heat.h5  heat.ymf  heat.xmf                    one grid per step (serial, or gat
 heat_split.h5  heat_split.ymf  heat_split.xmf  two subdomain grids per step (per-rank)
 ```
 
-Open either `.xmf` in ParaView or VisIt to see the temperature decay. The
-script needs `numpy` and `h5py` (`ymf[examples]`) but not the front-end:
-writing an archive never does.
+Open either `.xmf` in ParaView or VisIt to see the temperature decay. With
+`--inline` the arrays go into the archives themselves: only the `.ymf` and
+`.xmf` files are written, each self-contained, and h5py isn't needed. The
+script needs `numpy`, and `h5py` without `--inline` (`ymf[examples]`), but
+not the front-end: writing an archive never does.
 
 **[read_archive.py](read_archive.py)**: the post-processing side. It
-recovers the problem spec from the archive, follows each field's HDF5
-reference, fits the decay rate of the peak temperature to recover κ, and
+recovers the problem spec from the archive, gets each field's values
+(following its HDF5 reference, or reading them inline), fits the decay rate of the peak temperature to recover κ, and
 compares κ with the value in the spec. It then confirms the `.xmf` holds
 exactly what the `.ymf` does.
 

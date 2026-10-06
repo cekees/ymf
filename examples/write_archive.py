@@ -1,6 +1,7 @@
 """Write a YMF archive the way a solver does, then convert it for ParaView.
 
     python examples/write_archive.py --outdir /tmp/ymf-demo
+    python examples/write_archive.py --outdir /tmp/ymf-inline --inline
     paraview /tmp/ymf-demo/heat.xmf
 
 There is no solver here. The temperature at each output time is the exact
@@ -17,13 +18,17 @@ Two archives are written, holding the same data:
     Each time step is a collection of two subdomain grids, as if two MPI
     ranks had each written their own piece. ParaView shows the same field.
 
-Both share one HDF5 file per archive for the heavy data; the ``.ymf`` is
-the metadata that says what each dataset is. Each archive also carries the
+By default each archive keeps its arrays in an HDF5 file beside it, and
+the ``.ymf`` is the metadata that says what each dataset is. With
+``--inline`` the arrays go into the archive itself: no HDF5 file, and the
+``.ymf`` and ``.xmf`` are each self-contained. That suits small problems,
+and solvers that would rather not depend on HDF5. Each archive also carries the
 heat-equation problem specification in its ``extra`` section, so the
 output records the problem that produced it.
 
-Needs ``numpy`` and ``h5py`` in addition to ymf's core (``pyyaml``). It
-does *not* need the validation extras: writing an archive never does.
+Needs ``numpy`` in addition to ymf's core (``pyyaml``), and ``h5py``
+unless ``--inline`` is given. It does *not* need the validation extras:
+writing an archive never does.
 """
 
 from __future__ import annotations
@@ -32,7 +37,6 @@ import argparse
 import sys
 from pathlib import Path
 
-import h5py
 import numpy as np
 import yaml
 
@@ -95,39 +99,62 @@ def exact_heat_flux(nodes, t):
     return q
 
 
-def write_serial(outdir, nodes, elements, times, problem):
-    """One grid per time step. Returns the path of the .ymf written."""
-    h5_name = "heat.h5"
-    domain = new_domain("Mesh Spatial_Domain")
-    with h5py.File(outdir / h5_name, "w") as h5:
-        # The mesh does not move, so it is written once and every step
-        # refers to the same two datasets.
-        h5["nodes"] = nodes
-        h5["elements"] = elements
+class Hdf5Store:
+    """Puts each array in an HDF5 file; DataItems reference it."""
+
+    def __init__(self, path):
+        import h5py  # only this store needs it
+
+        self.name = path.name
+        self.file = h5py.File(path, "w")
+
+    def item(self, dataset, array):
+        self.file[dataset] = array
         # data_item_for reads shape and dtype off the array, so Dimensions,
         # DataType and Precision cannot disagree with what is in the file.
-        topo = topology("Triangle", len(elements),
-                        data_item_for(elements, "%s:/elements" % h5_name))
-        geom = geometry(data_item_for(nodes, "%s:/nodes" % h5_name))
+        return data_item_for(array, "%s:/%s" % (self.name, dataset))
 
-        # A cell-centred field: which half of the square each triangle is in.
-        centroid_x = nodes[elements, 0].mean(axis=1)
-        side = (centroid_x > 0.5).astype(np.int32)
-        h5["side"] = side
-        side_attr = attribute("side", data_item_for(side, "%s:/side" % h5_name),
-                              center="Cell")
+    def close(self):
+        self.file.close()
 
-        for k, t in enumerate(times):
-            T = exact_temperature(nodes, t)
-            q = exact_heat_flux(nodes, t)
-            h5["T_t%d" % k] = T
-            h5["q_t%d" % k] = q
-            add_uniform_step(domain, t, topo, geom, [
-                attribute("T", data_item_for(T, "%s:/T_t%d" % (h5_name, k))),
-                attribute("q", data_item_for(q, "%s:/q_t%d" % (h5_name, k)),
-                          attribute_type="Vector"),
-                side_attr,
-            ])
+
+class InlineStore:
+    """Puts each array in the DataItem itself: no HDF5, no other files."""
+
+    def item(self, dataset, array):
+        return data_item_for(array, inline=True)
+
+    def close(self):
+        pass
+
+
+def open_store(outdir, stem, inline):
+    return InlineStore() if inline else Hdf5Store(outdir / (stem + ".h5"))
+
+
+def write_serial(outdir, nodes, elements, times, problem, inline=False):
+    """One grid per time step. Returns the path of the .ymf written."""
+    store = open_store(outdir, "heat", inline)
+    domain = new_domain("Mesh Spatial_Domain")
+    # The mesh does not move, so it is stored once and every step refers
+    # to the same arrays.
+    topo = topology("Triangle", len(elements), store.item("elements", elements))
+    geom = geometry(store.item("nodes", nodes))
+
+    # A cell-centred field: which half of the square each triangle is in.
+    centroid_x = nodes[elements, 0].mean(axis=1)
+    side = (centroid_x > 0.5).astype(np.int32)
+    side_attr = attribute("side", store.item("side", side), center="Cell")
+
+    for k, t in enumerate(times):
+        T = exact_temperature(nodes, t)
+        q = exact_heat_flux(nodes, t)
+        add_uniform_step(domain, t, topo, geom, [
+            attribute("T", store.item("T_t%d" % k, T)),
+            attribute("q", store.item("q_t%d" % k, q), attribute_type="Vector"),
+            side_attr,
+        ])
+    store.close()
 
     ymf_path = outdir / "heat.ymf"
     write_ymf(domain, ymf_path, extra=problem)
@@ -152,34 +179,27 @@ def split_mesh(nodes, elements):
     return parts
 
 
-def write_split(outdir, nodes, elements, times, problem):
+def write_split(outdir, nodes, elements, times, problem, inline=False):
     """Each step is a SpatialCollection of per-subdomain grids."""
-    h5_name = "heat_split.h5"
+    store = open_store(outdir, "heat_split", inline)
     parts = split_mesh(nodes, elements)
     domain = new_domain("Mesh Spatial_Domain")
-    with h5py.File(outdir / h5_name, "w") as h5:
-        meshes = []
-        for rank, (local_nodes, local_elements) in enumerate(parts):
-            h5["nodes_p%d" % rank] = local_nodes
-            h5["elements_p%d" % rank] = local_elements
-            meshes.append((
-                topology("Triangle", len(local_elements),
-                         data_item_for(local_elements,
-                                       "%s:/elements_p%d" % (h5_name, rank))),
-                geometry(data_item_for(local_nodes,
-                                       "%s:/nodes_p%d" % (h5_name, rank))),
-            ))
-        for k, t in enumerate(times):
-            grids = []
-            for rank, (local_nodes, _) in enumerate(parts):
-                T = exact_temperature(local_nodes, t)
-                h5["T_p%d_t%d" % (rank, k)] = T
-                topo, geom = meshes[rank]
-                grids.append(grid(topo, geom, [
-                    attribute("T", data_item_for(
-                        T, "%s:/T_p%d_t%d" % (h5_name, rank, k))),
-                ], name="subdomain_%d" % rank))
-            add_spatial_step(domain, t, grids)
+    meshes = [
+        (topology("Triangle", len(local_elements),
+                  store.item("elements_p%d" % rank, local_elements)),
+         geometry(store.item("nodes_p%d" % rank, local_nodes)))
+        for rank, (local_nodes, local_elements) in enumerate(parts)
+    ]
+    for k, t in enumerate(times):
+        grids = []
+        for rank, (local_nodes, _) in enumerate(parts):
+            T = exact_temperature(local_nodes, t)
+            topo, geom = meshes[rank]
+            grids.append(grid(topo, geom, [
+                attribute("T", store.item("T_p%d_t%d" % (rank, k), T)),
+            ], name="subdomain_%d" % rank))
+        add_spatial_step(domain, t, grids)
+    store.close()
 
     ymf_path = outdir / "heat_split.ymf"
     write_ymf(domain, ymf_path, extra=problem)
@@ -192,6 +212,9 @@ def main(argv=None) -> int:
                         help="directory to write into (created if missing)")
     parser.add_argument("-n", type=int, default=16,
                         help="squares per side of the mesh (default 16)")
+    parser.add_argument("--inline", action="store_true",
+                        help="store the arrays inline in the archive: no HDF5 "
+                             "file, and h5py is not needed")
     args = parser.parse_args(argv)
     args.outdir.mkdir(parents=True, exist_ok=True)
 
@@ -203,8 +226,8 @@ def main(argv=None) -> int:
     nodes, elements = unit_square_mesh(args.n)
     times = [0.0, 10.0, 20.0, 30.0, 40.0, 50.0]
 
-    for ymf_path in (write_serial(args.outdir, nodes, elements, times, problem),
-                     write_split(args.outdir, nodes, elements, times, problem)):
+    for ymf_path in (write_serial(args.outdir, nodes, elements, times, problem, args.inline),
+                     write_split(args.outdir, nodes, elements, times, problem, args.inline)):
         xmf_path = ymf2xmf(ymf_path)
         print("wrote %s and %s" % (ymf_path, xmf_path.name))
     return 0

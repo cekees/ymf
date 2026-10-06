@@ -17,6 +17,7 @@ which parts a `.ymf` archive represents.
 - [The `.ymf` document](#the-ymf-document)
 - [The domain model](#the-domain-model)
 - [Writing an archive](#writing-an-archive)
+- [Self-contained archives: inline values](#self-contained-archives-inline-values)
 - [Parallel output](#parallel-output)
 - [What the writer checks, and what it doesn't](#what-the-writer-checks-and-what-it-doesnt)
 - [Viewing: converting to XDMF](#viewing-converting-to-xdmf)
@@ -36,6 +37,9 @@ The `.ymf` refers to datasets as `run.h5:/T_t3`, with the file path
 relative to the `.ymf` itself, so the three files move together as a
 directory. The `.xmf` refers to the same datasets; it holds no data of its
 own.
+
+An archive can also hold its arrays **inline**, with no HDF5 file at all;
+see [Self-contained archives](#self-contained-archives-inline-values).
 
 The `.xmf` is a *view* of the archive. A solver writes `.ymf` and nothing
 else, and the `.xmf` is produced on demand. A solver that writes both
@@ -120,6 +124,7 @@ Geometry   {Type, DataItem}
 Attribute  {Name, AttributeType, Center, DataItem}
 DataItem   {Format: HDF, DataType, Precision, Dimensions, Data: "file.h5:/dataset"}
          | {Format: XML, DataType, Precision, Dimensions, Include: "sidecar.txt"}
+         | {Format: XML, DataType, Precision, Dimensions, Values: [1.0, 2.5, ...]}
 ```
 
 **Why a list of time collections.** A solver writes one collection per
@@ -182,6 +187,41 @@ Reading is `domain, extra = read_ymf("heat.ymf")`. Each DataItem's `Data`
 splits on its last `:` into a file (relative to the `.ymf`) and a dataset
 path.
 
+## Self-contained archives: inline values
+
+A DataItem can hold its values itself instead of pointing at them, as
+XDMF's XML format does. The `.ymf` and the `.xmf` derived from it are then
+each complete on their own: no HDF5 file, no sidecar, and no HDF5
+dependency for the solver that writes them. This suits small problems,
+test cases, and solvers that would rather not depend on HDF5. For large
+arrays, HDF5 remains the right choice; inline values are text.
+
+```python
+topo = topology("Triangle", len(cells), data_item_for(cells, inline=True))
+geom = geometry(data_item_for(nodes, inline=True))
+# or, without an array library:
+geom = geometry(data_item([4, 3], values=[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, ...], precision=8))
+```
+
+```yaml
+DataItem:
+  Format: XML
+  DataType: Int
+  Precision: 4
+  Dimensions: [2, 3]
+  Values: [0, 1, 3, 0, 3, 2]
+```
+
+`Values` is flat, in row-major order, as in XDMF's element text; nested
+lists and arrays are flattened on the way in. The values are coerced to
+the declared `DataType` (a non-integer under `Int` is refused) and their
+count is checked against `Dimensions`. `ymf2xmf` writes them as the
+DataItem's text, one row per line, with floats written exactly, so a
+`.ymf` → `.xmf` → `.ymf` round trip loses nothing. Inline and referenced
+DataItems can be mixed freely in one archive.
+`python examples/write_archive.py --inline` writes the examples this way,
+and runs without h5py installed.
+
 ## Parallel output
 
 There are two ways to write from many MPI ranks, and the archive represents
@@ -217,7 +257,9 @@ YMF splits checking across a trust boundary:
 
 `write_ymf()` runs `validate_domain()` by default. It checks required keys,
 the closed sets above, and that no grid has two fields with the same name
-(viewers key fields by name, so a duplicate silently hides the first).
+and centering (viewers key fields by name within point data and within
+cell data, so a duplicate silently hides the first; the same name cell-
+and node-centred is fine).
 `data_item_for()` and `check_dimensions()` compare the declared
 `Dimensions` against the actual array while it is still in hand. A
 flattened declaration (`[N*k]` for an `(N, k)` array) is accepted; a
