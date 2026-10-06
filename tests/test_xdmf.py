@@ -466,3 +466,154 @@ def test_mixed_hdf_and_text_data_items_in_one_grid_round_trip():
         [attribute("u", data_item([4], "out.h5:/u", precision=8))],
     )
     assert round_trip_equal(domain) is True
+
+
+# ---------------------------------------------------------------------------
+# XDMF written by other tools: read what the archive model can hold, refuse
+# the rest by name, never return something emptier or different.
+# ---------------------------------------------------------------------------
+
+from xml.etree.ElementTree import fromstring
+
+from ymf.archive import YmfArchiveError, validate_domain
+
+#: An XDMF 3 file in the most basic layout: one uniform grid directly in the
+#: Domain, XDMF 3 attribute names, HDF5 data.
+XDMF3_UNIFORM = """<?xml version="1.0" ?>
+<Xdmf Version="3.0"><Domain>
+ <Grid Name="plate" GridType="Uniform">
+  <Topology TopologyType="Triangle" NumberOfElements="2">
+   <DataItem Dimensions="2 3" NumberType="Int" Format="HDF">plate.h5:/cells</DataItem>
+  </Topology>
+  <Geometry GeometryType="XY">
+   <DataItem Dimensions="4 2" NumberType="Float" Precision="8" Format="HDF">plate.h5:/xy</DataItem>
+  </Geometry>
+  <Attribute Name="p" Center="Cell">
+   <DataItem Dimensions="2" Precision="8" Format="HDF">plate.h5:/p</DataItem>
+  </Attribute>
+ </Grid>
+</Domain></Xdmf>"""
+
+
+def _read(text):
+    return parse_xdmf_domain(fromstring(text))
+
+
+def _uniform(body, grid_attrs='GridType="Uniform"'):
+    """A one-grid XDMF document whose grid holds ``body``."""
+    return "<Xdmf><Domain><Grid %s>%s</Grid></Domain></Xdmf>" % (grid_attrs, body)
+
+
+TRIANGLE = ('<Topology Type="Triangle" NumberOfElements="1">'
+            '<DataItem Dimensions="1 3" DataType="Int" Format="HDF">m.h5:/c</DataItem></Topology>')
+XYZ = ('<Geometry Type="XYZ"><DataItem Dimensions="3 3" Precision="8" Format="HDF">'
+       'm.h5:/x</DataItem></Geometry>')
+
+
+def test_a_bare_uniform_grid_reads_as_a_one_step_collection(tmp_path):
+    path = tmp_path / "plate.xmf"
+    path.write_text(XDMF3_UNIFORM)
+    domain, extra = read_xdmf(path)
+    assert extra is None
+    (collection,) = domain["TimeCollections"]
+    assert collection["Name"] == "plate"
+    (step,) = collection["Data"]
+    assert step["Time"] == 0.0
+    # XDMF 3 names, read
+    assert step["Topology"]["Type"] == "Triangle"
+    assert step["Geometry"]["Type"] == "XY"
+    assert step["Topology"]["DataItem"]["DataType"] == "Int"
+    # XDMF defaults: Scalar, Float
+    assert step["Attributes"][0]["AttributeType"] == "Scalar"
+    assert step["Attributes"][0]["DataItem"]["DataType"] == "Float"
+    validate_domain(domain)
+
+
+def test_a_bare_uniform_grid_keeps_its_time():
+    domain = _read(_uniform('<Time Value="2.5"/>' + TRIANGLE + XYZ))
+    assert domain["TimeCollections"][0]["Data"][0]["Time"] == 2.5
+
+
+def test_unnamed_top_level_grids_are_numbered_so_names_stay_unique():
+    text = "<Xdmf><Domain>%s%s</Domain></Xdmf>" % (
+        "<Grid>" + TRIANGLE + XYZ + "</Grid>", "<Grid>" + TRIANGLE + XYZ + "</Grid>")
+    domain = _read(text)
+    assert [c["Name"] for c in domain["TimeCollections"]] == ["Grid 0", "Grid 1"]
+    validate_domain(domain)
+
+
+def test_a_top_level_spatial_collection_reads_as_one_spatial_step():
+    sub = '<Grid Name="r%d">' + TRIANGLE + XYZ + '</Grid>'
+    domain = _read(_uniform('<Time Value="1.0"/>' + sub % 0 + sub % 1,
+                            'Name="parts" GridType="Collection" CollectionType="Spatial"'))
+    (step,) = domain["TimeCollections"][0]["Data"]
+    assert step["Time"] == 1.0
+    assert [g["Name"] for g in step["SpatialCollection"]] == ["r0", "r1"]
+
+
+def test_a_collection_without_collection_type_is_spatial_as_xdmf_defaults():
+    domain = _read(_uniform("<Grid>" + TRIANGLE + XYZ + "</Grid>", 'GridType="Collection"'))
+    assert "SpatialCollection" in domain["TimeCollections"][0]["Data"][0]
+
+
+def test_inline_values_are_refused_not_read_as_a_file_reference():
+    # No Format: XDMF's default is XML, i.e. the text is the values.
+    body = ('<Topology Type="Triangle" NumberOfElements="1">'
+            '<DataItem Dimensions="1 3" NumberType="Int">0 1 2</DataItem></Topology>' + XYZ)
+    with pytest.raises(YmfArchiveError, match=r"Topology\.DataItem: Format=\"XML\" \(XDMF's default\).*inline"):
+        _read(_uniform(body))
+
+
+def test_explicit_inline_xml_values_are_refused():
+    body = TRIANGLE + ('<Geometry Type="XYZ"><DataItem Format="XML" Dimensions="3 3">'
+                       '0 0 0 1 0 0 0 1 0</DataItem></Geometry>')
+    with pytest.raises(YmfArchiveError, match=r"Geometry\.DataItem: Format=\"XML\" with no xi:include"):
+        _read(_uniform(body))
+
+
+@pytest.mark.parametrize("grid_attrs, body, message", [
+    ('GridType="Tree"', "", r"GridType='Tree'"),
+    ('GridType="Subset"', "", r"GridType='Subset'"),
+    ('GridType="Uniform"', '<Time TimeType="List"><DataItem Dimensions="2">0 1</DataItem></Time>'
+     + TRIANGLE + XYZ, r"TimeType='List'"),
+    ('Reference="/Xdmf/Domain/Grid[1]"', "", r"Reference="),
+    ('GridType="Uniform"', '<Topology TopologyType="3DCoRectMesh" Dimensions="2 2 2"/>' + XYZ,
+     r"3DCoRectMesh is a structured topology"),
+    ('GridType="Uniform"', TRIANGLE + '<Geometry GeometryType="X_Y_Z">'
+     '<DataItem Dimensions="3" Format="HDF">m.h5:/x</DataItem>'
+     '<DataItem Dimensions="3" Format="HDF">m.h5:/y</DataItem>'
+     '<DataItem Dimensions="3" Format="HDF">m.h5:/z</DataItem></Geometry>',
+     r"Geometry: has 3 DataItems"),
+    ('GridType="Uniform"', TRIANGLE + XYZ + '<Attribute Name="u" ItemType="FiniteElementFunction">'
+     '<DataItem Dimensions="3" Format="HDF">m.h5:/map</DataItem>'
+     '<DataItem Dimensions="3" Format="HDF">m.h5:/u</DataItem></Attribute>',
+     r"Attribute\[u\]: ItemType='FiniteElementFunction'"),
+    ('GridType="Uniform"', TRIANGLE + XYZ + '<Set Name="wall" SetType="Node">'
+     '<DataItem Dimensions="1" Format="HDF">m.h5:/s</DataItem></Set>', r"has a Set"),
+    ('GridType="Uniform"', TRIANGLE.replace(
+        '<DataItem ', '<DataItem ItemType="HyperSlab" ') + XYZ, r"ItemType='HyperSlab'"),
+])
+def test_constructs_the_archive_cannot_hold_are_refused_by_name(grid_attrs, body, message):
+    with pytest.raises(YmfArchiveError, match=message):
+        _read(_uniform(body, grid_attrs))
+
+
+def test_a_domain_with_no_grids_reads_as_empty():
+    assert _read("<Xdmf><Domain/></Xdmf>") == {}
+
+
+def test_dimensions_in_place_of_number_of_elements_is_the_element_count():
+    # As Proteus's foreign-XDMF fixture test/hex_cube_3x3.xmf writes it.
+    body = ('<Topology TopologyType="Hexahedron" Dimensions="27">'
+            '<DataItem Dimensions="27 8" NumberType="Int" Precision="8" Format="HDF">'
+            'hex.h5:/Data0</DataItem></Topology>' + XYZ)
+    topo = _read(_uniform(body))["TimeCollections"][0]["Data"][0]["Topology"]
+    assert topo["Type"] == "Hexahedron"
+    assert topo["NumberOfElements"] == 27
+
+
+def test_a_file_that_is_not_xml_is_refused_by_name(tmp_path):
+    path = tmp_path / "aborted_run.xmf"
+    path.write_text("")
+    with pytest.raises(YmfArchiveError, match=r"aborted_run\.xmf is not an XML document"):
+        read_xdmf(path)

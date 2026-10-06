@@ -18,11 +18,15 @@
 #
 #   - YMF uses the XDMF 2 names Type and DataType, and its .xmf writer
 #     emits Xdmf Version="2.0". XDMF 3 renamed these TopologyType,
-#     GeometryType and NumberType; ymf's .xmf reader does not recognize
-#     the XDMF 3 names.
+#     GeometryType and NumberType; ymf's .xmf reader accepts either name.
 #   - A .ymf file holds metadata only. Every array lives outside it, in
 #     HDF5 or a text sidecar, so XDMF's inline "light data" has no
 #     equivalent.
+#
+# Reading XDMF written by other tools (ymf.xdmf.read_xdmf): everything
+# marked supported or partial below is read; everything not_supported
+# raises YmfArchiveError naming the element, so a file is never read as
+# emptier, or different, than it is.
 # ============================================================
 
 source: "https://xdmf.org/index.php/XDMF_Model_and_Format.html"
@@ -147,9 +151,8 @@ XDMF_Elements:
         values: [Char, Float, Int, UChar, UInt]
         default: Float
         notes: |-
-          Written under the XDMF 2 name DataType. The .xmf reader ignores
-          an XDMF 3 NumberType attribute, so Int data in such a file is
-          read as Float.
+          Written under the XDMF 2 name DataType; the .xmf reader accepts
+          the XDMF 3 name NumberType too.
       Precision:
         ymf: Precision
         status: partial
@@ -167,9 +170,9 @@ XDMF_Elements:
           the file relative to the .ymf. XML: the values go in a text
           sidecar named by Include, never inline. Binary: accepted by the
           validator, but none of Endian, Compression or Seek can be stated.
-          When Format is omitted, ymf infers it from which of Data or
-          Include is present. XDMF's default is XML, but ymf's .xmf reader
-          defaults a DataItem with no Format to HDF.
+          In a .ymf, an omitted Format is inferred from which of Data or
+          Include is present. Reading .xmf, an omitted Format is XDMF's
+          default, XML, and a DataItem whose values are inline is refused.
       Endian: {status: not_supported}
       Compression: {status: not_supported}
       Seek: {status: not_supported}
@@ -202,7 +205,10 @@ XDMF_Elements:
     notes: |-
       The nesting is fixed: a domain holds temporal collections; each
       collection holds steps; a step is either one uniform grid or a
-      spatial collection of uniform grids. Nothing else nests.
+      spatial collection of uniform grids. Nothing else nests. Reading
+      .xmf, a uniform grid or spatial collection placed directly in the
+      Domain becomes a collection of one step, at the grid's Time if it
+      has one and 0.0 otherwise.
     attributes:
       Name:
         ymf: Name
@@ -287,8 +293,13 @@ XDMF_Elements:
         status: supported
         notes: "Required."
       Dimensions:
-        status: not_supported
-        notes: "So the structured types below cannot be fully described."
+        status: partial
+        notes: |-
+          XDMF allows Dimensions in place of NumberOfElements. Reading .xmf,
+          a single-number Dimensions on an unstructured topology is taken as
+          the element count. Dimensions as the shape of a structured mesh
+          has no equivalent, so the structured types below cannot be fully
+          described.
       Order: {status: not_supported}
     example: |-
       Topology:

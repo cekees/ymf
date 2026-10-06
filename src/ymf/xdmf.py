@@ -29,15 +29,10 @@ no concept of) is serialized to JSON, base64-encoded (safe inside an XML
 attribute value with no escaping headaches), and stashed in a single
 ``<Information Name="YMF" Value="...">`` child of ``<Domain>``.
 
-JSON rather than YAML is used for this *specific* embedded payload:
-strictyaml's ``as_document()`` cannot serialize empty lists/dicts without
-an explicit schema (raises ``YAMLSerializationError`` on
-``solution_paths.analytical: []``, which every current example uses), and
-since this payload is base64-encoded anyway — not meant to be read
-directly out of the XML — YAML's human-authoring niceties (comments, flow
-style, block scalars) buy nothing here. The rest of the package still uses
-YAML/strictyaml everywhere a human or LLM actually edits a YMF document;
-only this internal round-trip encoding uses JSON.
+JSON rather than YAML is used for this embedded payload because it is
+compact, in the standard library, and never read by eye: it is base64
+text inside an XML attribute. The ``.ymf`` archive itself holds the same
+content as readable YAML.
 
 **Verified**: checked directly against the live ``Xdmf.dtd`` fetched
 from gitlab.kitware.com/xdmf/xdmf (2026-08-12, outside this sandbox's own
@@ -71,9 +66,9 @@ import base64
 import json
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
-from xml.etree.ElementTree import Element, ElementTree, SubElement, parse as et_parse
+from xml.etree.ElementTree import Element, ElementTree, ParseError, SubElement, parse as et_parse
 
-from ymf.archive import canonicalize_domain
+from ymf.archive import YmfArchiveError, canonicalize_domain
 
 XDMF_HEADER = b'<?xml version="1.0" ?>\n<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>\n'
 
@@ -101,6 +96,63 @@ def _indent_xml(elem: Element, level: int = 0) -> None:
 
 
 XI_NAMESPACE = "http://www.w3.org/2001/XInclude"
+
+
+# ---------------------------------------------------------------------------
+# reading
+#
+# The reader accepts what XDMF allows wherever the archive model can hold
+# it, and refuses the rest by name. It never drops or guesses: an XDMF
+# construct the model cannot represent raises YmfArchiveError naming the
+# element, rather than coming back empty or subtly wrong. See
+# docs/xdmf-model.yaml for the construct-by-construct correspondence.
+# ---------------------------------------------------------------------------
+
+#: XDMF 3 renamed several attributes. The reader accepts either name; the
+#: writer emits the XDMF 2 one (first in each pair is the XDMF 3 name).
+_TOPOLOGY_TYPE = ("TopologyType", "Type")
+_GEOMETRY_TYPE = ("GeometryType", "Type")
+_NUMBER_TYPE = ("NumberType", "DataType")
+
+#: Topologies defined by Dimensions alone, with implicit connectivity. A
+#: YMF topology always has a connectivity DataItem, so these can't be read.
+_STRUCTURED_TOPOLOGIES = frozenset(
+    {"2DSMesh", "2DRectMesh", "2DCoRectMesh", "3DSMesh", "3DRectMesh", "3DCoRectMesh"})
+
+_REQUIRED = object()
+
+
+def _attr(elem: Element, names: Tuple[str, ...], where: str, default: Any = _REQUIRED) -> Any:
+    """The first of ``names`` present on ``elem``, else ``default``.
+
+    Raises if neither is available and no default was given.
+    """
+    for name in names:
+        if name in elem.attrib:
+            return elem.attrib[name]
+    if default is _REQUIRED:
+        raise YmfArchiveError("%s: missing %s" % (where, " / ".join(names)))
+    return default
+
+
+def _refuse_reference(elem: Element, where: str) -> None:
+    if "Reference" in elem.attrib:
+        raise YmfArchiveError(
+            "%s: Reference=%r points at another element; a YMF archive has no "
+            "references (XPath), so the referenced element has to be written "
+            "out in place" % (where, elem.attrib["Reference"]))
+
+
+def _only_data_item(elem: Element, where: str, what: str) -> Element:
+    """The single DataItem child of ``elem``, refusing none or several."""
+    items = elem.findall("DataItem")
+    if not items:
+        raise YmfArchiveError("%s: has no DataItem" % (where,))
+    if len(items) > 1:
+        raise YmfArchiveError(
+            "%s: has %d DataItems; a YMF %s holds exactly one"
+            % (where, len(items), what))
+    return items[0]
 
 
 def _data_item_attrs(data_item: Dict[str, Any]) -> Dict[str, str]:
@@ -131,13 +183,29 @@ def _add_data_item(parent: Element, data_item: Dict[str, Any]) -> Element:
     return elem
 
 
-def _parse_data_item(elem: Element) -> Dict[str, Any]:
+def _parse_data_item(elem: Element, where: str = "DataItem") -> Dict[str, Any]:
+    """Read one DataItem element.
+
+    Only a uniform item with external values can be held: an HDF5
+    reference (``Format="HDF"``, the reference as element text), a text
+    sidecar (``Format="XML"`` with an ``xi:include`` child), or a Binary
+    file name. Values written inline -- XDMF's default, ``Format="XML"``
+    with the numbers as element text -- are refused rather than mistaken
+    for a file reference.
+    """
+    _refuse_reference(elem, where)
+    item_type = _attr(elem, ("ItemType", "Type"), where, "Uniform")
+    if item_type.lower() != "uniform":
+        raise YmfArchiveError(
+            "%s: ItemType=%r; a YMF archive holds Uniform DataItems only "
+            "(no HyperSlab, Coordinate, Function, Collection or Tree)" % (where, item_type))
     precision = elem.attrib.get("Precision", "4")
+    fmt = elem.attrib.get("Format", "XML")  # XDMF's default
     item: Dict[str, Any] = {
-        "Format": elem.attrib.get("Format", "HDF"),
-        "DataType": elem.attrib.get("DataType", "Float"),
+        "Format": fmt,
+        "DataType": _attr(elem, _NUMBER_TYPE, where, "Float"),
         "Precision": int(precision) if precision.isdigit() else precision,
-        "Dimensions": [int(d) for d in elem.attrib["Dimensions"].split()],
+        "Dimensions": [int(d) for d in _attr(elem, ("Dimensions",), where).split()],
     }
     # An xi:include child means the values live in a sidecar file. Match on
     # the local name so the lookup works whether the document used the
@@ -151,6 +219,12 @@ def _parse_data_item(elem: Element) -> Dict[str, Any]:
             break
     if include is not None:
         item["Include"] = include
+    elif fmt == "XML":
+        raise YmfArchiveError(
+            "%s: Format=\"XML\"%s with no xi:include, so its values are inline "
+            "in the .xmf; a YMF archive references its data (HDF5 or a text "
+            "sidecar) and cannot hold inline values"
+            % (where, "" if "Format" in elem.attrib else " (XDMF's default)"))
     else:
         item["Data"] = (elem.text or "").strip()
     return item
@@ -183,16 +257,32 @@ def _add_grid_body(grid_elem: Element, grid: Dict[str, Any]) -> None:
         _add_data_item(attr_elem, attr["DataItem"])
 
 
-def _parse_grid_body(grid_elem: Element) -> Dict[str, Any]:
+def _parse_grid_body(grid_elem: Element, where: str = "Grid") -> Dict[str, Any]:
     """Inverse of :func:`_add_grid_body`."""
+    _refuse_reference(grid_elem, where)
     grid: Dict[str, Any] = {}
 
     topology_elem = grid_elem.find("Topology")
     if topology_elem is not None:
+        at = where + ".Topology"
+        _refuse_reference(topology_elem, at)
+        topo_type = _attr(topology_elem, _TOPOLOGY_TYPE, at)
+        if topo_type in _STRUCTURED_TOPOLOGIES:
+            raise YmfArchiveError(
+                "%s: %s is a structured topology, defined by Dimensions with "
+                "implicit connectivity; a YMF topology is unstructured, with a "
+                "connectivity DataItem" % (at, topo_type))
+        # XDMF allows Dimensions in place of NumberOfElements; for an
+        # unstructured topology it is the element count.
+        count = _attr(topology_elem, ("NumberOfElements", "Dimensions"), at)
+        if len(count.split()) != 1:
+            raise YmfArchiveError(
+                "%s: element count %r is not a single number" % (at, count))
         topo: Dict[str, Any] = {
-            "Type": topology_elem.attrib["Type"],
-            "NumberOfElements": int(topology_elem.attrib["NumberOfElements"]),
-            "DataItem": _parse_data_item(topology_elem.find("DataItem")),
+            "Type": topo_type,
+            "NumberOfElements": int(count),
+            "DataItem": _parse_data_item(
+                _only_data_item(topology_elem, at, "Topology"), at + ".DataItem"),
         }
         if "NodesPerElement" in topology_elem.attrib:
             topo["NodesPerElement"] = int(topology_elem.attrib["NodesPerElement"])
@@ -200,20 +290,37 @@ def _parse_grid_body(grid_elem: Element) -> Dict[str, Any]:
 
     geometry_elem = grid_elem.find("Geometry")
     if geometry_elem is not None:
+        at = where + ".Geometry"
+        _refuse_reference(geometry_elem, at)
         grid["Geometry"] = {
-            "Type": geometry_elem.attrib["Type"],
-            "DataItem": _parse_data_item(geometry_elem.find("DataItem")),
+            "Type": _attr(geometry_elem, _GEOMETRY_TYPE, at, "XYZ"),
+            "DataItem": _parse_data_item(
+                _only_data_item(geometry_elem, at, "Geometry"), at + ".DataItem"),
         }
 
-    grid["Attributes"] = [
-        {
-            "Name": attr_elem.attrib["Name"],
+    attributes = []
+    for i, attr_elem in enumerate(grid_elem.findall("Attribute")):
+        at = "%s.Attribute[%s]" % (where, attr_elem.attrib.get("Name", i))
+        _refuse_reference(attr_elem, at)
+        if "ItemType" in attr_elem.attrib:
+            raise YmfArchiveError(
+                "%s: ItemType=%r; a YMF attribute is one array of values, not a "
+                "finite-element function (dofmap plus values)"
+                % (at, attr_elem.attrib["ItemType"]))
+        attributes.append({
+            "Name": _attr(attr_elem, ("Name",), at),
             "AttributeType": attr_elem.attrib.get("AttributeType", "Scalar"),
             "Center": attr_elem.attrib.get("Center", "Node"),
-            "DataItem": _parse_data_item(attr_elem.find("DataItem")),
-        }
-        for attr_elem in grid_elem.findall("Attribute")
-    ]
+            "DataItem": _parse_data_item(
+                _only_data_item(attr_elem, at, "Attribute"), at + ".DataItem"),
+        })
+    grid["Attributes"] = attributes
+
+    for unsupported in ("Set",):
+        if grid_elem.find(unsupported) is not None:
+            raise YmfArchiveError(
+                "%s: has a %s; a YMF archive has no sets (store region markers "
+                "as Cell- or Node-centred attributes)" % (where, unsupported))
 
     return grid
 
@@ -233,16 +340,25 @@ def parse_grid_element(grid_elem: Element) -> Dict[str, Any]:
     grid: Dict[str, Any] = {}
     if "Name" in grid_elem.attrib:
         grid["Name"] = grid_elem.attrib["Name"]
-    grid.update(_parse_grid_body(grid_elem))
+    grid.update(_parse_grid_body(grid_elem, "Grid[%s]" % grid_elem.attrib.get("Name", "")))
     return grid
 
 
-def grid_element_time(grid_elem: Element) -> Optional[float]:
-    """Return the ``<Time>`` value of a grid element, or ``None``."""
+def grid_element_time(grid_elem: Element, where: str = "Grid") -> Optional[float]:
+    """Return the ``<Time>`` value of a grid element, or ``None``.
+
+    Only ``TimeType="Single"`` (XDMF's default) can be held: a step in a
+    YMF archive is one instant. List, HyperSlab and Range are refused.
+    """
     time_elem = grid_elem.find("Time")
     if time_elem is None:
         return None
-    return float(time_elem.attrib["Value"])
+    time_type = time_elem.attrib.get("TimeType", "Single")
+    if time_type != "Single":
+        raise YmfArchiveError(
+            "%s.Time: TimeType=%r; a YMF step holds a single time value"
+            % (where, time_type))
+    return float(_attr(time_elem, ("Value",), where + ".Time"))
 
 
 def _encode_ymf_extra(ymf_extra: Any) -> str:
@@ -292,7 +408,7 @@ def build_xdmf_tree(
     ymf_extra:
         Optional additional YMF content with no XDMF equivalent (e.g. the
         ``Problem``/``solution_paths``/``vvuq`` sections of a full YMF
-        document). If given, it's serialized to YAML, base64-encoded, and
+        document). If given, it's serialized to JSON, base64-encoded, and
         embedded as an ``<Information Name="YMF" Value="...">`` child of
         ``<Domain>`` so :func:`read_xdmf` can recover it later. See the
         module docstring for why this mechanism (rather than XML comments
@@ -376,63 +492,97 @@ def write_xdmf(
         tree.write(xml_file, encoding="utf-8")
 
 
+def _grid_kind(grid_elem: Element) -> str:
+    """``"uniform"``, ``"temporal"`` or ``"spatial"``; refuses the rest."""
+    grid_type = grid_elem.attrib.get("GridType", "Uniform")
+    if grid_type == "Uniform":
+        return "uniform"
+    if grid_type == "Collection":
+        # XDMF's default CollectionType is Spatial.
+        return grid_elem.attrib.get("CollectionType", "Spatial").lower()
+    raise YmfArchiveError(
+        "Grid %r: GridType=%r; a YMF archive holds Uniform grids and "
+        "Temporal or Spatial collections only"
+        % (grid_elem.attrib.get("Name", ""), grid_type))
+
+
+def _parse_step(step_elem: Element, where: str) -> Dict[str, Any]:
+    """One instant: a uniform grid, or a spatial collection of them."""
+    kind = _grid_kind(step_elem)
+    time = grid_element_time(step_elem, where)
+    step: Dict[str, Any] = {"Time": time if time is not None else 0.0}
+    if kind == "uniform":
+        step.update(_parse_grid_body(step_elem, where))
+    elif kind == "spatial":
+        subgrids = []
+        for j, sub_elem in enumerate(step_elem.findall("Grid")):
+            at = "%s.Grid[%d]" % (where, j)
+            if _grid_kind(sub_elem) != "uniform":
+                raise YmfArchiveError(
+                    "%s: a spatial collection in a YMF archive holds uniform grids "
+                    "only, not further collections" % (at,))
+            # Name goes first, matching the key order canonicalize_domain()
+            # produces, so a parsed document compares equal to a canonical one.
+            sub: Dict[str, Any] = {}
+            if "Name" in sub_elem.attrib:
+                sub["Name"] = sub_elem.attrib["Name"]
+            sub.update(_parse_grid_body(sub_elem, at))
+            subgrids.append(sub)
+        if not subgrids:
+            raise YmfArchiveError("%s: empty spatial collection" % (where,))
+        step["SpatialCollection"] = subgrids
+    else:
+        raise YmfArchiveError(
+            "%s: a temporal collection inside a time step; a YMF step is one "
+            "instant" % (where,))
+    return step
+
+
 def parse_xdmf_domain(root: Element) -> Dict[str, Any]:
     """Parse an ``<Xdmf><Domain>...`` tree back into a ``domain`` dict.
 
-    Inverse of the mesh-archive half of :func:`build_xdmf_tree` (i.e. of
-    ``domain``, not ``ymf_extra`` — see :func:`read_xdmf` for the combined
-    round-trip). Only understands the ``TimeCollection`` shape this module
-    writes; other valid XDMF structures (non-temporal collections, multiple
-    top-level grids, ``Attribute`` fields, etc.) are not yet parsed back —
-    this is a round-trip for *what YMF itself writes*, not a general XDMF
-    reader.
+    The inverse of the mesh-archive half of :func:`build_xdmf_tree`, and a
+    reader for XDMF written by other tools, as far as the archive model
+    reaches. Each top-level ``<Grid>`` of the Domain becomes one time
+    collection:
+
+    - a Temporal collection: its steps, as written;
+    - a Uniform grid, or a Spatial collection: a collection of a single
+      step, at the grid's ``<Time>`` if it has one and 0.0 otherwise.
+
+    A collection takes the grid's ``Name``; unnamed ones are numbered.
+    Anything the archive model cannot hold (Tree or Subset grids, Sets,
+    references, non-uniform DataItems, inline values, ...) raises
+    :class:`ymf.archive.YmfArchiveError` naming the element, so a file is
+    never read as emptier, or different, than it is.
     """
     domain_elem = root.find("Domain")
     if domain_elem is None:
         return {}
 
-    result: Dict[str, Any] = {}
     collections = []
     # A Domain holds one temporal collection per finite-element space -- a
     # Proteus archive commonly has both the linear base mesh and a
     # quadratic space -- so every child Grid is parsed, not just the first.
-    for collection_elem in domain_elem.findall("Grid"):
-        if collection_elem.attrib.get("CollectionType") != "Temporal":
-            continue
-        steps = []
-        for step_elem in collection_elem.findall("Grid"):
-            time_elem = step_elem.find("Time")
-            step: Dict[str, Any] = {
-                "Time": float(time_elem.attrib["Value"]) if time_elem is not None else 0.0,
-            }
-            if step_elem.attrib.get("CollectionType") == "Spatial":
-                step["SpatialCollection"] = [
-                    _parse_grid_body(sub_elem) for sub_elem in step_elem.findall("Grid")
-                ]
-                for sub_elem, parsed in zip(
-                    step_elem.findall("Grid"), step["SpatialCollection"]
-                ):
-                    if "Name" in sub_elem.attrib:
-                        # Name goes first, matching the key order the core's
-                        # canonicalize_domain() produces, so a parsed
-                        # document compares equal to a canonicalized one.
-                        parsed_with_name = {"Name": sub_elem.attrib["Name"]}
-                        parsed_with_name.update(parsed)
-                        parsed.clear()
-                        parsed.update(parsed_with_name)
-            else:
-                step.update(_parse_grid_body(step_elem))
-            steps.append(step)
-        collections.append(
-            {
-                "Name": collection_elem.attrib.get("Name", "TimeCollection"),
-                "Data": steps,
-            }
-        )
-    if collections:
-        result["TimeCollections"] = collections
+    for ci, collection_elem in enumerate(domain_elem.findall("Grid")):
+        name = collection_elem.attrib.get("Name")
+        where = "Domain.Grid[%s]" % (name if name is not None else ci)
+        kind = _grid_kind(collection_elem)
+        if kind == "temporal":
+            steps = [
+                _parse_step(step_elem, "%s.Grid[%d]" % (where, i))
+                for i, step_elem in enumerate(collection_elem.findall("Grid"))
+            ]
+            default_name = "TimeCollection"
+        else:
+            steps = [_parse_step(collection_elem, where)]
+            default_name = "Grid %d" % (ci,)
+        collections.append({
+            "Name": name if name is not None else default_name,
+            "Data": steps,
+        })
 
-    return result
+    return {"TimeCollections": collections} if collections else {}
 
 
 def parse_xdmf_extra(root: Element) -> Optional[Any]:
@@ -447,7 +597,12 @@ def parse_xdmf_extra(root: Element) -> Optional[Any]:
 
 
 def read_xdmf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
-    """Read an ``.xmf`` file written by :func:`write_xdmf` back into Python.
+    """Read an ``.xmf`` file back into Python.
+
+    Files :func:`write_xdmf` wrote round-trip exactly. XDMF from other
+    tools is read as far as the archive model reaches, and anything beyond
+    it raises :class:`ymf.archive.YmfArchiveError` naming the element; see
+    :func:`parse_xdmf_domain`.
 
     Returns a ``(domain, ymf_extra)`` tuple:
 
@@ -460,7 +615,10 @@ def read_xdmf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
       file has no such element (e.g. it's a plain XDMF file not written by
       this module, or was written with ``ymf_extra=None``).
     """
-    tree = et_parse(path)
+    try:
+        tree = et_parse(path)
+    except ParseError as exc:
+        raise YmfArchiveError("%s is not an XML document (%s)" % (path, exc)) from exc
     root = tree.getroot()
     domain = parse_xdmf_domain(root)
     ymf_extra = parse_xdmf_extra(root)
