@@ -78,6 +78,18 @@ def test_a_gradient_hamiltonian_and_its_derivatives():
     assert h["depends_on"] == {"u": "nonlinear"}
 
 
+def test_a_pressure_gradient_can_be_a_hamiltonian_instead_of_a_flux():
+    doc = load_ymf(EXAMPLES / "kovasznay_flow.ymf")
+    flux = {e["component"]: e for e in adr_problem(doc)["adr"]["equations"]}
+    ham = {e["component"]: e for e in
+           adr_problem(doc, hamiltonian_gradients=("p",))["adr"]["equations"]}
+    assert flux["v_0"]["advection"]["f"][0] == "p + 1.0*v_0**2" and "hamiltonian" not in flux["v_0"]
+    assert ham["v_0"]["advection"]["f"] == ["1.0*v_0**2", "1.0*v_0*v_1"]
+    assert ham["v_0"]["hamiltonian"] == {"H": "grad_p_0", "dH": {"p": ["1", "0"]},
+                                         "depends_on": {"p": "linear"}}
+    assert ham["p"] == flux["p"]          # continuity is untouched
+
+
 def test_the_output_is_plain_data():
     out = classify(["rho*dt(v) + div(rho*outer(v, v)) - div(mu*grad(v)) + grad(p) = f",
                     "div(v) = 0"],

@@ -115,8 +115,16 @@ def _diffusion_terms(arg, space: Space, where: str):
     return out
 
 
-def classify(residual, space: Space, where: str = "equation") -> Equation:
-    """Sort the terms of one scalar residual into ADR slots."""
+def classify(residual, space: Space, where: str = "equation",
+             hamiltonian_gradients=()) -> Equation:
+    """Sort the terms of one scalar residual into ADR slots.
+
+    ``hamiltonian_gradients`` names unknowns whose bare gradient terms
+    (``c * D(p, j)``) go to the Hamiltonian instead of the advective flux:
+    ``∇p`` as ``H = ∂p/∂x_j``, not integrated by parts, rather than as the
+    flux ``div(p I)``. The two are the same strong form and different weak
+    forms.
+    """
     eq = Equation(space.dim)
     allowed = set(space.component_symbols) | set(space.x) | {space.t}
     stray = sympy.sympify(residual).free_symbols - allowed
@@ -137,6 +145,9 @@ def classify(residual, space: Space, where: str = "equation") -> Equation:
                 continue
             if isinstance(op, D):
                 arg, axis = op.args[0], int(op.args[1])
+                if isinstance(arg, sympy.Symbol) and arg.name in hamiltonian_gradients:
+                    eq.hamiltonian += term
+                    continue
                 if not arg.has(D, Dt):
                     eq.advection[axis] += number * arg
                     continue
@@ -189,7 +200,8 @@ def _flag(expr, space: Space) -> Dict[str, str]:
     return out
 
 
-def adr_form(equations: Sequence[sympy.Expr], space: Space) -> Dict[str, Any]:
+def adr_form(equations: Sequence[sympy.Expr], space: Space,
+             hamiltonian_gradients=()) -> Dict[str, Any]:
     """Classify scalar residuals and export them as plain data.
 
     The result is a dict that serializes to YAML. Per equation ``i`` (in
@@ -211,7 +223,8 @@ def adr_form(equations: Sequence[sympy.Expr], space: Space) -> Dict[str, Any]:
     comps = space.components
     out_equations = []
     for i, residual in enumerate(equations):
-        eq = classify(residual, space, where="equation for %s" % comps[i])
+        eq = classify(residual, space, where="equation for %s" % comps[i],
+                      hamiltonian_gradients=hamiltonian_gradients)
         entry: Dict[str, Any] = {"component": comps[i]}
 
         if eq.mass != 0:

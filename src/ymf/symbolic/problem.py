@@ -159,8 +159,11 @@ def _periodic_axes(where, lower, upper, space: Space, region: str) -> List[int]:
     return axes
 
 
-def adr_problem(doc: Dict[str, Any]) -> Dict[str, Any]:
-    """Build the plain-data ADR problem for a validated (composed) spec."""
+def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]:
+    """Build the plain-data ADR problem for a validated (composed) spec.
+
+    ``hamiltonian_gradients``: see :func:`ymf.symbolic.adr.classify`.
+    """
     from ymf.symbolic.notation import NotationError, Parser
 
     problem = doc["Problem"]
@@ -185,7 +188,7 @@ def adr_problem(doc: Dict[str, Any]) -> Dict[str, Any]:
     residuals: List[sympy.Expr] = []
     for text in strong["equations"]:
         residuals.extend(parse_equation(text, space))
-    adr = adr_form(residuals, space)
+    adr = adr_form(residuals, space, hamiltonian_gradients=tuple(hamiltonian_gradients))
 
     regions = {r["name"]: r["geometry"] for r in strong.get("boundary_regions", [])}
     dirichlet = []
