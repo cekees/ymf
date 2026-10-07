@@ -21,7 +21,7 @@ python examples/read_archive.py /tmp/ymf-demo/heat.ymf    # read one back
 
 ### Composed from several files: [navier_stokes/](navier_stokes/)
 
-One model, extended into three problems with `extends`. See
+One model, extended into three problems with `extends`, and one archive extended. See
 [Composing documents](../docs/problem-specification.md#composing-documents-models-and-problems).
 
 | File | Shows |
@@ -30,6 +30,17 @@ One model, extended into three problems with `extends`. See
 | [planar_couette.ymf](navier_stokes/planar_couette.ymf) | Extends the model into shear-driven flow between plates: geometry, periodic BCs, coefficient values, the exact (linear) solution, a Galerkin weak form and Taylor–Hood, which should reproduce the exact solution on any grid. |
 | [plane_poiseuille.ymf](navier_stokes/plane_poiseuille.ymf) | Extends the model into pressure-driven flow: the parabolic exact solution, a stabilized weak form and equal-order P1, with a grid-convergence plan. |
 | [plane_poiseuille_re100.ymf](navier_stokes/plane_poiseuille_re100.ymf) | Extends Poiseuille to change the viscosity and the driving gradient only (Re 1 → 100). Loading it records each overridden value in `composition.overrides`. |
+| [plane_poiseuille_refined.ymf](navier_stokes/plane_poiseuille_refined.ymf) | Extends the *archive* `ymf_run plane_poiseuille.ymf` writes, adding a mesh to one branch's study. Running it solves only that mesh and inherits the other eight outputs ([The archive of a spec](../docs/archive-format.md#the-archive-of-a-spec)). Needs that run first, so `validate_spec.py` skips it until the archive exists. |
+
+Every discretization gives its meshes as a study, `mesh: {cells: [...]}`,
+so each spec says what a run of it computes. With Proteus's `ymf_run`:
+
+```bash
+cd examples/navier_stokes
+ymf_run plane_poiseuille.ymf            # writes plane_poiseuille.archive.ymf, 8 outputs
+ymf_run plane_poiseuille_refined.ymf    # solves one more mesh, inherits the 8
+ymf_run plane_poiseuille.archive.ymf --check
+```
 
 ## Scripts
 

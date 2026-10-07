@@ -14,3 +14,8 @@ dist/
 # Generated notebook artifacts (regenerate via the notebooks themselves)
 examples/notebooks/*.xmf
 .ipynb_checkpoints/
+
+# What ymf_run writes beside the examples
+examples/**/*.archive.ymf
+examples/**/*_[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*.h5
+examples/**/*_[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]*.xmf

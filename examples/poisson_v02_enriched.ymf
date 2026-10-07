@@ -68,6 +68,7 @@ solution_paths:
       from_weak_form: "global"
       finite_element:
         fields: {family: CG, order: 1}
+      mesh: {cells: [4, 8]}      # a study: one output per mesh
       solver:
         type: linear
         linear_solver: petsc

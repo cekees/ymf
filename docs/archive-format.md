@@ -13,6 +13,13 @@ If you know XDMF, [xdmf-model.yaml](xdmf-model.yaml) goes through XDMF's
 model element by element, in the order of its specification, and says
 which parts a `.ymf` archive represents.
 
+An archive takes two forms. **The archive of a spec** is the problem
+specification as realized, followed by every output computed from it;
+`ymf.closure` reads and writes it, and Proteus's `ymf_run` produces it.
+Its outputs each hold an approximation in **the solver's form**, the
+`domain` tree a solver writes and the rest of this page describes.
+
+- [The archive of a spec](#the-archive-of-a-spec)
 - [Files on disk](#files-on-disk)
 - [The `.ymf` document](#the-ymf-document)
 - [The domain model](#the-domain-model)
@@ -25,7 +32,97 @@ which parts a `.ymf` archive represents.
 - [Use in Proteus](#use-in-proteus)
 - [Limits](#limits)
 
+## The archive of a spec
+
+A spec is a function's input; its archive is the closure: the input as it
+was realized, then what was computed from it.
+
+```yaml
+ymf: 0.2.1                      # the ymf that wrote it; a newer one is refused on read
+Problem: {...}                  # the spec, composed and as realized: no extends,
+solution_paths: {...}           #   every override listed under composition
+vvuq: {...}
+composition: {sources: [...], overrides: [...]}
+outputs:
+  P1_linear/cells=8/2365d177bb1f:          # <discretization>/<realization>/<digest>
+    input: {sha256: 2365d177bb1f...}       # the whole digest
+    realization: {cells: 8, levels: 1}
+    transformations:                        # how the approximation was reached
+      strong_to_adr: {by: ymf.symbolic 0.2.1, adr: {...}}     # the ADR form, as data
+      adr_to_discrete:                                        # what Proteus built
+        by: proteus.ADRProblem 2.0.0.dev
+        spaces: {u: C0_AffineLinearOnSimplexWithNodalBasis}
+        quadrature: {element: 4, boundary: 4}
+        mesh: {nodes_per_side: 9, levels: 1}
+        nonlinear_solver: {type: Newton, atol: 1.0e-12, max_iterations: 25}
+        linear_solver: LU
+        stabilization: none
+      solve: {by: {ymf: ..., proteus_git: ..., numpy: ..., platform: ...}, created: ...}
+    storage: poisson_2365d177bb1f.h5        # or: inline
+    verification: {l2_errors: {u: 0.0105...}}
+    approximation: {TimeCollections: [...]} # the solver's domain tree
+    reproduced: [{created: ..., by: {...}}] # each rerun that matched, bitwise
+```
+
+The top level holds nothing that is not the spec, apart from `ymf` and
+`outputs`, so an archive is also a spec: it validates as one, and
+`extends` can name it.
+
+**Keys.** An output's key hashes its slice of the input, whole: the
+`Problem`, the analytical solutions, the one discretization entry it ran
+and its realization. Prose counts, so the key fingerprints the text as well
+as the numbers. Changing anything in the slice changes the key. Changing
+another discretization, or the `vvuq` plan, does not.
+
+**Studies.** A discretization's `mesh: {cells: [4, 8, 16], levels: 1}`
+(and its `discretization.dt`) may be a list. Each combination is one
+*realization* and one output. Within the slice, the list is replaced by
+the realization's value, so adding a mesh to a study leaves the keys of
+the meshes already there unchanged.
+
+**One archive per input.** `ymf_run poisson.ymf` writes
+`poisson.archive.ymf`, beside one `poisson_<digest>.h5` and `.xmf` per
+output. With `--inline` the arrays go in the archive itself instead.
+
+**Make.** Running a spec, or its archive, computes only the outputs the
+archive lacks. `--cells` and `--levels` override the spec's `mesh`, and the
+archive records each override under `composition.overrides`. An archive
+holding outputs of an *earlier* version of the input is refused, since its
+spec could not reproduce them; `--prune` drops them.
+
+**Reproduction.** `--check` reruns the outputs already present and compares
+each with its record: the ADR form, the errors and every array, bitwise. A
+match is appended to `reproduced`. A difference is refused, with the
+differences listed (which arrays, how many values, by how much), unless
+`--keep-different` keeps the rerun as a second output, `<key>~2`.
+
+**Extending an archive.** A file can `extends:` an archive and override
+anything. The outputs it inherits are kept only if their keys, recomputed
+against the composed input, still match, and their `.h5` references are
+rebased to the new archive's directory. See
+[plane_poiseuille_refined.ymf](../examples/navier_stokes/plane_poiseuille_refined.ymf),
+which adds a mesh to one branch's study: running it solves that mesh and
+inherits the other eight outputs. Overriding the problem instead (μ, say)
+inherits nothing, because no output solved the new problem.
+
+**Viewing.** `ymf2xmf poisson.archive.ymf` writes one `.xmf` per output
+(`--key` picks some). Each carries the realized spec and the output's
+record, everything but its arrays, as the `YMF` information element.
+
+In code:
+
+```python
+from ymf import closure
+spec, outputs, dropped = closure.load("poisson.archive.ymf")   # or a spec
+for key, name, realization in closure.planned_outputs(spec):
+    print(key, "done" if key in outputs else "missing")
+closure.write("poisson.archive.ymf", spec, outputs)
+```
+
 ## Files on disk
+
+The rest of this page is about the solver's form: what a solver writes for
+one run, and what an output's `approximation` holds.
 
 ```text
 run.h5     heavy data: node coordinates, connectivity, field values
@@ -47,7 +144,7 @@ formats has to keep two representations consistent, and eventually won't.
 
 ## The `.ymf` document
 
-Three top-level keys:
+A solver's document has three top-level keys:
 
 ```yaml
 ymf_archive_version: 1        # refused on read if it isn't the version this ymf knows
@@ -58,10 +155,12 @@ extra:                        # optional: anything with no XDMF equivalent
   solution_paths: {...}
 ```
 
-`extra` is free-form, and is where an archive records its provenance. The
-example archives carry the whole `examples/heat_equation.ymf` problem
-specification, so the output says what problem it solved. The archive
-writer doesn't interpret `extra`; it stores it.
+`extra` is free-form. The example archives carry the whole
+`examples/heat_equation.ymf` problem specification in it, so the output
+says what problem it solved. The archive writer doesn't interpret `extra`;
+it stores it. When the run starts from a spec, prefer the archive of the
+spec ([above](#the-archive-of-a-spec)), which puts the spec at the top
+level and the solver's domain in an output's `approximation`.
 
 Here is one time step of `heat.ymf` from
 [`examples/write_archive.py`](../examples/write_archive.py):

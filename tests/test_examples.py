@@ -10,7 +10,10 @@ import pytest
 from ymf.schema import load_ymf
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
-SPECS = sorted(EXAMPLES_DIR.rglob("*.ymf"))
+sys.path.insert(0, str(EXAMPLES_DIR))
+from validate_spec import standalone  # noqa: E402
+
+SPECS = [p for p in sorted(EXAMPLES_DIR.rglob("*.ymf")) if standalone(p)]
 
 
 def run(script, *args, env=None):
@@ -34,6 +37,23 @@ def test_validate_spec_walks_every_example_and_shows_the_unit_error():
     assert "schema: INVALID" not in out
     assert "dimensionless numbers: {'Re': 40.0}" in out
     assert "incompatible with 'T''s declared units 'K'" in out
+
+
+def test_the_refined_example_inherits_every_output_its_change_leaves_alone(tmp_path):
+    import shutil
+    from ymf import closure
+    here = tmp_path / "navier_stokes"
+    shutil.copytree(EXAMPLES_DIR / "navier_stokes", here,
+                    ignore=shutil.ignore_patterns("*.archive.ymf", "*.h5", "*.xmf"))
+    spec, _, _ = closure.load(here / "plane_poiseuille.ymf")
+    planned = list(closure.planned_outputs(spec))
+    assert len(planned) == 8
+    closure.write(here / "plane_poiseuille.archive.ymf", spec,
+                  {key: {"realization": r} for key, _, r in planned})
+    refined, kept, dropped = closure.load(here / "plane_poiseuille_refined.ymf")
+    assert len(kept) == 8 and dropped == {}
+    new = [k for k, _, _ in closure.planned_outputs(refined) if k not in kept]
+    assert len(new) == 1 and new[0].startswith("equal_order_p1/cells=128/")
 
 
 @pytest.fixture(scope="module")

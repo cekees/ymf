@@ -13,8 +13,10 @@ MESH = "      mesh: {cells: [4, 8], levels: 2}\n"
 
 
 def spec_with_mesh(tmp_path, mesh=MESH, name="poisson.ymf"):
-    """examples/poisson.ymf with a mesh study on P1_linear."""
-    text = (EXAMPLES / "poisson.ymf").read_text(encoding="utf-8")
+    """examples/poisson.ymf with this mesh on P1_linear, and none on P2."""
+    text = "".join(line for line in
+                   (EXAMPLES / "poisson.ymf").read_text(encoding="utf-8").splitlines(True)
+                   if not line.lstrip().startswith("mesh:"))
     anchor = '    - name: "P1_linear"\n'
     assert anchor in text
     text = text.replace(anchor, anchor + mesh, 1)

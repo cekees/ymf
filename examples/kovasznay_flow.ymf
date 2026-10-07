@@ -123,6 +123,7 @@ solution_paths:
       finite_element:
         velocity: {family: CG, order: 2}
         pressure: {family: CG, order: 1}
+      mesh: {cells: [16, 32, 64]}      # a study: one output per mesh
       solver:
         type: nonlinear
         nonlinear_solver: newton
@@ -136,6 +137,7 @@ solution_paths:
       finite_element:
         velocity: {family: CG, order: 1}
         pressure: {family: CG, order: 1}
+      mesh: {cells: [16, 32, 64]}
       solver:
         type: nonlinear
         nonlinear_solver: newton
@@ -149,7 +151,6 @@ solution_paths:
 vvuq:
   verification:
     method: "exact_comparison"
-    grid_levels: [16, 32, 64]
     reference:
       type: "analytical"
       branch_ref: "kovasznay_exact"

@@ -8,7 +8,7 @@ design drafts and background research, kept for their reasoning.
 | Document | What it covers |
 |---|---|
 | [problem-specification.md](problem-specification.md) | Writing and validating a problem spec: structure, branching, provenance, units, known gaps |
-| [archive-format.md](archive-format.md) | The archive a solver writes: files on disk, the domain model, parallel output, XDMF conversion, use in Proteus |
+| [archive-format.md](archive-format.md) | Archives: the archive of a spec (outputs keyed by their input, studies, reruns, `extends`), and the archive a solver writes: files on disk, the domain model, parallel output, XDMF conversion, use in Proteus |
 | [xdmf-model.yaml](xdmf-model.yaml) | The archive model laid out in the order of XDMF's own [Model and Format](https://xdmf.org/index.php/XDMF_Model_and_Format.html) page: each XDMF element and attribute, the `.ymf` key that holds it, and whether it is supported. For readers who know XDMF. |
 
 ## Design drafts

@@ -15,8 +15,11 @@ It has two parts that share one format:
 | **Depends on** | `ymf[frontend]` | `pyyaml` alone |
 | **Guide** | [docs/problem-specification.md](docs/problem-specification.md) | [docs/archive-format.md](docs/archive-format.md) |
 
-An archive can carry the specification that produced it, so a run's output
-records the problem it solved.
+The two meet in the archive of a spec: the specification as realized,
+followed by every output computed from it, each keyed by a hash of the part
+of the spec that produced it and recording how it was produced. Such an
+archive is itself a spec: rerunning it reproduces its outputs bitwise, and
+another spec can `extends` it.
 
 ## Why
 
@@ -41,7 +44,8 @@ still read it.
 
 ## Status
 
-Pre-release (0.2.x). The repository is private while the format settles.
+Pre-release (0.2.x). The format may still change; each document records the
+ymf version that wrote it (`ymf:`), and a reader refuses one from a newer ymf.
 
 | Piece | State |
 |---|---|
@@ -51,6 +55,7 @@ Pre-release (0.2.x). The repository is private while the format settles.
 | Problem-spec schema v0.2 (`ymf.schema`) | **Implemented.** See the [known gaps](docs/problem-specification.md#known-gaps) |
 | The notation, and strong form → advection-diffusion-reaction form (`ymf.symbolic`) | **Implemented.** Specs run end to end in Proteus, reproducibly, via `ymf_run` |
 | Composing a spec from several files: a model extended into problems (`ymf.compose`) | **Implemented.** Overrides are recorded in the composed document |
+| The archive of a spec: outputs keyed by their input, studies, make-like reruns (`ymf.closure`) | **Implemented.** `ymf_run` writes and checks them; an archive can be extended |
 | Units, scales, dimensionless numbers (`ymf.units`) | **Implemented**, apart from rewriting the PDE in dimensionless form |
 | Manning's n lookup and data-source catalog (`ymf.data_sources`) | Implemented; data fetching is a stub |
 | Parsing the weak forms; dimensionless rewriting of the equations | **Planned.** Weak forms are free text; the solver derives its weak form from the strong one |
@@ -165,6 +170,7 @@ metadata can't disagree with the data.
 src/ymf/
   archive.py        archive data model, YAML I/O, structural checks   (pyyaml)
   xdmf.py           domain <-> XDMF conversion                       (stdlib)
+  closure.py        the archive of a spec: output keys, studies        (pyyaml)
   cli.py            the ymf2xmf command
   normalize.py      normalize_unknowns                               (stdlib)
   schema.py         problem-spec schema                              (strictyaml, ymf[spec])

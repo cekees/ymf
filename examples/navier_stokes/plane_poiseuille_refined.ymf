@@ -1,0 +1,29 @@
+# ============================================================
+# YMF problem: plane Poiseuille flow, one branch's study refined
+#
+# Extends an ARCHIVE, not a spec: plane_poiseuille.archive.ymf, which
+#
+#     ymf_run plane_poiseuille.ymf
+#
+# writes here. It changes one numerical parameter, the meshes of the
+# equal-order branch, adding a finer one. Everything else -- the problem,
+# the other branch, the four meshes already solved -- is inherited, and so
+# are the outputs whose input is unchanged: each output is keyed by a hash
+# of its own slice of the input, and replacing [8, 16, 32, 64] by
+# [8, 16, 32, 64, 128] changes none of those slices. So
+#
+#     ymf_run plane_poiseuille_refined.ymf
+#
+# solves only the 128-cell mesh, and writes
+# plane_poiseuille_refined.archive.ymf with all nine outputs, the eight
+# inherited ones still pointing at their .h5 files. Change the problem
+# instead (say, μ) and every inherited output is dropped: none of them is
+# a solution of the new problem.
+# ============================================================
+
+extends: plane_poiseuille.archive.ymf
+
+solution_paths:
+  discretizations:
+    - name: "equal_order_p1"
+      mesh: {cells: [8, 16, 32, 64, 128]}

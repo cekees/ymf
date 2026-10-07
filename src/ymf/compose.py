@@ -118,6 +118,16 @@ def _merge(parent: Any, child: Any, path: str, source: str,
 _ARCHIVE_KEYS = ("ymf", "outputs")
 
 
+class _NoAliasDumper(yaml.SafeDumper):
+    # strictyaml refuses anchors, and a merged document can share objects
+    def ignore_aliases(self, data):
+        return True
+
+
+def _dump(data: Any, **kwargs: Any) -> str:
+    return yaml.dump(data, Dumper=_NoAliasDumper, **kwargs)
+
+
 def _is_archive_text(text: str) -> bool:
     import re
     return re.search(r"^(ymf|outputs):", text, re.M) is not None
@@ -139,7 +149,7 @@ def _read(path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     document = read_document(path)
     outputs = document.pop("outputs", None)
     document.pop("ymf", None)
-    spec_text = yaml.safe_dump(document, allow_unicode=True, sort_keys=False,
+    spec_text = _dump(document, allow_unicode=True, sort_keys=False,
                                default_flow_style=False, width=1000)
     data = strictyaml.dirty_load(spec_text, PARTIAL_YMF_SCHEMA, label=str(path),
                                  allow_flow_style=_ALLOW_FLOW_STYLE).data
@@ -222,7 +232,7 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
     # even where the schema allows one.) Errors in any single file were
     # already reported against that file by _read.
     label = "%s (composed from %s)" % (path.name, ", ".join(p.name for p in sources))
-    text = yaml.safe_dump(merged, allow_unicode=True, sort_keys=False,
+    text = _dump(merged, allow_unicode=True, sort_keys=False,
                           default_flow_style=False, width=1000)
     data = strictyaml.dirty_load(text, YMF_SCHEMA, label=label,
                                  allow_flow_style=_ALLOW_FLOW_STYLE).data

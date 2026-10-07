@@ -106,12 +106,24 @@ def show_a_unit_error() -> None:
         print("  %s" % (issue,))
 
 
+def standalone(path: Path) -> bool:
+    """A spec that loads as it is checked in: not an archive ymf_run wrote,
+    and not one extending such an archive (it needs that run first)."""
+    if path.name.endswith(".archive.ymf"):
+        return False
+    import re
+    m = re.search(r"^extends:\s*(\S+)", path.read_text(encoding="utf-8"), re.M)
+    return not (m and m.group(1).endswith(".archive.ymf")
+                and not (path.parent / m.group(1)).exists())
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("specs", nargs="*", type=Path,
                         help="YMF documents to check (default: every example)")
     args = parser.parse_args(argv)
-    specs = [p.resolve() for p in args.specs] or sorted(EXAMPLES.rglob("*.ymf"))
+    specs = [p.resolve() for p in args.specs] or [
+        p for p in sorted(EXAMPLES.rglob("*.ymf")) if standalone(p)]
     ok = all([describe(p) for p in specs])
     if not args.specs:
         show_a_unit_error()

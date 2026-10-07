@@ -102,6 +102,7 @@ solution_paths:
       finite_element:
         velocity: {family: CG, order: 2}
         pressure: {family: CG, order: 1}
+      mesh: {cells: [4, 8]}      # a study: one output per mesh
       solver:
         type: nonlinear
         nonlinear_solver: newton
@@ -111,7 +112,6 @@ solution_paths:
 vvuq:
   verification:
     method: "exact_comparison"
-    grid_levels: [4, 8]
     reference:
       type: "analytical"
       branch_ref: "couette_exact"

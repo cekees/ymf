@@ -114,8 +114,11 @@ usually `from_weak_form` and `finite_element`. `finite_element` takes
 `type` (`linear | nonlinear | time_marching | saddle_point`),
 `linear_solver` (`petsc | mumps | umfpack | superlu`), `nonlinear_solver`
 (`newton | broyden | line_search`), `tolerance` and `max_iterations`.
+`mesh: {cells, levels}` gives the meshes: cells along each side of the
+domain's box, and levels of uniform refinement (the solution is on the
+finest). Either may be a list, a study with one output per combination.
 `discretization` is a free-form block for anything else, such as the time
-integrator in `heat_equation.ymf`.
+integrator in `heat_equation.ymf`; its `dt` may be a list too.
 
 ## Writing it once: the notation
 
@@ -194,19 +197,37 @@ boundary data, initial conditions and the exact solution. A solver consumes
 that without sympy. For Proteus, `scripts/ymf_run` does the whole run:
 
 ```bash
-ymf_run examples/poisson.ymf --cells 4 8 16 --outdir out
+ymf_run examples/poisson.ymf --outdir out              # every discretization, every mesh
+ymf_run out/poisson.archive.ymf --check                # rerun it all, and compare
 ```
 
-It runs each discretization on each mesh and prints the L2 error of every
-unknown against the exact solution, with observed rates. A discretization
-whose weak form asks for a stabilization the runner cannot provide is
-skipped and says so, rather than run without it. Each run writes an
-archive whose `extra` records everything needed to reproduce it: the
-composed specification (self-contained), the run configuration, the
-generated ADR form, software versions and the errors. Given that archive
-instead of a spec, `ymf_run` reruns exactly that run; with `--check` it
-confirms the pipeline is idempotent, meaning the ADR form is regenerated
-identically and every numerical dataset is bitwise identical.
+The meshes are part of the spec. Each discretization gives them as a study,
+
+```yaml
+  discretizations:
+    - name: "P1_linear"
+      from_weak_form: "global"
+      finite_element: {fields: {family: CG, order: 1}}
+      mesh: {cells: [4, 8, 16]}      # cells per side; levels: refines each uniformly
+      solver: {type: linear, tolerance: 1.0e-12}
+```
+
+and `ymf_run` runs each discretization on each mesh, printing the L2
+error of every unknown against the exact solution, with observed rates.
+The solver's `tolerance` and `max_iterations` reach Newton. A
+discretization whose weak form asks for a stabilization the runner cannot
+provide is skipped and says so, rather than run without it. `--cells`,
+`--levels` and `--discretization` narrow or change the study from the
+command line, and the archive records them as overrides.
+
+Everything goes into one archive per input, `poisson.archive.ymf`: the
+spec as realized, then one output per discretization and mesh, keyed by a
+hash of the part of the spec that produced it. Each output records the
+transformations that produced it (strong form → ADR form → Proteus's
+discrete problem → the solve, with software versions), the errors and the
+approximation. Like make, `ymf_run` computes only the outputs the archive
+lacks; `--check` reruns the rest and confirms that each reproduces its
+record bitwise. See [The archive of a spec](archive-format.md#the-archive-of-a-spec).
 
 ## Branching: one problem, several solution paths
 
