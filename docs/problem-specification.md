@@ -229,6 +229,13 @@ approximation. Like make, `ymf_run` computes only the outputs the archive
 lacks; `--check` reruns the rest and confirms that each reproduces its
 record bitwise. See [The archive of a spec](archive-format.md#the-archive-of-a-spec).
 
+`--emit-pn` also writes each output's problem as the classic Proteus files
+`<stem>_<digest>_p.py`, `_n.py` and `_so.py`: what `proteus.ADRProblem`
+builds in memory, as readable Python, with the coefficients' code strings
+copied verbatim. `parun <stem>_<digest>_so.py` runs them, and its solution
+is bitwise the archived one. They are a way to read exactly what was
+solved, or to start a hand-written Proteus model from it.
+
 ## Branching: one problem, several solution paths
 
 The schema exists to let one document hold *competing* approaches to the
