@@ -41,10 +41,14 @@ __all__ = [
     "KEY_DIGITS",
     "realizations",
     "realize",
+    "plain",
     "input_slice",
     "input_digest",
     "output_key",
     "planned_outputs",
+    "partition",
+    "file_stem",
+    "archive_stem",
     "load",
     "write",
 ]
@@ -98,19 +102,19 @@ def realizations(discretization: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def realize(discretization: Dict[str, Any], realization: Dict[str, Any]) -> Dict[str, Any]:
     """The discretization entry with each studied list replaced by one value."""
-    entry = copy.deepcopy(_plain(discretization))
+    entry = copy.deepcopy(plain(discretization))
     for name, path in _STUDIED:
         if name in realization and _get(entry, path[:-1]) is not None:
             _set(entry, path, realization[name])
     return entry
 
 
-def _plain(value: Any) -> Any:
+def plain(value: Any) -> Any:
     """strictyaml's mappings and sequences, as plain dicts and lists."""
     if isinstance(value, dict):
-        return {str(k): _plain(v) for k, v in value.items()}
+        return {str(k): plain(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
-        return [_plain(v) for v in value]
+        return [plain(v) for v in value]
     return value
 
 
@@ -125,7 +129,7 @@ def input_slice(doc: Dict[str, Any], discretization: str,
                 realization: Dict[str, Any]) -> Dict[str, Any]:
     """The part of the input one output depends on (see the module docstring)."""
     paths = doc.get("solution_paths") or {}
-    return _plain({
+    return plain({
         "Problem": doc["Problem"],
         "analytical": paths.get("analytical") or [],
         "discretization": realize(_discretization(doc, discretization), realization),
@@ -175,29 +179,58 @@ def load(path: str | Path) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, st
     to the old archive, not to this one.
     """
     from ymf.compose import load_composed
-    doc = load_composed(path)
-    candidates = doc.pop("outputs", None) or {}
-    spec = doc
-    outputs, dropped = {}, {}
-    for key, output in candidates.items():
+    spec = load_composed(path)
+    outputs, dropped = partition(spec, spec.pop("outputs", None) or {})
+    return spec, outputs, dropped
+
+
+def partition(spec: Dict[str, Any], outputs: Dict[str, Any]
+              ) -> Tuple[Dict[str, Any], Dict[str, str]]:
+    """Split ``outputs`` into those ``spec`` still produces, and the rest.
+
+    Returns ``(kept, dropped)``; ``dropped`` maps each other key to why.
+    """
+    kept, dropped = {}, {}
+    for key, output in outputs.items():
         base = _base_key(key)
         name = base.split("/", 1)[0]
         realization = (output or {}).get("realization")
+        if not realization:
+            dropped[key] = "it records no realization"
+            continue
         try:
-            current = output_key(spec, name, realization) if realization else None
+            current = output_key(spec, name, realization)
         except KeyError:
             dropped[key] = "the discretization %r is not in this input" % (name,)
             continue
         if current == base:
-            outputs[key] = output
+            kept[key] = output
         else:
             dropped[key] = "its input changed (it would now be %s)" % (current,)
-    return spec, outputs, dropped
+    return kept, dropped
+
+
+def file_stem(stem: str, key: str) -> str:
+    """The name of an output's files: ``poisson`` + key -> ``poisson_3f2a9c01d4e7``.
+
+    A kept, differing rerun (``key~2``) gets ``poisson_3f2a9c01d4e7_2``.
+    """
+    base, _, n = key.partition("~")
+    return "%s_%s%s" % (stem, base.rsplit("/", 1)[-1], "_" + n if n else "")
+
+
+def archive_stem(path: str | Path) -> str:
+    """``poisson.ymf`` and ``poisson.archive.ymf`` -> ``poisson``."""
+    name = Path(path).name
+    for suffix in (".ymf", ".archive"):
+        if name.endswith(suffix):
+            name = name[: -len(suffix)]
+    return name
 
 
 def write(path: str | Path, spec: Dict[str, Any], outputs: Dict[str, Any]) -> None:
     """Write an archive: ``ymf:``, the realized spec, then ``outputs``."""
-    document = dict(_plain(spec))
+    document = dict(plain(spec))
     document.pop("outputs", None)
     if outputs:
         document["outputs"] = outputs

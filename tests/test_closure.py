@@ -135,7 +135,26 @@ def test_ymf2xmf_writes_one_xmf_per_output(tmp_path):
     closure.write(archive, spec, outputs)
     assert ymf2xmf_main([str(archive)]) == 0
     written = sorted(p.name for p in tmp_path.glob("*.xmf"))
-    assert written == sorted("poisson.%s.xmf" % k.rsplit("/", 1)[1] for k in outputs)
+    assert written == sorted("poisson_%s.xmf" % k.rsplit("/", 1)[1] for k in outputs)
     _, extra = read_xdmf(tmp_path / written[0])
     assert extra["output"] in outputs and "approximation" not in extra
     assert extra["Problem"]["name"] == spec["Problem"]["name"]
+
+
+def test_inherited_outputs_still_point_at_their_files(tmp_path):
+    from ymf.archive import canonicalize_domain
+    base = tmp_path / "base"
+    base.mkdir()
+    spec, _, _ = closure.load(spec_with_mesh(base, mesh="      mesh: {cells: 4}\n"))
+    (key, _, r), = closure.planned_outputs(spec)
+    output = fake_output(r)
+    domain = canonicalize_domain(output["approximation"])
+    domain["TimeCollections"][0]["Data"][0]["Geometry"]["DataItem"] = data_item(
+        [2, 2], "poisson_x.h5:/nodes")
+    output["approximation"] = domain
+    closure.write(base / "poisson.archive.ymf", spec, {key: output})
+    child = tmp_path / "child.ymf"
+    child.write_text("extends: base/poisson.archive.ymf\n", encoding="utf-8")
+    _, kept, _ = closure.load(child)
+    step = kept[key]["approximation"]["TimeCollections"][0]["Data"][0]
+    assert step["Geometry"]["DataItem"]["Data"] == "base/poisson_x.h5:/nodes"

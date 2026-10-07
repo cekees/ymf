@@ -69,15 +69,6 @@ def ymf2xmf(
     return destination
 
 
-def _archive_stem(source: Path) -> str:
-    """``poisson.archive.ymf`` -> ``poisson``."""
-    name = source.name
-    for suffix in (".ymf", ".archive"):
-        if name.endswith(suffix):
-            name = name[: -len(suffix)]
-    return name
-
-
 def archive2xmf(
     source: str | Path,
     outdir: Optional[str | Path] = None,
@@ -87,11 +78,13 @@ def archive2xmf(
 ) -> List[Path]:
     """Write one ``.xmf`` per output of an archive. Returns the paths.
 
-    Each is named ``<stem>.<digest>.xmf`` after the output's key, and
+    Each is named ``<stem>_<digest>.xmf`` after the output's key (beside
+    its ``<stem>_<digest>.h5``, if it has one), and
     carries the realized spec and that output's record (everything but
     its arrays) as the ``<Information Name="YMF">`` element.
     """
     from ymf.archive import read_document
+    from ymf.closure import archive_stem, file_stem
     source = Path(source)
     document = read_document(source)
     outputs = document.get("outputs") or {}
@@ -110,8 +103,7 @@ def archive2xmf(
             continue
         domain = validate_domain(domain) if validate else canonicalize_domain(domain)
         record = {k: v for k, v in output.items() if k != "approximation"}
-        destination = outdir / ("%s.%s.xmf" % (_archive_stem(source),
-                                               key.rsplit("/", 1)[-1]))
+        destination = outdir / (file_stem(archive_stem(source), key) + ".xmf")
         write_xdmf(domain, destination, ymf_extra=dict(spec, output=key, record=record))
         written.append(destination)
     return written

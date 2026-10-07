@@ -152,6 +152,7 @@ __all__ = [
     "load_array",
     "inline_domain",
     "domain_arrays",
+    "rebase_domain",
     "read_ymf",
     "dump_grid",
     "load_grid",
@@ -913,6 +914,11 @@ def check_dimensions(item: Dict[str, Any], shape: Sequence[int], where: str = "D
 class _ArchiveDumper(_YamlDumper):
     """The libyaml dumper, writing inline ``Values`` on one line."""
 
+    def ignore_aliases(self, data):
+        # An archive repeats a record (the ADR form, the software versions)
+        # in each output; written out each time, so each output reads alone.
+        return True
+
 
 def _represent_str(dumper, data):
     # multi-line text (derivations, solution formulas) as a readable | block
@@ -920,7 +926,19 @@ def _represent_str(dumper, data):
     return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=style)
 
 
+_SHORT_LIST = 72
+
+
+def _represent_list(dumper, data):
+    # a short list of scalars on one line: unknowns: [v, p], cells: [4, 8]
+    scalar = all(isinstance(x, (int, float, bool, type(None)))
+                 or isinstance(x, str) and "\n" not in x for x in data)
+    flow = scalar and sum(len(str(x)) + 2 for x in data) <= _SHORT_LIST
+    return dumper.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=flow)
+
+
 _ArchiveDumper.add_representer(str, _represent_str)
+_ArchiveDumper.add_representer(list, _represent_list)
 _ArchiveDumper.add_representer(
     _FlowList,
     lambda dumper, data: dumper.represent_sequence(
@@ -1044,6 +1062,29 @@ def inline_domain(domain: Dict[str, Any], base_dir: str | Path = ".") -> Dict[st
         array = load_array(item, base_dir)
         owner["DataItem"] = data_item_for(array, inline=True, dimensions=item["Dimensions"])
     return validate_domain(out)
+
+
+def rebase_domain(domain: Dict[str, Any], from_dir: str | Path,
+                  to_dir: str | Path) -> Dict[str, Any]:
+    """A copy of ``domain`` whose HDF5 references resolve from ``to_dir``.
+
+    References are relative to the archive that holds them. An output
+    carried into an archive in another directory (by ``extends``) keeps
+    pointing at the same files.
+    """
+    import copy
+    import os
+    out = copy.deepcopy(canonicalize_domain(domain))
+    if Path(from_dir).resolve() == Path(to_dir).resolve():
+        return out
+    for _, owner in _data_items(out):
+        item = owner["DataItem"]
+        if item.get("Format") == "HDF" and "Data" in item:
+            filename, dataset = str(item["Data"]).rsplit(":", 1)
+            moved = os.path.relpath(Path(from_dir).resolve() / filename,
+                                    Path(to_dir).resolve())
+            item["Data"] = "%s:%s" % (Path(moved).as_posix(), dataset)
+    return out
 
 
 def domain_arrays(domain: Dict[str, Any], base_dir: str | Path = "."):

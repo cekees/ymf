@@ -158,6 +158,12 @@ def _compose(path: Path, chain: Tuple[Path, ...]):
             "%s extends %s, which does not exist" % (chain[-1], path) if chain
             else "no such file: %s" % (path,))
     data, outputs = _read(path)
+    if outputs and chain:
+        # an inherited output's files are relative to its own archive
+        from ymf.archive import rebase_domain
+        outputs = {k: dict(v, approximation=rebase_domain(
+                       v["approximation"], path.parent, chain[0].parent))
+                   if v.get("approximation") else v for k, v in outputs.items()}
     own = {k: v for k, v in data.items() if k not in _FILE_KEYS}
     if "extends" not in data:
         return own, [path], [], dict(outputs or {}), data.get("composition")
