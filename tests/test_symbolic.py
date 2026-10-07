@@ -93,8 +93,8 @@ def test_a_pressure_gradient_can_be_a_hamiltonian_instead_of_a_flux():
 def test_an_unknown_seen_only_through_its_gradient_and_never_fixed_is_up_to_a_constant():
     assert adr_problem(load_ymf(EXAMPLES / "kovasznay_flow.ymf"))["up_to_constant"] == ["p"]
     # a pressure datum fixes it; Poisson's u has Dirichlet data
-    assert adr_problem(load_ymf(EXAMPLES / "navier_stokes" / "plane_poiseuille.ymf"))["up_to_constant"] == []
-    assert adr_problem(load_ymf(EXAMPLES / "poisson.ymf"))["up_to_constant"] == []
+    assert "up_to_constant" not in adr_problem(load_ymf(EXAMPLES / "navier_stokes" / "plane_poiseuille.ymf"))
+    assert "up_to_constant" not in adr_problem(load_ymf(EXAMPLES / "poisson.ymf"))
 
 
 def test_the_output_is_plain_data():

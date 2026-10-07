@@ -248,20 +248,23 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     up_to_constant = _up_to_a_constant(residuals, space, ranks, dirichlet)
     unknowns = {name: ([name] if rank == 0 else ["%s_%d" % (name, i) for i in range(dim)])
                 for name, rank in ranks.items()}
-    return {"adr": adr, "unknowns": unknowns,
-            "geometry": {"lower": lower, "upper": upper},
-            "dirichlet": dirichlet, "periodic": periodic, "initial": initial, "exact": exact,
-            # The time interval the problem is posed on; None for a steady
-            # problem. A time derivative in a model used steadily (Couette
-            # from the Navier-Stokes model) is dropped by a steady solve.
-            "time": list(time) if time else None, "has_mass": has_mass,
-            # Scalar unknowns the problem determines only up to a constant:
-            # they appear in the equations only through their gradients,
-            # and no Dirichlet condition fixes them anywhere (the pressure
-            # of an incompressible flow with the velocity given on the
-            # whole boundary). A solver puts the constant in the null space
-            # of its operator; errors in them are measured modulo constants.
-            "up_to_constant": up_to_constant}
+    out = {"adr": adr, "unknowns": unknowns,
+           "geometry": {"lower": lower, "upper": upper},
+           "dirichlet": dirichlet, "periodic": periodic, "initial": initial, "exact": exact,
+           # The time interval the problem is posed on; None for a steady
+           # problem. A time derivative in a model used steadily (Couette
+           # from the Navier-Stokes model) is dropped by a steady solve.
+           "time": list(time) if time else None, "has_mass": has_mass}
+    if up_to_constant:
+        # Scalar unknowns the problem determines only up to a constant:
+        # they appear in the equations only through their gradients, and
+        # no Dirichlet condition fixes them anywhere (the pressure of an
+        # incompressible flow with the velocity given on the whole
+        # boundary). A solver puts the constant in the null space of its
+        # operator; errors in them are measured modulo constants. Absent
+        # when there are none.
+        out["up_to_constant"] = up_to_constant
+    return out
 
 
 def _up_to_a_constant(residuals, space, ranks, dirichlet) -> List[str]:
