@@ -145,6 +145,10 @@ __all__ = [
     "validate_domain",
     "check_dimensions",
     "write_ymf",
+    "read_document",
+    "write_document",
+    "check_version",
+    "package_version",
     "load_array",
     "inline_domain",
     "domain_arrays",
@@ -910,6 +914,13 @@ class _ArchiveDumper(_YamlDumper):
     """The libyaml dumper, writing inline ``Values`` on one line."""
 
 
+def _represent_str(dumper, data):
+    # multi-line text (derivations, solution formulas) as a readable | block
+    style = "|" if "\n" in data else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=style)
+
+
+_ArchiveDumper.add_representer(str, _represent_str)
 _ArchiveDumper.add_representer(
     _FlowList,
     lambda dumper, data: dumper.represent_sequence(
@@ -1039,6 +1050,81 @@ def domain_arrays(domain: Dict[str, Any], base_dir: str | Path = "."):
     """{path: array} for every DataItem, however each is stored."""
     return {where: load_array(owner["DataItem"], base_dir)
             for where, owner in _data_items(canonicalize_domain(domain))}
+
+
+# ---------------------------------------------------------------------------
+# documents: a specification, or an archive -- the specification plus the
+# outputs computed from it (see ymf.closure)
+# ---------------------------------------------------------------------------
+
+
+def _release(version: str) -> Tuple[int, ...]:
+    """(major, minor, patch) of a version string; () if it has none."""
+    import re
+    m = re.match(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?", str(version))
+    return tuple(int(g) for g in m.groups() if g is not None) if m else ()
+
+
+def package_version() -> str:
+    """The installed ymf version: the version every document is written as."""
+    from ymf import __version__
+    return __version__
+
+
+def check_version(document: Dict[str, Any], where: str = "document") -> None:
+    """Refuse a document written by a newer ymf than this one.
+
+    The ``ymf:`` key holds the package version that wrote a document; the
+    schema version is the package version. A newer writer may use fields
+    this reader does not know, so it is refused rather than half-read. An
+    unversioned (development) reader cannot tell, and does not refuse.
+    """
+    written = _release(document.get("ymf", ""))
+    reader = _release(package_version())
+    if written and reader and reader != (0, 0, 0) and written > reader:
+        raise YmfArchiveError(
+            "%s was written by ymf %s, newer than this ymf %s; upgrade ymf to read it"
+            % (where, document["ymf"], package_version()))
+
+
+def read_document(path: str | Path) -> Dict[str, Any]:
+    """Load a YMF document (spec or archive) as plain data, quickly.
+
+    pyyaml with libyaml, no schema: archives hold arrays, and strictyaml
+    is far too slow for them. Validate the specification part with
+    ymf.schema (ymf.closure.load does).
+    """
+    document = _load(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise YmfArchiveError(f"{path}: expected a YAML mapping at the top level")
+    check_version(document, str(path))
+    return document
+
+
+def write_document(path: str | Path, document: Dict[str, Any]) -> None:
+    """Write a spec or archive: ``ymf:`` first, then the rest in order.
+
+    Each output's ``approximation`` is validated and canonicalized, and
+    written with one-line Dimensions and Values.
+    """
+    out: Dict[str, Any] = {"ymf": package_version()}
+    for key, value in document.items():
+        if key == "ymf":
+            continue
+        if key == "outputs":
+            value = {k: _canonical_output(k, v) for k, v in value.items()}
+        out[key] = value
+    Path(path).write_text(_dump(out), encoding="utf-8")
+
+
+def _canonical_output(key: str, output: Dict[str, Any]) -> Dict[str, Any]:
+    output = dict(output)
+    if "approximation" in output:
+        try:
+            output["approximation"] = validate_domain(output["approximation"])
+        except YmfArchiveError as exc:
+            raise YmfArchiveError("outputs[%s].approximation: %s" % (key, exc)) from exc
+    return output
 
 
 def dump_grid(g: Dict[str, Any]) -> str:

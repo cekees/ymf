@@ -115,16 +115,41 @@ def _merge(parent: Any, child: Any, path: str, source: str,
     return child
 
 
-def _read(path: Path) -> Dict[str, Any]:
-    """Validate one file against the partial schema, reporting its own name."""
-    return strictyaml.dirty_load(
-        path.read_text(encoding="utf-8"), PARTIAL_YMF_SCHEMA,
-        label=str(path), allow_flow_style=_ALLOW_FLOW_STYLE,
-    ).data
+_ARCHIVE_KEYS = ("ymf", "outputs")
 
 
-def _compose(path: Path, chain: Tuple[Path, ...]) -> Tuple[Dict[str, Any], List[Path], List[Dict[str, Any]]]:
-    """Return ``(merged data, source files root-first, overrides)``."""
+def _is_archive_text(text: str) -> bool:
+    import re
+    return re.search(r"^(ymf|outputs):", text, re.M) is not None
+
+
+def _read(path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+    """Validate one file against the partial schema; return (data, outputs).
+
+    A plain spec is validated as written, so errors cite its own lines. An
+    archive (a spec with ``ymf:`` and ``outputs:``) is read with pyyaml --
+    its outputs hold arrays, far too much for strictyaml -- and only its
+    specification part is validated. Its outputs come back separately.
+    """
+    text = path.read_text(encoding="utf-8")
+    if not _is_archive_text(text):
+        return strictyaml.dirty_load(text, PARTIAL_YMF_SCHEMA, label=str(path),
+                                     allow_flow_style=_ALLOW_FLOW_STYLE).data, None
+    from ymf.archive import read_document
+    document = read_document(path)
+    outputs = document.pop("outputs", None)
+    document.pop("ymf", None)
+    spec_text = yaml.safe_dump(document, allow_unicode=True, sort_keys=False,
+                               default_flow_style=False, width=1000)
+    data = strictyaml.dirty_load(spec_text, PARTIAL_YMF_SCHEMA, label=str(path),
+                                 allow_flow_style=_ALLOW_FLOW_STYLE).data
+    if "composition" in document:
+        data["composition"] = document["composition"]   # typed, as written
+    return data, outputs
+
+
+def _compose(path: Path, chain: Tuple[Path, ...]):
+    """Return ``(merged data, source files root-first, overrides, outputs, root record)``."""
     if path in chain:
         cycle = " -> ".join(str(p) for p in chain + (path,))
         raise YmfCompositionError("extends cycle: %s" % (cycle,))
@@ -132,14 +157,15 @@ def _compose(path: Path, chain: Tuple[Path, ...]) -> Tuple[Dict[str, Any], List[
         raise YmfCompositionError(
             "%s extends %s, which does not exist" % (chain[-1], path) if chain
             else "no such file: %s" % (path,))
-    data = _read(path)
+    data, outputs = _read(path)
     own = {k: v for k, v in data.items() if k not in _FILE_KEYS}
     if "extends" not in data:
-        return own, [path], []
-    parent, sources, overrides = _compose(
+        return own, [path], [], dict(outputs or {}), data.get("composition")
+    parent, sources, overrides, inherited, record = _compose(
         (path.parent / data["extends"]).resolve(), chain + (path,))
     merged = _merge(parent, own, "", path.name, overrides)
-    return merged, sources + [path], overrides
+    inherited.update(outputs or {})          # a file's own outputs win
+    return merged, sources + [path], overrides, inherited, record
 
 
 def load_composed(path: str | Path) -> Dict[str, Any]:
@@ -147,29 +173,39 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
 
     A file marked ``kind: model`` is returned validated against the partial
     schema only, since a model is not a complete problem. Anything else must
-    compose into a document that passes the full schema.
+    compose into a document that passes the full schema. An archive's
+    ``outputs`` (its own, and any it inherits through ``extends``) are
+    attached to the result unvalidated; ymf.closure decides which of them
+    still belong to the composed input.
     """
     path = Path(path).resolve()
     if not path.is_file():
         raise YmfCompositionError("no such file: %s" % (path,))
-    data = _read(path)
+    text = path.read_text(encoding="utf-8")
+    archive = _is_archive_text(text)
+    data, _ = _read(path)
     kind = data.get("kind", "problem")
-    if "extends" not in data and kind == "problem":
+    if "extends" not in data and kind == "problem" and not archive:
         # A self-contained problem: validate the text itself, so errors
         # cite its own lines exactly as they appear in the file.
         return strictyaml.dirty_load(
-            path.read_text(encoding="utf-8"), YMF_SCHEMA,
-            label=str(path), allow_flow_style=_ALLOW_FLOW_STYLE,
+            text, YMF_SCHEMA, label=str(path), allow_flow_style=_ALLOW_FLOW_STYLE,
         ).data
-    merged, sources, overrides = _compose(path, ())
+    merged, sources, overrides, outputs, record = _compose(path, ())
+    composition = None
     if len(sources) > 1:
         base = path.parent
-        merged["composition"] = {
-            "sources": [os.path.relpath(p, base) for p in sources]}
+        composition = {"sources": [os.path.relpath(p, base) for p in sources]}
         # Omitted when empty: strictyaml cannot write an empty list under
         # an untyped (Any) key.
         if overrides:
-            merged["composition"]["overrides"] = overrides
+            composition["overrides"] = overrides
+        if record:
+            composition["inherited"] = record
+    elif record:
+        composition = record                  # an archive's own record, kept
+    if composition:
+        merged["composition"] = composition
     if kind == "model":
         # Kept, so that whoever receives this knows it is not a problem yet.
         merged["kind"] = "model"
@@ -186,5 +222,8 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
                                  allow_flow_style=_ALLOW_FLOW_STYLE).data
     # The schema types "composition" as Any, which reads every scalar back
     # as a string. The loader wrote it, so return its own typed copy.
-    data["composition"] = merged["composition"]
+    if composition:
+        data["composition"] = composition
+    if outputs:
+        data["outputs"] = outputs
     return data

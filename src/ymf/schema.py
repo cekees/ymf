@@ -119,6 +119,13 @@ DiscretizationEntry = Map(
         Optional("proteus_modules"): Map({"physics": Str(), "numerics": Str()}),
         # --- v0.2 additions ---
         Optional("bmi_interface"): Bool(),
+        # The mesh a run uses: cells along each side of the domain's box
+        # (the coarsest mesh) and levels of uniform refinement. A list is
+        # a study: each value is one realization (see ymf.closure).
+        Optional("mesh"): Map({
+            "cells": Int() | Seq(Int()),
+            Optional("levels"): Int() | Seq(Int()),
+        }),
         Optional("roughness_source"): Map(
             {
                 "type": Str(),
@@ -341,20 +348,24 @@ YMF_SCHEMA = Map(
 )
 
 
-def _partial(validator):
+def _partial(validator, keep=()):
     """The same validator with every mapping key made optional.
 
     Used for files that hold only part of a problem: a model, or a problem
-    that extends one. Only mappings reached through mapping keys are
-    relaxed. Entries of lists (an unknown, a weak form, a discretization)
-    and of pattern maps keep their required keys, since an entry that is
-    present at all should be complete.
+    that extends one. Entries of lists are relaxed too, except for the key
+    that names them (``name`` or ``label``): a file may change one field of
+    an inherited discretization by naming it and giving only that field.
+    The composed document is validated in full, so an entry that is new
+    and incomplete is still caught there.
     """
     if isinstance(validator, Map):
         return Map({
-            (key if isinstance(key, Optional) else Optional(key)): _partial(value)
+            (key if isinstance(key, Optional) or key in keep else Optional(key)):
+                _partial(value)
             for key, value in validator._validator.items()
         })
+    if isinstance(validator, Seq) and isinstance(validator._validator, Map):
+        return Seq(_partial(validator._validator, keep=("name", "label")))
     return validator
 
 
