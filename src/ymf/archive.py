@@ -145,6 +145,9 @@ __all__ = [
     "validate_domain",
     "check_dimensions",
     "write_ymf",
+    "load_array",
+    "inline_domain",
+    "domain_arrays",
     "read_ymf",
     "dump_grid",
     "load_grid",
@@ -310,7 +313,7 @@ def data_item(
         "Format": fmt,
         "DataType": data_type,
         "Precision": int(precision),
-        "Dimensions": [int(d) for d in dimensions],
+        "Dimensions": _FlowList(int(d) for d in dimensions),
     }
     if data is not None:
         item["Data"] = str(data)
@@ -325,8 +328,9 @@ def data_item(
 class _FlowList(list):
     """A list written as one ``[a, b, c]`` line rather than one per item.
 
-    Inline ``Values`` use it so that an array costs one YAML line, not one
-    line per number. It is a plain list in every other respect.
+    ``Dimensions`` and inline ``Values`` use it, so a shape reads
+    ``[8, 3]`` and an array costs one (wrapped) line rather than a line
+    per number. It is a plain list in every other respect.
     """
 
 
@@ -620,7 +624,7 @@ def _canonicalize_data_item(item: Dict[str, Any], where: str) -> Dict[str, Any]:
         "Format": fmt,
         "DataType": item.get("DataType", "Float"),
         "Precision": int(item.get("Precision", _DEFAULT_PRECISION)),
-        "Dimensions": [int(d) for d in item["Dimensions"]],
+        "Dimensions": _FlowList(int(d) for d in item["Dimensions"]),
     }
     if has_data:
         canonical["Data"] = str(item["Data"])
@@ -979,6 +983,62 @@ def read_ymf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
             f"and reads version {ARCHIVE_FORMAT_VERSION}"
         )
     return document.get("domain", {}), document.get("extra")
+
+
+def load_array(item: Dict[str, Any], base_dir: str | Path = "."):
+    """The array a DataItem holds or points at, as a numpy array.
+
+    Inline ``Values`` are reshaped to ``Dimensions``; an HDF5 reference
+    ``"file.h5:/dataset"`` is read with the file relative to ``base_dir``
+    (the archive's directory). Needs numpy, and h5py for references --
+    imported here, so the archive core still needs neither.
+    """
+    import numpy
+    if "Values" in item:
+        dtype = "f%d" % item["Precision"] if item["DataType"] == "Float" else (
+            "u%d" if item["DataType"] in ("UInt", "UChar") else "i%d") % item["Precision"]
+        return numpy.array(item["Values"], dtype=dtype).reshape(item["Dimensions"])
+    if item.get("Format") == "HDF" and "Data" in item:
+        import h5py
+        filename, dataset = str(item["Data"]).rsplit(":", 1)
+        with h5py.File(Path(base_dir) / filename, "r") as f:
+            return f[dataset][()]
+    raise YmfArchiveError("load_array: no inline Values or HDF5 reference in %r" % (item,))
+
+
+def _data_items(domain: Dict[str, Any]):
+    """Every DataItem dict of a canonical domain, with a readable path."""
+    for collection in domain.get("TimeCollections", []):
+        for i, step in enumerate(collection["Data"]):
+            for j, g in enumerate(step.get("SpatialCollection", [step])):
+                where = "%s/%d%s" % (collection["Name"], i, "" if "Topology" in step else "/%d" % j)
+                yield where + "/Topology", g["Topology"]
+                yield where + "/Geometry", g["Geometry"]
+                for a in g["Attributes"]:
+                    yield "%s/%s/%s" % (where, a.get("Center", "Node"), a["Name"]), a
+
+
+def inline_domain(domain: Dict[str, Any], base_dir: str | Path = ".") -> Dict[str, Any]:
+    """A copy of ``domain`` with every referenced array copied in as ``Values``.
+
+    The result needs no HDF5 file or sidecar: the ``.ymf`` (and the ``.xmf``
+    derived from it) is self-contained.
+    """
+    import copy
+    out = copy.deepcopy(canonicalize_domain(domain))
+    for _, owner in _data_items(out):
+        item = owner["DataItem"]
+        if "Values" in item:
+            continue
+        array = load_array(item, base_dir)
+        owner["DataItem"] = data_item_for(array, inline=True, dimensions=item["Dimensions"])
+    return validate_domain(out)
+
+
+def domain_arrays(domain: Dict[str, Any], base_dir: str | Path = "."):
+    """{path: array} for every DataItem, however each is stored."""
+    return {where: load_array(owner["DataItem"], base_dir)
+            for where, owner in _data_items(canonicalize_domain(domain))}
 
 
 def dump_grid(g: Dict[str, Any]) -> str:
