@@ -52,16 +52,13 @@ Problem:
     boundary_regions:
       - name: "outer"
         geometry: "∂Ω"
-      # one point fixes the pressure's constant
-      - name: "pressure_datum"
-        geometry: "x = -0.5 and y = -0.5"
     # Dirichlet data from the exact solution (Kovasznay 1948): the velocity
-    # all round, and the pressure at one point.
+    # all round. Nothing fixes the pressure's constant, so the problem
+    # determines p only up to one: the solver keeps the constant in the
+    # null space of its operator, and errors in p are measured modulo
+    # constants. (Fixing p at a point instead would tie the whole pressure
+    # to the discrete value there.)
     boundary_conditions:
-      - region: "pressure_datum"
-        variable: p
-        type: dirichlet
-        formula: "(1 - exp(2λx))/2"
       - region: "outer"
         variable: v
         type: dirichlet
@@ -137,7 +134,15 @@ solution_paths:
       finite_element:
         velocity: {family: CG, order: 1}
         pressure: {family: CG, order: 1}
-      mesh: {cells: [16, 32, 64]}
+      # Finer than Taylor-Hood's: SUPG converges at O(h^1.5) in L2 while the
+      # element Peclet number |v|h/(2ν) exceeds 1 (advection-dominated) and
+      # at O(h²) once it is well below 1. Here Pe_h is about 1.9 on 16 cells
+      # and 0.2 on 512, and the velocity rates climb 1.53, 1.62, 1.72, 1.81,
+      # 1.88 from 32 cells on; at Re = 1 (μ = 1, viscous-dominated) they are
+      # 2.0 from the coarsest mesh. 512 cells is about 0.8 million unknowns
+      # and 24 GB with the direct solver; 1024 would need about four times
+      # that.
+      mesh: {cells: [64, 128, 256, 512]}
       solver:
         type: nonlinear
         nonlinear_solver: newton
@@ -145,9 +150,9 @@ solution_paths:
         tolerance: 1.0e-10
         max_iterations: 20
 
-# The verification plan. Results are appended under each branch after the
-# discretizations have been run; none are recorded here because neither
-# branch has been run for this example.
+# The verification plan. The results are in the archive ymf_run writes:
+# each output's verification.l2_errors, with p modulo constants (nothing in
+# the problem fixes its constant).
 vvuq:
   verification:
     method: "exact_comparison"
@@ -157,4 +162,11 @@ vvuq:
     branches: ["taylor_hood", "equal_order_p1"]
     expected_rates:  # a priori L2 rates on smooth solutions
       taylor_hood: {error_L2_velocity: 3, error_L2_pressure: 2}
+      # velocity: 2 asymptotically, approached from 1.5 (see the mesh above);
+      # pressure: 1 is what theory guarantees for P1 with PSPG, and 1.5 is
+      # what these meshes give, modulo constants. Away from the boundary
+      # the pressure converges at about 2: the P1 PSPG pressure error is
+      # largest along the boundary, which is why pinning p at a boundary
+      # point (as an earlier version of this file did) polluted the whole
+      # field with it.
       equal_order_p1: {error_L2_velocity: 2, error_L2_pressure: 1}

@@ -245,6 +245,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
         break
 
     has_mass = any("mass" in e for e in adr["equations"])
+    up_to_constant = _up_to_a_constant(residuals, space, ranks, dirichlet)
     unknowns = {name: ([name] if rank == 0 else ["%s_%d" % (name, i) for i in range(dim)])
                 for name, rank in ranks.items()}
     return {"adr": adr, "unknowns": unknowns,
@@ -253,4 +254,33 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
             # The time interval the problem is posed on; None for a steady
             # problem. A time derivative in a model used steadily (Couette
             # from the Navier-Stokes model) is dropped by a steady solve.
-            "time": list(time) if time else None, "has_mass": has_mass}
+            "time": list(time) if time else None, "has_mass": has_mass,
+            # Scalar unknowns the problem determines only up to a constant:
+            # they appear in the equations only through their gradients,
+            # and no Dirichlet condition fixes them anywhere (the pressure
+            # of an incompressible flow with the velocity given on the
+            # whole boundary). A solver puts the constant in the null space
+            # of its operator; errors in them are measured modulo constants.
+            "up_to_constant": up_to_constant}
+
+
+def _up_to_a_constant(residuals, space, ranks, dirichlet) -> List[str]:
+    from ymf.symbolic.language import D
+    fixed = {e["component"] for e in dirichlet}
+    out = []
+    for name, rank in ranks.items():
+        if rank != 0 or name in fixed:
+            continue
+        symbol = sympy.Symbol(name, real=True)
+        stand_in = sympy.Dummy()
+        appears = False
+        for r in residuals:
+            gradients = {d: stand_in for d in sympy.sympify(r).atoms(D) if d.args[0] == symbol}
+            rest = sympy.sympify(r).xreplace(gradients)
+            if rest.has(symbol):
+                break                  # appears itself, not only through gradients
+            appears = appears or bool(gradients)
+        else:
+            if appears:
+                out.append(name)
+    return out

@@ -90,6 +90,13 @@ def test_a_pressure_gradient_can_be_a_hamiltonian_instead_of_a_flux():
     assert ham["p"] == flux["p"]          # continuity is untouched
 
 
+def test_an_unknown_seen_only_through_its_gradient_and_never_fixed_is_up_to_a_constant():
+    assert adr_problem(load_ymf(EXAMPLES / "kovasznay_flow.ymf"))["up_to_constant"] == ["p"]
+    # a pressure datum fixes it; Poisson's u has Dirichlet data
+    assert adr_problem(load_ymf(EXAMPLES / "navier_stokes" / "plane_poiseuille.ymf"))["up_to_constant"] == []
+    assert adr_problem(load_ymf(EXAMPLES / "poisson.ymf"))["up_to_constant"] == []
+
+
 def test_the_output_is_plain_data():
     out = classify(["rho*dt(v) + div(rho*outer(v, v)) - div(mu*grad(v)) + grad(p) = f",
                     "div(v) = 0"],

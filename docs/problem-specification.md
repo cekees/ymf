@@ -229,6 +229,26 @@ approximation. Like make, `ymf_run` computes only the outputs the archive
 lacks; `--check` reruns the rest and confirms that each reproduces its
 record bitwise. See [The archive of a spec](archive-format.md#the-archive-of-a-spec).
 
+An unknown that appears in the equations only through its gradient, and
+that no Dirichlet condition fixes anywhere, is determined only up to a
+constant: the pressure of an incompressible flow with the velocity given
+on the whole boundary, say. `adr_problem` lists such unknowns under
+`up_to_constant`. Nothing in the spec states it separately, so it cannot
+disagree with the equations and boundary conditions. Proteus then keeps the
+constant in the null space of its linear operator (PETSc GMRES around a
+MUMPS LU that detects the null pivot), rather than pinning a value at a
+point, and the errors in those unknowns are measured modulo constants.
+[`kovasznay_flow.ymf`](../examples/kovasznay_flow.ymf) is solved this way.
+The runs pin BLAS and OpenMP to one thread, since threaded BLAS inside
+MUMPS sums in a different order on each run and breaks bitwise
+reproducibility; the archive records the thread settings.
+
+How a gradient term is sorted is a choice too: by default `∇p` becomes the
+flux `∇·(pI)`, which the weak form integrates by parts;
+`adr_problem(doc, hamiltonian_gradients=("p",))` makes it a Hamiltonian,
+`H = ∂p/∂x_j`, which it does not. The two formulations differ where the
+boundary flux of momentum matters (outflow), not with Dirichlet velocity.
+
 `--emit-pn` also writes each output's problem as the classic Proteus files
 `<stem>_<digest>_p.py`, `_n.py` and `_so.py`: what `proteus.ADRProblem`
 builds in memory, as readable Python, with the coefficients' code strings
