@@ -512,16 +512,17 @@ nobody has to rediscover them:
 
 - **Branch references aren't resolved.** A `from_weak_form` or `branch_ref`
   that names nothing still validates.
-- **A formula-valued coefficient resolves for `ymf.symbolic` but not for
-  `ymf.units`.** `coefficients` is now typed, so a numeric value arrives as
-  a number from every reader. What remains is that a coefficient written as
-  an expression (`λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"`) needs evaluating
-  before it is a number, and the evaluator is `ymf.symbolic`, which the
-  `frontend` extra does not install. So `compute_dimensionless_numbers`
-  leaves such a coefficient out of scope, and silently omits any number
-  that refers to it, while `adr_problem` resolves it. Closing this means
-  either adding sympy to `frontend` or reporting the omission rather than
-  passing over it.
+- *(Closed.)* `coefficients` was untyped, so every scalar arrived as a
+  string, and a coefficient written as an expression
+  (`λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"`, `Q: "π²"`) was dropped from
+  formula scope, silently taking any number that referred to it. Numbers
+  are now typed in the schema, and expressions are evaluated by the one
+  resolver `adr_problem` uses, so `ymf.units` and the solver give the same
+  answer for the same coefficient. `sympy` moved into the `frontend` extra
+  for this: a front-end that cannot evaluate an expression would report
+  different numbers from the solver reading the same file. A bare
+  `ymf[units]` install still works, and still sees only the coefficients
+  that are already numbers.
 - **Only Dirichlet and periodic conditions run.** Neumann, Robin and
   `hydrograph` conditions validate but `adr_problem` refuses them, and the
   domain must be a box.

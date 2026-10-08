@@ -31,8 +31,11 @@ units = ["pint>=0.23"]
 # ymf.symbolic: machine-readable equations -> advection-diffusion-reaction
 # forms for solvers. Its output is plain data, so solvers need none of this.
 symbolic = ["sympy>=1.12", "strictyaml>=1.7"]
-# Everything the validating front-end needs.
-frontend = ["strictyaml>=1.7", "pint>=0.23"]
+# Everything the validating front-end needs. sympy is here because a
+# coefficient may be written as an expression, and a front-end that cannot
+# evaluate one would report different numbers from the solver reading the
+# same spec. Uniform treatment of numbers and expressions is the point.
+frontend = ["strictyaml>=1.7", "pint>=0.23", "sympy>=1.12"]
 # What examples/write_archive.py and read_archive.py need to make and read
 # the HDF5 side of an archive. A solver brings its own.
 examples = ["numpy", "h5py"]

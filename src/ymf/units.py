@@ -384,13 +384,29 @@ def _as_number(value: Any) -> Optional[float]:
 def _coefficient_values(problem: Dict[str, Any]) -> Dict[str, float]:
     """The numeric ``strong_form.coefficients``, as ``{name: value}``.
 
-    A coefficient is a bare number or a ``{value: ..., units: ...}`` map;
-    formula-valued ones (``"π²"``, ``{formula: "(G, 0)"}``) are left out.
+    A coefficient written as an expression is a number too, once evaluated:
+    ``Q: "π²"`` is 9.8696, and ``λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"`` is a
+    number as soon as ρ and μ are known. Those go through
+    :func:`ymf.symbolic.problem.coefficient_numbers`, the same resolver
+    ``adr_problem`` uses, so a dimensionless number built on such a
+    coefficient gets the value the solver would get rather than quietly
+    going missing.
+
+    ``sympy`` comes with the ``frontend`` extra. Without it -- a bare
+    ``ymf[units]`` install -- only the coefficients that are already numbers
+    are returned, and expression-valued ones are left out as before.
     """
     strong_form = problem.get("strong_form") or {}
+    spec = strong_form.get("coefficients") or {}
+    try:
+        from ymf.symbolic.problem import coefficient_numbers
+    except ImportError:            # no sympy: numbers only, as before
+        pass
+    else:
+        return coefficient_numbers(spec)
     values: Dict[str, float] = {}
-    for name, spec in (strong_form.get("coefficients") or {}).items():
-        value = _as_number(spec.get("value") if isinstance(spec, dict) else spec)
+    for name, entry in spec.items():
+        value = _as_number(entry.get("value") if isinstance(entry, dict) else entry)
         if value is not None:
             values[name] = value
     return values

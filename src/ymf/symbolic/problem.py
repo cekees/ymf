@@ -23,6 +23,7 @@ consumer supplies (a length tolerance for testing points on a boundary).
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Optional
 
 import sympy
@@ -46,8 +47,16 @@ def _number(value):
     return None
 
 
-def _coefficients(spec: Dict[str, Any], dim: int) -> Dict[str, sympy.Expr]:
-    """Resolve coefficient values and formulas; formulas may use each other."""
+def _coefficients(spec: Dict[str, Any], dim: int,
+                  strict: bool = True) -> Dict[str, sympy.Expr]:
+    """Resolve coefficient values and formulas; formulas may use each other.
+
+    ``strict`` decides what an unresolvable formula means. Building a problem
+    to solve, it is an error: a coefficient the equations use but nothing
+    defines cannot be run. Reading the same spec to report on it -- which is
+    what :func:`coefficient_numbers` does for ``ymf.units`` -- it is not, and
+    the entry is simply left out.
+    """
     values: Dict[str, sympy.Expr] = {}
     formulas: Dict[str, str] = {}
     for name, entry in spec.items():
@@ -83,10 +92,38 @@ def _coefficients(spec: Dict[str, Any], dim: int) -> Dict[str, sympy.Expr]:
             progressed = True
         if not progressed:
             break
-    if formulas:
+    if formulas and strict:
         raise SymbolicError("coefficients %s could not be resolved (unknown names, "
                             "or a cycle)" % ", ".join(sorted(formulas)))
     return values
+
+
+def coefficient_numbers(spec: Dict[str, Any], dim: int = 3) -> Dict[str, float]:
+    """The coefficients that are numbers, with expressions evaluated.
+
+    ``ymf.units`` needs the same answer about a coefficient that
+    :func:`adr_problem` gets, or the same spec means two things: a
+    dimensionless number built on a coefficient written as an expression
+    would quietly go missing while the solver resolved it without
+    difficulty. Both now come through this one resolver.
+
+    Only coefficients that reduce to a real, finite scalar are returned. A
+    vector (``f: {formula: "(G, 0)"}``), one that still depends on x or t,
+    and one that nothing defines are all left out -- they are coefficients,
+    but they are not numbers.
+    """
+    values = _coefficients(spec, dim, strict=False)
+    numbers: Dict[str, float] = {}
+    for name, value in values.items():
+        if isinstance(value, sympy.MatrixBase) or value.free_symbols:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue            # complex, or not evaluable to a float
+        if math.isfinite(number):
+            numbers[name] = number
+    return numbers
 
 
 def _components(value, name: str, rank: int, space: Space, where: str) -> Dict[str, str]:

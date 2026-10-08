@@ -213,7 +213,13 @@ def test_compute_dimensionless_numbers_uses_validated_coefficients(coefficients_
     assert numbers["Fourier"] == pytest.approx(1.0 / (2.0 * math.pi ** 2))
 
 
-def test_compute_dimensionless_numbers_ignores_non_numeric_coefficients():
+def test_an_expression_coefficient_resolves_but_a_non_number_still_does_not():
+    """"π²" is a number once evaluated; "nan" and True are not numbers at all.
+
+    This used to drop all three, so a dimensionless number built on an
+    expression-valued coefficient went silently missing while adr_problem
+    resolved the same coefficient without difficulty.
+    """
     problem = {
         "characteristic_scales": {"length": {"value": 1.0, "units": "m"}},
         "strong_form": {"coefficients": {"Q": "π²", "k": "nan", "flag": True}},
@@ -223,7 +229,23 @@ def test_compute_dimensionless_numbers_ignores_non_numeric_coefficients():
             "C": {"formula": "flag * L"},
         },
     }
-    assert compute_dimensionless_numbers(problem) == {}
+    assert compute_dimensionless_numbers(problem) == {
+        "A": pytest.approx(math.pi ** 2)}
+
+
+def test_units_and_the_solver_agree_on_a_coefficient():
+    """One spec, one answer -- the reason sympy is in the frontend extra."""
+    from ymf import load_ymf
+    from ymf.symbolic.problem import coefficient_numbers
+    from ymf.units import _coefficient_values
+
+    pytest.importorskip("sympy")
+    problem = load_ymf("examples/kovasznay_flow.ymf")["Problem"]
+    by_units = _coefficient_values(problem)
+    by_solver = coefficient_numbers(problem["strong_form"]["coefficients"])
+    assert by_units == by_solver
+    # λ is written as an expression over ρ and μ; both sides evaluate it
+    assert by_units["λ"] == pytest.approx(-0.9637405441957657)
 
 
 # ---------------------------------------------------------------------------
