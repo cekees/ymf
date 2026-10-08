@@ -66,13 +66,108 @@ from ymf.schema import _ALLOW_FLOW_STYLE, PARTIAL_YMF_SCHEMA, YMF_SCHEMA
 __all__ = ["YmfCompositionError", "load_composed"]
 
 #: Keys that describe a file rather than the problem; never merged.
-_FILE_KEYS = ("extends", "kind", "composition")
+_FILE_KEYS = ("extends", "kind", "composition", "remove")
 #: Keys that identify an entry in a list of mappings, in order of preference.
 _IDENTITY_KEYS = ("label", "name")
 
 
 class YmfCompositionError(ValueError):
     """An ``extends`` chain cannot be followed (missing file, cycle)."""
+
+
+class YmfRemovalError(YmfCompositionError):
+    """A ``remove:`` path names nothing in the document it composes."""
+
+
+def _parse_path(path: str) -> List[Tuple[str, str]]:
+    """``a.b[c].d`` -> ``[("key","a"), ("key","b"), ("item","c"), ("key","d")]``.
+
+    The same shape ``_merge`` writes into the override log, so a path that
+    appears in ``composition.overrides`` can be pasted into ``remove:``.
+    A key containing a literal ``.`` or ``[`` cannot be addressed; no key in
+    the schema does.
+    """
+    steps: List[Tuple[str, str]] = []
+    for part in path.split("."):
+        if not part:
+            raise YmfRemovalError("empty segment in remove path %r" % (path,))
+        while "[" in part:
+            head, _, rest = part.partition("[")
+            item, bracket, part = rest.partition("]")
+            if not bracket:
+                raise YmfRemovalError("unclosed '[' in remove path %r" % (path,))
+            if head:
+                steps.append(("key", head))
+            steps.append(("item", item))
+        if part:
+            steps.append(("key", part))
+    if not steps:
+        raise YmfRemovalError("empty remove path")
+    return steps
+
+
+def _remove_at(data: Any, path: str) -> Any:
+    """Delete what ``path`` names, returning it. Raise if it names nothing.
+
+    A removal that matches nothing is an error rather than a no-op: it means
+    the document being composed has moved under the file doing the removing,
+    and silently composing the unremoved thing is how a variant ends up
+    stating the opposite of what its author wrote.
+    """
+    steps = _parse_path(path)
+    node = data
+    for i, (kind, token) in enumerate(steps[:-1]):
+        where = ".".join(t for _, t in steps[: i + 1])
+        if kind == "key":
+            if not isinstance(node, dict) or token not in node:
+                raise YmfRemovalError(
+                    "remove %s: nothing at %s" % (path, where))
+            node = node[token]
+        else:
+            node = _find_item(node, token, path, where)
+    kind, token = steps[-1]
+    if kind == "key":
+        if not isinstance(node, dict) or token not in node:
+            raise YmfRemovalError("remove %s: nothing to remove" % (path,))
+        return node.pop(token)
+    index = _index_of(node, token, path)
+    return node.pop(index)
+
+
+def _find_item(node: Any, token: str, path: str, where: str) -> Any:
+    index = _index_of(node, token, path, where)
+    return node[index]
+
+
+def _index_of(node: Any, token: str, path: str, where: str = "") -> int:
+    """The position of ``token`` in a list, by value or by its identity key."""
+    if not isinstance(node, list):
+        raise YmfRemovalError(
+            "remove %s: %s is not a list" % (path, where or path))
+    for i, entry in enumerate(node):
+        if entry == token:
+            return i                      # a plain-string list
+        identity = _identity(entry)
+        if identity and identity[1] == token:
+            return i                      # a list of labelled mappings
+    raise YmfRemovalError("remove %s: no entry %r" % (path, token))
+
+
+def _apply_removals(data: Dict[str, Any], paths: List[str],
+                    source: str) -> List[Dict[str, Any]]:
+    """Apply a file's ``remove:`` paths, returning the record of what went.
+
+    Removals run after the file has been merged onto what it extends, so a
+    file can drop an inherited item and add its own replacement in one step:
+    removing the ``incompressible`` assumption while adding ``compressible``
+    leaves only the second, because the string lists union first and the
+    removal then takes the one named.
+    """
+    record = []
+    for path in paths:
+        was = _remove_at(data, path)
+        record.append({"path": path, "was": was, "removed_by": source})
+    return record
 
 
 def _identity(entry: Any) -> Optional[Tuple[str, Any]]:
@@ -159,7 +254,7 @@ def _read(path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
 
 
 def _compose(path: Path, chain: Tuple[Path, ...]):
-    """Return ``(merged data, source files root-first, overrides, outputs, root record)``."""
+    """Return ``(merged, sources root-first, overrides, removals, outputs, record)``."""
     if path in chain:
         cycle = " -> ".join(str(p) for p in chain + (path,))
         raise YmfCompositionError("extends cycle: %s" % (cycle,))
@@ -175,13 +270,19 @@ def _compose(path: Path, chain: Tuple[Path, ...]):
                        v["approximation"], path.parent, chain[0].parent))
                    if v.get("approximation") else v for k, v in outputs.items()}
     own = {k: v for k, v in data.items() if k not in _FILE_KEYS}
+    drop = list(data.get("remove") or ())
     if "extends" not in data:
-        return own, [path], [], dict(outputs or {}), data.get("composition")
-    parent, sources, overrides, inherited, record = _compose(
+        removals = _apply_removals(own, drop, path.name) if drop else []
+        return (own, [path], [], removals, dict(outputs or {}),
+                data.get("composition"))
+    parent, sources, overrides, removals, inherited, record = _compose(
         (path.parent / data["extends"]).resolve(), chain + (path,))
     merged = _merge(parent, own, "", path.name, overrides)
+    # after the merge, so a file can drop an inherited item and add its
+    # replacement in the same step
+    removals = removals + _apply_removals(merged, drop, path.name)
     inherited.update(outputs or {})          # a file's own outputs win
-    return merged, sources + [path], overrides, inherited, record
+    return merged, sources + [path], overrides, removals, inherited, record
 
 
 def load_composed(path: str | Path) -> Dict[str, Any]:
@@ -207,7 +308,7 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
         return strictyaml.dirty_load(
             text, YMF_SCHEMA, label=str(path), allow_flow_style=_ALLOW_FLOW_STYLE,
         ).data
-    merged, sources, overrides, outputs, record = _compose(path, ())
+    merged, sources, overrides, removals, outputs, record = _compose(path, ())
     composition = None
     if len(sources) > 1:
         base = path.parent
@@ -216,6 +317,8 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
         # an untyped (Any) key.
         if overrides:
             composition["overrides"] = overrides
+        if removals:
+            composition["removals"] = removals
         if record:
             composition["inherited"] = record
     elif record:

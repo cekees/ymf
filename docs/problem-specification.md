@@ -343,15 +343,51 @@ composition:
   sources: [navier_stokes_model.ymf, plane_poiseuille.ymf, plane_poiseuille_re100.ymf]
   overrides:
     - path: Problem.strong_form.coefficients.μ.value
-      was: '1.0'
-      now: '0.01'
+      was: 1.0
+      now: 0.01
       set_by: plane_poiseuille_re100.ymf
     - path: Problem.strong_form.coefficients.G.value
       ...
 ```
 
-(Coefficient values are recorded as strings because the schema leaves
-coefficients untyped; see [Known gaps](#known-gaps).)
+**A file may also remove.** `remove:` lists paths this file drops from what
+it extends, applied after the merge, so a file can drop an inherited item
+and add its replacement in one step:
+
+```yaml
+extends: navier_stokes_model.ymf
+remove:
+  - "Problem.physical_model.assumptions[incompressible]"
+Problem:
+  physical_model:
+    assumptions: [compressible]
+```
+
+A path is the same shape the override log prints: `.` for a mapping key,
+`[...]` for an entry in a list — by its own text in a list of strings
+(`assumptions[incompressible]`), by its `label` or `name` in a list of
+mappings (`weak_forms[stabilized]`). So a path read out of `overrides` can
+be pasted into `remove:`.
+
+This exists because the moves are real ones: incompressible flow solved as
+compressible, inviscid Euler as viscous, or in the other direction an
+unknown field dropped or replaced by an analytical expression. Before, each
+took a new model file.
+
+Removals are recorded beside the overrides, with what they took:
+
+```yaml
+composition:
+  removals:
+    - path: Problem.strong_form.coefficients.μ
+      was: {value: 1.0, units: Pa*s}
+      removed_by: euler_variant.ymf
+```
+
+**A path that names nothing is an error**, not a quiet no-op. It means the
+document being composed has moved under the file doing the removing, and
+composing the unremoved thing silently is how a variant ends up stating the
+opposite of what its author wrote.
 
 This makes a parameter variant a three-line file whose changes a reviewer
 can read off directly. `extends` and `kind` describe a file, not the
@@ -545,8 +581,10 @@ nobody has to rediscover them:
   notation, so `1e-10`, `1E-10`, `1e+10`, `-1e-10` and `1.5e3` are all
   numbers to both. The resolver is registered on a subclass, so pyyaml's own
   loaders are unchanged for anything else in the process.
-- **Composition can add and change, but not remove.** A problem cannot
-  drop an assumption or a field its model states. That takes a new model.
+- *(Closed.)* Composition could add and change but not remove, so dropping
+  an assumption or a field a model stated took a whole new model file.
+  `remove:` now does it, recorded in `composition.removals`. See
+  [Composing documents](#composing-documents-models-and-problems).
 - **An error in a composed problem that no single file holds** (say, a
   required key that none of the files sets) is reported against a line of
   the merged document, labelled with the chain of files, not against a
