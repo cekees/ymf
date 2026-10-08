@@ -38,7 +38,7 @@ model:
     domain: "Ω"
     boundary_regions:
       - name: "b"
-        geometry: "∂Ω"
+        where: "∂Ω"
     coefficients:
       mu: {value: 1.0}
 solution_paths:
@@ -239,7 +239,7 @@ model:
     unknowns: ["v"]
     domain: "Ω"
     boundary_regions:
-      - {name: "w", geometry: "∂Ω"}
+      - {name: "w", where: "∂Ω"}
 solution_paths:
   analytical: []
   discretizations: []

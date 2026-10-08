@@ -25,7 +25,7 @@ model:
     domain: "Ω = [0, 1] × [0, 1]"
     boundary_regions:
       - name: "all_boundaries"
-        geometry: "∂Ω"
+        where: "∂Ω"
     boundary_conditions:
       - region: "all_boundaries"
         variable: u

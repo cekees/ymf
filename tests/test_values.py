@@ -30,7 +30,7 @@ model:
     unknowns: ["u"]
     domain: "Ω"
     boundary_regions:
-      - {name: "all", geometry: "∂Ω"}
+      - {name: "all", where: "∂Ω"}
     coefficients:
       plain: 0.5
       sci: 1.0e-3

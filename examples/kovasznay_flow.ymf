@@ -51,7 +51,7 @@ model:
     domain: "Ω = [-0.5, 1.0] × [-0.5, 1.5]"
     boundary_regions:
       - name: "outer"
-        geometry: "∂Ω"
+        where: "∂Ω"
     # Dirichlet data from the exact solution (Kovasznay 1948): the velocity
     # all round. Nothing fixes the pressure's constant, so the problem
     # determines p only up to one: the solver keeps the constant in the

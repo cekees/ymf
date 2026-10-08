@@ -38,7 +38,7 @@ model:
     domain: "x"
     boundary_regions:
       - name: "a"
-        geometry: "b"
+        where: "b"
     boundary_conditions:
       - region: "a"
         variable: "u"
@@ -64,7 +64,7 @@ model:
     domain: "x"
     boundary_regions:
       - name: "a"
-        geometry: "b"
+        where: "b"
 solution_paths:
   analytical: []
   discretizations: []

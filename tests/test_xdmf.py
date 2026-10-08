@@ -142,7 +142,7 @@ SAMPLE_YMF_EXTRA = {
             "equation_formulation": "Poisson",
             "strong_form_expression": "Delta u = f",
             "domain": "unit cube",
-            "boundary_regions": [{"name": "all", "geometry": "boundary"}],
+            "boundary_regions": [{"name": "all", "where": "boundary"}],
         },
     },
     "solution_paths": {
@@ -243,7 +243,7 @@ model:
       unit cube [0,1]^3
     boundary_regions:
       - name: "all_boundaries"
-        geometry: "boundary"
+        where: "boundary"
     coefficients:
       f: "1.0"
 solution_paths:

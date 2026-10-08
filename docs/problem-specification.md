@@ -183,9 +183,9 @@ strong_form:
     - "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f  in Ω"
   domain: "Ω = [0, 1] × [0, 1],  t ∈ (0, 50]"
   boundary_regions:
-    - {name: walls, geometry: "y = 0 or y = H"}
-    - {name: pressure_datum, geometry: "x = 0 and y = 0"}
-    - {name: all, geometry: "∂Ω"}
+    - {name: walls, where: "y = 0 or y = H"}
+    - {name: pressure_datum, where: "x = 0 and y = 0"}
+    - {name: all, where: "∂Ω"}
   boundary_conditions:
     - {region: walls, variable: v, type: dirichlet, formula: "(U, 0)"}
   coefficients:

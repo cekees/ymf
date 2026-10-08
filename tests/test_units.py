@@ -362,7 +362,7 @@ def _problem(coefficients, scales):
         "strong_form": {
             "provenance": "llm_derived", "equation_formulation": "f",
             "unknowns": ["u"], "domain": "Ω",
-            "boundary_regions": [{"name": "a", "geometry": "∂Ω"}],
+            "boundary_regions": [{"name": "a", "where": "∂Ω"}],
             "coefficients": coefficients},
         "characteristic_scales": scales}}
 

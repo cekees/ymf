@@ -36,13 +36,13 @@ model:
     domain: "Ω = [0, 4] × [0, H]"
     boundary_regions:
       - name: "walls"
-        geometry: "y = 0 or y = H"
+        where: "y = 0 or y = H"
       - name: "ends"
-        geometry: "x = 0 or x = 4"
+        where: "x = 0 or x = 4"
       # A single point fixes the pressure's constant: the corner, with its
       # periodic copy.
       - name: "pressure_datum"
-        geometry: "x = 0 and y = 0 or x = 4 and y = 0"
+        where: "x = 0 and y = 0 or x = 4 and y = 0"
     boundary_conditions:
       - region: "walls"
         variable: v

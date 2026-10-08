@@ -32,7 +32,7 @@ model:
     unknowns: ["u"]
     domain: "Ω"
     boundary_regions:
-      - {name: "all", geometry: "∂Ω"}
+      - {name: "all", where: "∂Ω"}
 %s%s
 solution_paths:
   analytical:%s

@@ -1,14 +1,14 @@
 """A YMF problem specification -> an ADR problem a solver can run.
 
 :func:`adr_problem` reads a spec -- ``strong_form.domain`` and
-``equations``, the coefficients, the boundary regions' ``geometry``,
+``equations``, the coefficients, the boundary regions' ``where``,
 boundary and initial conditions, and the analytical solution's
 ``formula``, each written once in the notation of
 :mod:`ymf.symbolic.notation` -- and returns a plain-data description:
 
     {"adr": {...},            # ymf.symbolic.adr.adr_form
      "unknowns": {name: [component, ...]},
-     "geometry": {"lower": [...], "upper": [...]},
+     "domain": {"lower": [...], "upper": [...]},
      "dirichlet": [{"component", "region", "where", "value"}, ...],
      "periodic": [{"component", "region", "axes"}, ...],
      "initial": {component: code},
@@ -139,7 +139,7 @@ def _components(value, name: str, rank: int, space: Space, where: str) -> Dict[s
 
 
 def _where(text: str, space: Space) -> Optional[str]:
-    """A region's geometry -> boolean code using ``tol`` (None: the whole boundary)."""
+    """A region's ``where`` predicate -> boolean code using ``tol`` (None: the whole boundary)."""
     from ymf.symbolic.notation import NotationError, Parser
     try:
         return Parser(space).predicate(text)
@@ -227,7 +227,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
         residuals.extend(parse_equation(text, space))
     adr = adr_form(residuals, space, hamiltonian_gradients=tuple(hamiltonian_gradients))
 
-    regions = {r["name"]: r["geometry"] for r in strong.get("boundary_regions", [])}
+    regions = {r["name"]: r["where"] for r in strong.get("boundary_regions", [])}
     dirichlet = []
     periodic = []
     for bc in strong.get("boundary_conditions") or []:
@@ -286,7 +286,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     unknowns = {name: ([name] if rank == 0 else ["%s_%d" % (name, i) for i in range(dim)])
                 for name, rank in ranks.items()}
     out = {"adr": adr, "unknowns": unknowns,
-           "geometry": {"lower": lower, "upper": upper},
+           "domain": {"lower": lower, "upper": upper},
            "dirichlet": dirichlet, "periodic": periodic, "initial": initial, "exact": exact,
            # The time interval the problem is posed on; None for a steady
            # problem. A time derivative in a model used steadily (Couette

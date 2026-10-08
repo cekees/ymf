@@ -36,7 +36,7 @@ model:
     unknowns: ["v", "p"]
     domain: "Ω"
     boundary_regions:
-      - {name: "walls", geometry: "∂Ω"}
+      - {name: "walls", where: "∂Ω"}
     coefficients:
       ρ: {value: 1.0, units: "kg/m3"}
       μ: {value: 1.0, units: "Pa*s"}

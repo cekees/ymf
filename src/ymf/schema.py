@@ -326,7 +326,10 @@ StrongFormDef = Map(
         "domain": Str(),
         # geometry is a membership test in the spec notation: "∂Ω" (all of
         # it), "y = 0 or y = H", "x = 0 and y = 0".
-        "boundary_regions": Seq(Map({"name": Str(), "geometry": Str()})),
+        # "where" is a membership predicate, not geometry: "∂Ω" (all of
+        # it), "y = 0 or y = H", "x = 0 and y = 0". adr_problem already
+        # calls this thing "where" in the conditions it returns.
+        "boundary_regions": Seq(Map({"name": Str(), "where": Str()})),
         Optional("initial_conditions"): Seq(InitialConditionDef),
         Optional("boundary_conditions"): Seq(BoundaryConditionDef),
         Optional("known_analytical_solution"): Map(
