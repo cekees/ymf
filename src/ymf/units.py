@@ -234,8 +234,12 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
     # error; copies that agree are a warning, since that agreement is what
     # has to be maintained by hand.
     coefficient_values = _coefficient_values(problem)
+    coefficient_units = _coefficient_units(problem)
+    scales = problem.get("characteristic_scales") or {}
+    paired = set()
+
     for scale, names in _SCALE_COEFFICIENT_NAMES.items():
-        spec = (problem.get("characteristic_scales") or {}).get(scale)
+        spec = scales.get(scale)
         if not isinstance(spec, dict) or spec.get("value") is None:
             continue
         coefficient = next((n for n in names if n in coefficient_values), None)
@@ -244,12 +248,56 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
         stated, actual = spec["value"], coefficient_values[coefficient]
         agree = math.isclose(stated, actual, rel_tol=1e-12)
         agreement = "agrees with" if agree else "differs from"
+        paired.add((scale, coefficient))
         result.issues.append(UnitIssue(
             "warning" if agree else "error", f"characteristic_scales[{scale}]",
             f"value {stated:g} {agreement} coefficients[{coefficient}] = {actual:g}; "
             f"state it once with {{derived: true, formula: \"{coefficient}\"}}"))
 
+    # The pairings above are the conventional names. A coefficient under any
+    # other name -- nu, eta, a diffusivity -- was invisible to them, so the
+    # same value written twice went unreported for want of being called the
+    # expected thing.
+    #
+    # Matching on the value instead needs something to tell a duplicate from
+    # a coincidence: in a non-dimensionalized problem half the quantities
+    # are 1.0. Dimension is that something. Equal numbers of the same kind
+    # are one value written twice; equal numbers of different kinds (a
+    # density of 1.0 kg/m3 and a viscosity of 1.0 Pa*s) are a coincidence,
+    # and saying so would be noise. Where either side states no units there
+    # is no way to tell, so nothing is said.
+    for scale, spec in scales.items():
+        if not isinstance(spec, dict) or spec.get("value") is None:
+            continue
+        scale_units = spec.get("units")
+        if not scale_units:
+            continue
+        for name, value in coefficient_values.items():
+            if (scale, name) in paired:
+                continue
+            if not math.isclose(spec["value"], value, rel_tol=1e-12):
+                continue
+            name_units = coefficient_units.get(name)
+            if not name_units or not units_compatible(scale_units, name_units):
+                continue
+            paired.add((scale, name))
+            result.issues.append(UnitIssue(
+                "warning", f"characteristic_scales[{scale}]",
+                f"value {spec['value']:g} equals coefficients[{name}], and both "
+                f"are {dimensionality(scale_units)}; state it once with "
+                f"{{derived: true, formula: \"{name}\"}}"))
+
     return result
+
+
+def _coefficient_units(problem: Dict[str, Any]) -> Dict[str, str]:
+    """The units each coefficient states, for the ones that state any."""
+    strong_form = problem.get("strong_form") or {}
+    units: Dict[str, str] = {}
+    for name, entry in (strong_form.get("coefficients") or {}).items():
+        if isinstance(entry, dict) and entry.get("units"):
+            units[name] = entry["units"]
+    return units
 
 
 #: Characteristic scales whose physical quantity is conventionally also a

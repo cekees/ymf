@@ -339,3 +339,93 @@ def test_a_scale_restating_a_coefficient_with_the_same_value_is_a_warning():
     result = check(doc)
     assert result
     assert [i.severity for i in result] == ["warning"]
+
+
+# ---------------------------------------------------------------------------
+# one value written twice, found by value rather than by name
+# ---------------------------------------------------------------------------
+#
+# Phase 4 of the semantics campaign. A scale stated as a number beside a
+# coefficient for the same quantity is one value written twice, and the
+# copies drift when someone changes one. The check matched the conventional
+# names only -- rho/ρ for density, mu/μ for viscosity -- so a coefficient
+# called nu or eta, or any scale outside the fixed six, was invisible to it.
+#
+# Matching on the value needs something to tell a duplicate from a
+# coincidence, because in a non-dimensionalized problem half the quantities
+# are 1.0. Dimension is that something.
+
+
+def _problem(coefficients, scales):
+    return {"Problem": {
+        "name": "p",
+        "strong_form": {
+            "provenance": "llm_derived", "equation_formulation": "f",
+            "unknowns": ["u"], "domain": "Ω",
+            "boundary_regions": [{"name": "a", "geometry": "∂Ω"}],
+            "coefficients": coefficients},
+        "characteristic_scales": scales}}
+
+
+def _scale_issues(coefficients, scales):
+    from ymf.units import check
+
+    return [i for i in check(_problem(coefficients, scales)).issues
+            if "characteristic_scales" in i.location]
+
+
+def test_a_coefficient_under_an_unconventional_name_is_now_found():
+    """nu, not mu -- the case the name matching could never see."""
+    (issue,) = _scale_issues(
+        {"nu": {"value": 0.025, "units": "Pa*s"}},
+        {"viscosity": {"value": 0.025, "units": "Pa*s"}})
+    assert issue.severity == "warning"
+    assert "equals coefficients[nu]" in issue.message
+    assert 'formula: "nu"' in issue.message
+
+
+def test_a_scale_outside_the_conventional_six_is_covered():
+    """characteristic_scales takes any name now, so the check has to as well."""
+    (issue,) = _scale_issues(
+        {"kappa": {"value": 1.0e-3, "units": "m2/s"}},
+        {"diffusivity": {"value": 1.0e-3, "units": "m2/s"}})
+    assert "equals coefficients[kappa]" in issue.message
+
+
+def test_equal_numbers_of_different_kinds_are_a_coincidence():
+    """1.0 kg/m3 and 1.0 m are not one value written twice.
+
+    Without this, every non-dimensionalized problem would report a handful
+    of duplicates that are nothing of the sort.
+    """
+    assert _scale_issues(
+        {"rho_": {"value": 1.0, "units": "kg/m3"}},
+        {"length": {"value": 1.0, "units": "m"}}) == []
+
+
+def test_nothing_is_said_when_either_side_states_no_units():
+    """With no dimension there is no way to tell duplication from accident."""
+    assert _scale_issues(
+        {"nu": {"value": 0.025}},
+        {"viscosity": {"value": 0.025, "units": "Pa*s"}}) == []
+
+
+def test_the_conventional_pairing_still_reports_a_disagreement():
+    """The name match is what catches copies that have already drifted.
+
+    Value matching cannot: once the copies differ, the values no longer
+    match, which is exactly when it matters most.
+    """
+    (issue,) = _scale_issues(
+        {"mu": {"value": 0.1, "units": "Pa*s"}},
+        {"viscosity": {"value": 0.025, "units": "Pa*s"}})
+    assert issue.severity == "error"
+    assert "differs from" in issue.message
+
+
+def test_a_pair_is_reported_once_not_twice():
+    """mu matches by name and by value; it is one finding."""
+    issues = _scale_issues(
+        {"mu": {"value": 0.025, "units": "Pa*s"}},
+        {"viscosity": {"value": 0.025, "units": "Pa*s"}})
+    assert len(issues) == 1

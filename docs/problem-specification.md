@@ -622,10 +622,13 @@ nobody has to rediscover them:
 - **Only Dirichlet and periodic conditions run.** Neumann, Robin and
   `hydrograph` conditions validate but `adr_problem` refuses them, and the
   domain must be a box.
-- **The notation's limits.** Functions need parentheses (`sin(πx)`, not
-  `sin πx`); there are no subscript characters (`p₀`), so write `p0` and
-  declare it; and a multi-letter name must be declared to be a name rather
-  than a product (`Re` is R·e unless it is a coefficient).
+- **The notation's limits**, each of which now reports the fix as well as
+  the fault. Functions need parentheses — `sin πx` says to write `sin(x)`,
+  not `sin x`. There are no subscripts — `p₀` says to write `p0` and declare
+  it, since the superscripts `² ³ ⁴` *are* notation (powers) and a subscript
+  is a reasonable guess. And a multi-letter name must be declared to be a
+  name rather than a product — `Re` says to declare it, and that it is not
+  read as `R·e` because `R` and `e` are not names.
 - **SUPG/PSPG with equal-order P1 on Kovasznay flow is pre-asymptotic at
   reachable mesh sizes**, not wrong. Measured rates sit below the a priori
   values on coarse meshes and climb towards them as the mesh refines (1.88
@@ -653,11 +656,16 @@ nobody has to rediscover them:
   `model.ymf`, `problem.ymf`*. Where one file added an incomplete entry,
   only that file is named. The path is the same shape `remove:` and the
   override log use, so it can be pasted between them.
-- **Duplicated values are only caught by name.** The check above covers a
-  `density` or `viscosity` scale against a `ρ`/`rho` or `μ`/`mu` coefficient. A
-  coefficient under another name (`nu`, `eta`), or a velocity scale that
-  restates a boundary speed, isn't checked. Derive scales from coefficients
-  wherever possible.
+- *(Mostly closed.)* Duplicated values were caught by name only, so a
+  coefficient called `nu` or `eta`, or any scale outside the conventional
+  six, was invisible. A scale whose value *and dimension* match a
+  coefficient's is now reported whatever either is called. Dimension is what
+  separates a duplicate from a coincidence: in a non-dimensionalized problem
+  half the quantities are 1.0, and 1.0 kg/m3 beside 1.0 m is not one value
+  written twice. Where either side states no units, nothing is said, because
+  there is no way to tell. Still unchecked: a velocity scale that restates a
+  boundary speed, which would need the boundary condition's expression
+  evaluated. Derive scales from coefficients wherever possible.
 - *(Closed.)* `characteristic_scales` was a fixed set of six, with no slot
   for a diffusivity or a pressure scale. It now takes any name. The
   original six keep their aliases (`L`, `U`, `rho`, `mu`, `T`) in formula

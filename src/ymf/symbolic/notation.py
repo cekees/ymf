@@ -93,9 +93,35 @@ def tokens(text: str) -> List[Tuple[str, str, int]]:
                 i += len(op) if text.startswith(op, i) else 1
                 break
         else:
+            # The `else` of the `for` above: no operator matched.
+            if _SUBSCRIPTS_START <= ch <= _SUBSCRIPTS_END:
+                # The superscripts ² ³ ⁴ are powers, so a subscript looks as
+                # if it ought to work too. It does not, and the fix is to
+                # spell the index into the name and declare it.
+                run = ch
+                while i + len(run) < len(text) and \
+                        _SUBSCRIPTS_START <= text[i + len(run)] <= _SUBSCRIPTS_END:
+                    run += text[i + len(run)]
+                stem = out[-1][1] if out and out[-1][0] == "NAME" else ""
+                plain = "".join(_SUBSCRIPT_PLAIN.get(c, c) for c in run)
+                raise NotationError(
+                    "%r at %d in %r is a subscript, and the notation has none; "
+                    "write %r and declare it (a coefficient or an unknown)"
+                    % (run, i, text, stem + plain))
             raise NotationError("unexpected character %r at %d in %r" % (text[i], i, text))
     return out
 
+
+#: Unicode subscripts, which the notation does not have. Reported on their
+#: own rather than as "unexpected character", because the superscripts
+#: ² ³ ⁴ *are* notation (powers), so a subscript is a reasonable guess.
+_SUBSCRIPTS_START, _SUBSCRIPTS_END = "\u2080", "\u209c"
+_SUBSCRIPT_PLAIN = {chr(0x2080 + d): str(d) for d in range(10)}
+_SUBSCRIPT_PLAIN.update({
+    "\u2090": "a", "\u2091": "e", "\u2092": "o", "\u2093": "x",
+    "\u2095": "h", "\u2096": "k", "\u2097": "l", "\u2098": "m",
+    "\u2099": "n", "\u209a": "p", "\u209b": "s", "\u209c": "t",
+})
 
 #: words that join predicates; never names, never implicit factors
 _KEYWORDS = {"and", "or", "in"}
@@ -274,7 +300,8 @@ class Parser:
         if name in self.names:
             return self.names[name]
         if name in self.functions:
-            self._fail("%s needs (arguments)" % name, tok)
+            self._fail("%s needs its argument in parentheses: write \"%s(x)\", "
+                       "not \"%s x\"" % (name, name, name), tok)
         # a run of letters: a product of single-letter names, if all known
         parts = list(name)
         if all(p in self.names for p in parts):
@@ -282,10 +309,20 @@ class Parser:
             for p in parts:
                 value = self._mul(value, self.names[p])
             return value
-        unknown = name if len(name) == 1 else name
-        self._fail("unknown name %r (not a coefficient, an unknown, a coordinate, t, "
-                   "π or a function%s)" % (unknown, "" if len(name) == 1 else
-                                            ", nor a product of single-letter names"), tok)
+        if len(name) == 1:
+            self._fail("unknown name %r: declare it as a coefficient or an "
+                       "unknown (the coordinates, t and π are already names)"
+                       % (name,), tok)
+        # A multi-letter run is read as a product only when every letter is
+        # a name, so say which letters are not -- that is the difference
+        # between a name someone forgot to declare and a product.
+        missing = [p for p in parts if p not in self.names]
+        self._fail("unknown name %r: declare it as a coefficient or an unknown; "
+                   "it is not read as the product %s because %s %s not %s"
+                   % (name, "·".join(parts),
+                      ", ".join(repr(p) for p in missing),
+                      "is" if len(missing) == 1 else "are",
+                      "a name" if len(missing) == 1 else "names"), tok)
 
     # -- helpers -------------------------------------------------------------
 
