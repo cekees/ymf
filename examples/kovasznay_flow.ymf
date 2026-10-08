@@ -27,39 +27,47 @@ Problem:
   characteristic_scales:
     length: {value: 1.0, units: m}
     velocity: {value: 1.0, units: m/s}
-    density: {value: 1.0, units: kg/m3}
-    viscosity: {value: 0.025, units: Pa*s}
+    density: {derived: true, formula: "ρ", units: kg/m3}
+    viscosity: {derived: true, formula: "μ", units: Pa*s}
     time: {derived: true, formula: "L_char / U_char"}
 
   dimensionless_numbers:
-    Re: {formula: "rho * U * L / mu"}
+    Re: {formula: "ρ U L / μ"}
 
   strong_form:
     provenance: llm_derived
     unknowns:
       - name: v
         units: m/s
+        rank: 1
       - name: p
         units: Pa
     equation_formulation: "incompressible Navier-Stokes, primitive variables"
-    strong_form_expression: |-
-      ρ (v·∇)v - μ Δv + ∇p = 0   in Ω
-      ∇·v = 0                     in Ω
-    domain: |-
-      Ω = [-0.5, 1.0] × [-0.5, 1.5]
+    # The full momentum equation, solved steadily (which drops ρ ∂v/∂t);
+    # conservative form: ∇·(ρ v⊗v) = ρ(v·∇)v because ∇·v = 0.
+    equations:
+      - "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = 0  in Ω"
+      - "∇·v = 0  in Ω"
+    domain: "Ω = [-0.5, 1.0] × [-0.5, 1.5]"
     boundary_regions:
       - name: "outer"
         geometry: "∂Ω"
-    # The Dirichlet data on "outer" is the exact velocity, which varies
-    # along the boundary. boundary_conditions entries take a constant
-    # value only, so the condition is stated in the weak forms instead.
-    known_analytical_solution:
-      formula: |-
-        λ = Re/2 - sqrt(Re²/4 + 4π²)
-        v_x = 1 - exp(λx) cos(2πy)
-        v_y = λ/(2π) exp(λx) sin(2πy)
-        p   = (1 - exp(2λx)) / 2
-      reference: "L. I. G. Kovasznay, Proc. Camb. Phil. Soc. 44 (1948) 58-62"
+    # Dirichlet data from the exact solution (Kovasznay 1948): the velocity
+    # all round. Nothing fixes the pressure's constant, so the problem
+    # determines p only up to one: the solver keeps the constant in the
+    # null space of its operator, and errors in p are measured modulo
+    # constants. (Fixing p at a point instead would tie the whole pressure
+    # to the discrete value there.)
+    boundary_conditions:
+      - region: "outer"
+        variable: v
+        type: dirichlet
+        formula: "(1 - exp(λx) cos(2πy), λ/(2π) exp(λx) sin(2πy))"
+    coefficients:
+      ρ: {value: 1.0, units: kg/m3}
+      μ: {value: 0.025, units: Pa*s}
+      # with unit length and velocity scales, Re = ρ/μ = 40
+      λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"
 
   weak_forms:
     - label: "mixed"
@@ -77,9 +85,6 @@ Problem:
         b(w,p) = ∫Ω p ∇·w dx
       linear: |-
         l(w) = 0
-      boundary_conditions: |-
-        v|∂Ω = exact Kovasznay velocity  (essential)
-        mean pressure fixed to the exact solution's mean
       stabilization_method: "none"
 
     - label: "stabilized_equal_order"
@@ -95,8 +100,6 @@ Problem:
         (mixed form) + Σ_K τ_K ∫K R(v,p)·(ρ (v·∇)w + ∇q) dx
       linear: |-
         l(w) = 0
-      boundary_conditions: |-
-        v|∂Ω = exact Kovasznay velocity  (essential)
       stabilization_method: "SUPG/PSPG"
 
 solution_paths:
@@ -105,8 +108,10 @@ solution_paths:
       provenance: human_specified
       method: "closed_form"
       solution:
-        formula: "see Problem.strong_form.known_analytical_solution"
-        notes: "Exact for every Re; used here as the verification reference."
+        formula: |-
+          v = (1 - exp(λx) cos(2πy), λ/(2π) exp(λx) sin(2πy))
+          p = (1 - exp(2λx))/2
+        notes: "L. I. G. Kovasznay, Proc. Camb. Phil. Soc. 44 (1948) 58-62. Exact for every Re."
 
   discretizations:
     - name: "taylor_hood"
@@ -115,6 +120,7 @@ solution_paths:
       finite_element:
         velocity: {family: CG, order: 2}
         pressure: {family: CG, order: 1}
+      mesh: {cells: [16, 32, 64]}      # a study: one output per mesh
       solver:
         type: nonlinear
         nonlinear_solver: newton
@@ -128,6 +134,15 @@ solution_paths:
       finite_element:
         velocity: {family: CG, order: 1}
         pressure: {family: CG, order: 1}
+      # Finer than Taylor-Hood's: SUPG converges at O(h^1.5) in L2 while the
+      # element Peclet number |v|h/(2ν) exceeds 1 (advection-dominated) and
+      # at O(h²) once it is well below 1. Here Pe_h is about 1.9 on 16 cells
+      # and 0.2 on 512, and the velocity rates climb 1.53, 1.62, 1.72, 1.81,
+      # 1.88 from 32 cells on; at Re = 1 (μ = 1, viscous-dominated) they are
+      # 2.0 from the coarsest mesh. 512 cells is about 0.8 million unknowns
+      # and 24 GB with the direct solver; 1024 would need about four times
+      # that.
+      mesh: {cells: [64, 128, 256, 512]}
       solver:
         type: nonlinear
         nonlinear_solver: newton
@@ -135,17 +150,23 @@ solution_paths:
         tolerance: 1.0e-10
         max_iterations: 20
 
-# The verification plan. Results are appended under each branch after the
-# discretizations have been run; none are recorded here because neither
-# branch has been run for this example.
+# The verification plan. The results are in the archive ymf_run writes:
+# each output's verification.l2_errors, with p modulo constants (nothing in
+# the problem fixes its constant).
 vvuq:
   verification:
     method: "exact_comparison"
-    grid_levels: [16, 32, 64]
     reference:
       type: "analytical"
       branch_ref: "kovasznay_exact"
     branches: ["taylor_hood", "equal_order_p1"]
     expected_rates:  # a priori L2 rates on smooth solutions
       taylor_hood: {error_L2_velocity: 3, error_L2_pressure: 2}
+      # velocity: 2 asymptotically, approached from 1.5 (see the mesh above);
+      # pressure: 1 is what theory guarantees for P1 with PSPG, and 1.5 is
+      # what these meshes give, modulo constants. Away from the boundary
+      # the pressure converges at about 2: the P1 PSPG pressure error is
+      # largest along the boundary, which is why pinning p at a boundary
+      # point (as an earlier version of this file did) polluted the whole
+      # field with it.
       equal_order_p1: {error_L2_velocity: 2, error_L2_pressure: 1}

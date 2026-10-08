@@ -8,11 +8,11 @@
 #
 # The discretization is equal-order P1 with stabilization, which cannot
 # represent the parabola exactly, so this problem has a real convergence
-# study to run. plane_poiseuille_re100.yaml extends this file to run the
+# study to run. plane_poiseuille_re100.ymf extends this file to run the
 # same flow at a higher Reynolds number.
 # ============================================================
 
-extends: navier_stokes_model.yaml
+extends: navier_stokes_model.ymf
 
 Problem:
   name: "Plane Poiseuille flow, Re = 1"
@@ -21,28 +21,28 @@ Problem:
     assumptions: [steady, fully_developed]
 
   # Derived from the coefficients rather than restated, so that each
-  # physical value lives in one place: a problem that changes mu or G
+  # physical value lives in one place: a problem that changes μ or G
   # changes these scales, and Re, with it.
   characteristic_scales:
-    length: {value: 1.0, units: m}           # the gap H
-    velocity:                                # the centreline speed G H² / (8 μ)
-      derived: true
-      formula: "G * L_char**2 / (8 * mu)"
-      units: m/s
-    density: {derived: true, formula: "rho", units: kg/m3}
-    viscosity: {derived: true, formula: "mu", units: Pa*s}
+    length: {derived: true, formula: "H", units: m}
+    velocity: {derived: true, formula: "G H²/(8μ)", units: m/s}   # centreline
+    density: {derived: true, formula: "ρ", units: kg/m3}
+    viscosity: {derived: true, formula: "μ", units: Pa*s}
 
   dimensionless_numbers:
-    Re: {formula: "rho * U * L / mu"}
+    Re: {formula: "ρ U L / μ"}
 
   strong_form:
-    domain: |-
-      Ω = [0, 4] × [0, 1]  (m),  gap H = 1 m
+    domain: "Ω = [0, 4] × [0, H]"
     boundary_regions:
       - name: "walls"
-        geometry: "y = 0 and y = H"
+        geometry: "y = 0 or y = H"
       - name: "ends"
-        geometry: "x = 0 and x = 4, identified"
+        geometry: "x = 0 or x = 4"
+      # A single point fixes the pressure's constant: the corner, with its
+      # periodic copy.
+      - name: "pressure_datum"
+        geometry: "x = 0 and y = 0 or x = 4 and y = 0"
     boundary_conditions:
       - region: "walls"
         variable: v
@@ -55,17 +55,35 @@ Problem:
       - region: "ends"
         variable: p
         type: periodic
+      - region: "pressure_datum"
+        variable: p
+        type: dirichlet
+        value: 0.0
     coefficients:
-      rho: {value: 1.0}
-      mu: {value: 1.0}
-      G: {value: 8.0, units: Pa/m}
+      ρ: {value: 1.0}
+      μ: {value: 1.0}
       f: {formula: "(G, 0)"}
-    known_analytical_solution:
-      formula: |-
-        v = (G / (2μ) · y (H - y), 0),  p = p0
-      reference: "Any fluid mechanics text; exact for every Re below transition."
+      G: {value: 8.0, units: Pa/m}     # the driving pressure gradient
+      H: {value: 1.0, units: m}        # the gap
 
   weak_forms:
+    - label: "galerkin_periodic"
+      provenance: human_specified
+      derivation: |-
+        Steady form of the model. Multiply momentum by w and continuity by q,
+        integrate over Ω, integrate the viscous and pressure terms by parts.
+        Boundary terms vanish on the walls (w = 0) and cancel on the
+        periodic ends.
+      solution_spaces:
+        trial: "H1_per(Ω)² × L2(Ω)"
+        test: "H1_per,0(Ω)² × L2(Ω)"
+      inf_sup_stability: "requires an inf-sup stable pair"
+      bilinear: |-
+        ∫Ω ρ (v·∇)v·w dx + ∫Ω μ ∇v:∇w dx - ∫Ω p ∇·w dx + ∫Ω q ∇·v dx
+      linear: |-
+        l(w) = ∫Ω f·w dx
+      stabilization_method: "none"
+
     - label: "stabilized_periodic"
       provenance: human_specified
       derivation: |-
@@ -83,9 +101,6 @@ Problem:
           + Σ_K τ_K ∫K R(v,p)·(ρ (v·∇)w + ∇q) dx
       linear: |-
         l(w) = ∫Ω f·w dx + Σ_K τ_K ∫K f·(ρ (v·∇)w + ∇q) dx
-      boundary_conditions: |-
-        v = (0, 0) on walls  (essential)
-        periodic in x on ends
       stabilization_method: "SUPG/PSPG"
 
 solution_paths:
@@ -94,15 +109,32 @@ solution_paths:
       provenance: human_specified
       method: "closed_form"
       solution:
+        # p is 0 because the pressure datum fixes it there
         formula: |-
-          v = (G / (2μ) · y (H - y), 0),  p = p0
+          v = (G/(2μ) y (H - y), 0)
+          p = 0
+        notes: "Exact for every Re below transition."
   discretizations:
+    - name: "taylor_hood"
+      provenance: human_specified
+      from_weak_form: "galerkin_periodic"
+      finite_element:
+        velocity: {family: CG, order: 2}
+        pressure: {family: CG, order: 1}
+      mesh: {cells: [8, 16, 32, 64]}      # a study: one output per mesh
+      solver:
+        type: nonlinear
+        nonlinear_solver: newton
+        linear_solver: mumps
+        tolerance: 1.0e-10
+
     - name: "equal_order_p1"
       provenance: human_specified
       from_weak_form: "stabilized_periodic"
       finite_element:
         velocity: {family: CG, order: 1}
         pressure: {family: CG, order: 1}
+      mesh: {cells: [8, 16, 32, 64]}
       solver:
         type: nonlinear
         nonlinear_solver: newton
@@ -112,9 +144,11 @@ solution_paths:
 vvuq:
   verification:
     method: "grid_convergence"
-    grid_levels: [8, 16, 32, 64]
     reference:
       type: "analytical"
       branch_ref: "poiseuille_exact"
     expected_rates:  # a priori L2 rates on smooth solutions
       equal_order_p1: {error_L2_velocity: 2, error_L2_pressure: 1}
+    expected: >-
+      The exact velocity is quadratic and the exact pressure constant, so
+      Taylor-Hood should reproduce them to solver tolerance on every grid.

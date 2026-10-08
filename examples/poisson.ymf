@@ -1,5 +1,12 @@
 # ============================================================
-# YMF Example: Poisson on unit square (v0.1-compatible)
+# YMF Example: Poisson on the unit square
+#
+# The smallest complete spec, and runnable: every equation, region,
+# condition and solution below is written once, in the notation
+# ymf.symbolic reads (see docs/problem-specification.md), so
+#     ymf_run examples/poisson.ymf
+# solves it with Proteus and measures the error against the exact
+# solution. Bare-string unknowns ([u]) are the v0.1 form, still valid.
 # ============================================================
 
 Problem:
@@ -13,16 +20,19 @@ Problem:
     provenance: llm_derived
     unknowns: [u]
     equation_formulation: "Poisson"
-    strong_form_expression: |-
-      -Δu = f  in Ω
-    domain: |-
-      Ω = [0,1] × [0,1]
+    equations:
+      - "-Δu = f  in Ω"
+    domain: "Ω = [0, 1] × [0, 1]"
     boundary_regions:
       - name: "all_boundaries"
         geometry: "∂Ω"
+    boundary_conditions:
+      - region: "all_boundaries"
+        variable: u
+        type: dirichlet
+        value: 0.0
     coefficients:
-      f: |-
-        π²sin(πx)sin(πy)
+      f: "π² sin(πx) sin(πy)"
 
   weak_forms:
     - label: "global"
@@ -41,18 +51,20 @@ Problem:
         a(u,v) = ∫Ω ∇u·∇v dx
       linear: |-
         l(v) = ∫Ω f·v dx
-      boundary_conditions: |-
-        u|∂Ω = 0  (essential)
       stabilization_method: "none"
 
 solution_paths:
   analytical:
     - name: "exact_Poisson"
-      provenance: llm_derived
+      # The LLM-derived formula was sin(πx)sin(πy)/(2π²), which does not
+      # satisfy -Δu = f: -Δ(sin(πx)sin(πy)) = 2π² sin(πx)sin(πy), so with
+      # f = π² sin(πx)sin(πy) the solution is half of sin(πx)sin(πy). The
+      # end-to-end run exposed it: the error plateaued at exactly
+      # (1/2 - 1/(2π²))/2 = 0.2247 on every mesh.
+      provenance: human_edited
       method: "separation_of_variables"
       solution:
-        formula: |-
-          u(x,y) = sin(πx)sin(πy) / (2π²)
+        formula: "u(x, y) = sin(πx) sin(πy) / 2"
         derivation_source: "sympy.dsolve"
 
   discretizations:
@@ -61,7 +73,19 @@ solution_paths:
       from_weak_form: "global"
       finite_element:
         fields: {family: CG, order: 1}
+      mesh: {cells: [4, 8, 16]}      # a study: one output per mesh
       solver:
         type: linear
         linear_solver: petsc
-        tolerance: 1e-12
+        tolerance: 1.0e-12
+
+    - name: "P2_quadratic"
+      provenance: human_specified
+      from_weak_form: "global"
+      finite_element:
+        fields: {family: CG, order: 2}
+      mesh: {cells: [4, 8, 16]}
+      solver:
+        type: linear
+        linear_solver: petsc
+        tolerance: 1.0e-12

@@ -5,6 +5,8 @@ import sys
 import pytest
 
 from ymf.archive import (
+    domain_arrays,
+    inline_domain,
     ARCHIVE_FORMAT_VERSION,
     HAVE_LIBYAML,
     YmfArchiveError,
@@ -708,3 +710,40 @@ def test_an_inline_archive_round_trips_and_writes_each_array_on_few_lines(tmp_pa
     assert "Values: [0, 1, 3, 0, 3, 2]" in text
     read_back, _ = read_ymf(path)
     assert read_back == validate_domain(domain)
+
+
+# ---------------------------------------------------------------------------
+# arrays: loading, inlining, comparing across storage
+# ---------------------------------------------------------------------------
+
+
+def test_dimensions_are_written_on_one_line(tmp_path):
+    domain = new_domain("mesh")
+    add_uniform_step(domain, 0.0,
+                     topology("Triangle", 8, data_item([8, 3], "m.h5:/e", data_type="Int")),
+                     geometry(data_item([9, 3], "m.h5:/n", precision=8)))
+    write_ymf(domain, tmp_path / "a.ymf")
+    text = (tmp_path / "a.ymf").read_text()
+    assert "Dimensions: [8, 3]" in text and "Dimensions: [9, 3]" in text
+
+
+def test_inline_domain_copies_hdf5_arrays_in_exactly(tmp_path):
+    np = pytest.importorskip("numpy")
+    h5py = pytest.importorskip("h5py")
+    cells = np.array([[0, 1, 3], [0, 3, 2]], dtype=np.int32)
+    nodes = np.random.default_rng(1).random((4, 3))
+    u = np.linspace(0, 1, 4, dtype=np.float32)
+    with h5py.File(tmp_path / "m.h5", "w") as f:
+        f["e"], f["n"], f["u"] = cells, nodes, u
+    domain = new_domain("mesh")
+    add_uniform_step(domain, 0.0, topology("Triangle", 2, data_item_for(cells, "m.h5:/e")),
+                     geometry(data_item_for(nodes, "m.h5:/n")),
+                     [attribute("u", data_item_for(u, "m.h5:/u"))])
+    referenced = domain_arrays(domain, tmp_path)
+    inline = inline_domain(domain, tmp_path)
+    assert all("Values" in a["DataItem"] for a in inline["TimeCollections"][0]["Data"][0]["Attributes"])
+    copied = domain_arrays(inline)            # no base directory needed any more
+    assert set(copied) == set(referenced)
+    for key in referenced:
+        assert copied[key].dtype == referenced[key].dtype
+        assert np.array_equal(copied[key], referenced[key])

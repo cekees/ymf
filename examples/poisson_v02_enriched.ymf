@@ -26,10 +26,9 @@ Problem:
         units: K
         std_name: land_surface_temperature
     equation_formulation: "Poisson"
-    strong_form_expression: |-
-      -kΔT = Q  in Ω
-    domain: |-
-      Ω = [0,1] × [0,1]
+    equations:
+      - "-∇·(k∇T) = Q  in Ω"
+    domain: "Ω = [0, 1] × [0, 1]"
     boundary_regions:
       - name: "all_boundaries"
         geometry: "∂Ω"
@@ -41,8 +40,7 @@ Problem:
         units: K
     coefficients:
       k: "1.0"
-      Q: |-
-        π²
+      Q: "π²"
     dimensional_check:
       enabled: true
       method: automatic
@@ -70,6 +68,7 @@ solution_paths:
       from_weak_form: "global"
       finite_element:
         fields: {family: CG, order: 1}
+      mesh: {cells: [4, 8]}      # a study: one output per mesh
       solver:
         type: linear
         linear_solver: petsc

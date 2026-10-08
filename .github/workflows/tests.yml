@@ -1,0 +1,87 @@
+name: sdist build + install + tests
+
+# The same shape as Proteus's sdist workflow: build the sdist, install it
+# the way a user would (default build isolation), smoke-test the install,
+# then run the whole suite against the installed package, not the checkout.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # requires-python is >=3.9, so the oldest supported python gets a leg.
+          - {name: "linux-64 / py3.9", os: ubuntu-latest, python: "3.9"}
+          - {name: "linux-64 / py3.12", os: ubuntu-latest, python: "3.12"}
+          - {name: "linux-64 / py3.13", os: ubuntu-latest, python: "3.13"}
+          - {name: "linux-64 / py3.14", os: ubuntu-latest, python: "3.14"}
+          - {name: "linux-aarch64 / py3.12", os: ubuntu-24.04-arm, python: "3.12"}
+          # macos-15-intel for x86_64, macos-15 for arm64: a runs-on label no
+          # runner satisfies sits queued for 24h rather than failing.
+          - {name: "macos-15 (Intel) / py3.12", os: macos-15-intel, python: "3.12"}
+          - {name: "macos-15 (Apple Silicon) / py3.12", os: macos-15, python: "3.12"}
+    name: ${{ matrix.name }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # setuptools_scm derives the version from the tags; a shallow clone
+          # has none and every build would call itself 0.0.0, which is what
+          # the archive's `ymf:` key would then record.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Build sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --sdist
+
+      - name: Install the core alone (pyyaml only)
+        shell: bash
+        run: |
+          python -m venv /tmp/core
+          /tmp/core/bin/pip install dist/ymf-*.tar.gz
+
+      - name: Smoke test the core
+        shell: bash
+        run: |
+          cd /tmp
+          # A solver that writes archives installs ymf with no extras; the
+          # archive, XDMF and closure modules and ymf2xmf must work with
+          # pyyaml alone, and importing them must not pull in the rest.
+          /tmp/core/bin/python - <<'EOF'
+          import sys
+          import ymf, ymf.archive, ymf.xdmf, ymf.closure, ymf.cli
+          heavy = sorted(m for m in ("strictyaml", "pint", "sympy", "numpy", "h5py") if m in sys.modules)
+          assert not heavy, "the core imported %s" % heavy
+          print("ymf", ymf.__version__, "core imports cleanly")
+          assert ymf.__version__ != "0.0.0", "no version from setuptools_scm"
+          EOF
+          /tmp/core/bin/ymf2xmf --help > /dev/null
+
+      - name: Install with every extra
+        shell: bash
+        run: pip install "$(ls dist/ymf-*.tar.gz)[dev]"
+
+      - name: Run test suite
+        shell: bash
+        run: |
+          # Run from outside the checkout's src/ so the tests exercise the
+          # installed package. The tests find examples/ through their own
+          # path, so they run from the checkout's tests/ directory.
+          python -c "import ymf; print(ymf.__file__)" | grep -v "/src/ymf/"
+          python -m pytest tests -q -rs -p no:cacheprovider | tee pytest.log
+          # Tests that need an extra skip themselves when it is missing, so a
+          # broken install could pass as green. The only skip expected here
+          # is the one for a pyyaml built without libyaml.
+          unexpected=$(grep '^SKIPPED' pytest.log | grep -v 'pyyaml built with libyaml' || true)
+          if [ -n "$unexpected" ]; then
+            echo "unexpected skips:"; echo "$unexpected"; exit 1
+          fi

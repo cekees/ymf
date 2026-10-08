@@ -24,7 +24,7 @@ from typing import List, Optional, Sequence
 from ymf.archive import YmfArchiveError, canonicalize_domain, read_ymf, validate_domain
 from ymf.xdmf import write_xdmf
 
-__all__ = ["ymf2xmf", "ymf2xmf_main"]
+__all__ = ["archive2xmf", "ymf2xmf", "ymf2xmf_main"]
 
 
 def _default_output(source: Path) -> Path:
@@ -69,6 +69,58 @@ def ymf2xmf(
     return destination
 
 
+def archive2xmf(
+    source: str | Path,
+    outdir: Optional[str | Path] = None,
+    keys: Optional[Sequence[str]] = None,
+    *,
+    validate: bool = True,
+) -> List[Path]:
+    """Write one ``.xmf`` per output of an archive. Returns the paths.
+
+    Each is named ``<stem>_<digest>.xmf`` after the output's key (beside
+    its ``<stem>_<digest>.h5``, if it has one), and
+    carries the realized spec and that output's record (everything but
+    its arrays) as the ``<Information Name="YMF">`` element.
+    """
+    from ymf.archive import read_document
+    from ymf.closure import archive_stem, file_stem
+    source = Path(source)
+    document = read_document(source)
+    outputs = document.get("outputs") or {}
+    if not outputs:
+        raise YmfArchiveError("%s holds no outputs, so there is nothing to convert" % (source,))
+    unknown = [k for k in keys or () if k not in outputs]
+    if unknown:
+        raise YmfArchiveError("%s has no output %s" % (source, ", ".join(unknown)))
+    spec = {k: v for k, v in document.items() if k != "outputs"}
+    outdir = Path(outdir) if outdir is not None else source.parent
+    written = []
+    for key in keys or list(outputs):
+        output = outputs[key]
+        domain = output.get("approximation")
+        if not domain:
+            continue
+        domain = validate_domain(domain) if validate else canonicalize_domain(domain)
+        record = {k: v for k, v in output.items() if k != "approximation"}
+        destination = outdir / (file_stem(archive_stem(source), key) + ".xmf")
+        write_xdmf(domain, destination, ymf_extra=dict(spec, output=key, record=record))
+        written.append(destination)
+    return written
+
+
+def _is_archive(source: Path) -> bool:
+    """An archive in the current form: a spec with ``outputs``."""
+    import re
+    with open(source, encoding="utf-8") as f:
+        for line in f:
+            if re.match(r"(ymf|outputs):", line):
+                return True
+            if line.startswith("ymf_archive_version:"):
+                return False
+    return False
+
+
 def _describe(domain) -> List[str]:
     """A short summary of what an archive holds, for --verbose."""
     lines = []
@@ -102,7 +154,10 @@ def ymf2xmf_main(argv: Optional[Sequence[str]] = None) -> int:
                     "the .ymf does, so it must sit beside them.")
     parser.add_argument("archive", help="the .ymf archive to convert")
     parser.add_argument("-o", "--output",
-                        help="output path (default: the archive with a .xmf suffix)")
+                        help="output path (default: the archive with a .xmf suffix); "
+                             "for an archive with outputs, the directory to write to")
+    parser.add_argument("--key", action="append",
+                        help="convert only this output (repeatable; default: all)")
     parser.add_argument("--no-validate", action="store_true",
                         help="skip the structural check before converting")
     parser.add_argument("-v", "--verbose", action="store_true",
@@ -114,6 +169,11 @@ def ymf2xmf_main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("no such file: %s" % (source,))
 
     try:
+        if _is_archive(source):
+            for destination in archive2xmf(source, args.output, args.key,
+                                           validate=not args.no_validate):
+                print("wrote %s" % (destination,))
+            return 0
         if args.verbose:
             domain, _ = read_ymf(source)
             print("%s" % (source,))

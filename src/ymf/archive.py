@@ -145,6 +145,14 @@ __all__ = [
     "validate_domain",
     "check_dimensions",
     "write_ymf",
+    "read_document",
+    "write_document",
+    "check_version",
+    "package_version",
+    "load_array",
+    "inline_domain",
+    "domain_arrays",
+    "rebase_domain",
     "read_ymf",
     "dump_grid",
     "load_grid",
@@ -310,7 +318,7 @@ def data_item(
         "Format": fmt,
         "DataType": data_type,
         "Precision": int(precision),
-        "Dimensions": [int(d) for d in dimensions],
+        "Dimensions": _FlowList(int(d) for d in dimensions),
     }
     if data is not None:
         item["Data"] = str(data)
@@ -325,8 +333,9 @@ def data_item(
 class _FlowList(list):
     """A list written as one ``[a, b, c]`` line rather than one per item.
 
-    Inline ``Values`` use it so that an array costs one YAML line, not one
-    line per number. It is a plain list in every other respect.
+    ``Dimensions`` and inline ``Values`` use it, so a shape reads
+    ``[8, 3]`` and an array costs one (wrapped) line rather than a line
+    per number. It is a plain list in every other respect.
     """
 
 
@@ -620,7 +629,7 @@ def _canonicalize_data_item(item: Dict[str, Any], where: str) -> Dict[str, Any]:
         "Format": fmt,
         "DataType": item.get("DataType", "Float"),
         "Precision": int(item.get("Precision", _DEFAULT_PRECISION)),
-        "Dimensions": [int(d) for d in item["Dimensions"]],
+        "Dimensions": _FlowList(int(d) for d in item["Dimensions"]),
     }
     if has_data:
         canonical["Data"] = str(item["Data"])
@@ -905,7 +914,31 @@ def check_dimensions(item: Dict[str, Any], shape: Sequence[int], where: str = "D
 class _ArchiveDumper(_YamlDumper):
     """The libyaml dumper, writing inline ``Values`` on one line."""
 
+    def ignore_aliases(self, data):
+        # An archive repeats a record (the ADR form, the software versions)
+        # in each output; written out each time, so each output reads alone.
+        return True
 
+
+def _represent_str(dumper, data):
+    # multi-line text (derivations, solution formulas) as a readable | block
+    style = "|" if "\n" in data else None
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data, style=style)
+
+
+_SHORT_LIST = 72
+
+
+def _represent_list(dumper, data):
+    # a short list of scalars on one line: unknowns: [v, p], cells: [4, 8]
+    scalar = all(isinstance(x, (int, float, bool, type(None)))
+                 or isinstance(x, str) and "\n" not in x for x in data)
+    flow = scalar and sum(len(str(x)) + 2 for x in data) <= _SHORT_LIST
+    return dumper.represent_sequence("tag:yaml.org,2002:seq", data, flow_style=flow)
+
+
+_ArchiveDumper.add_representer(str, _represent_str)
+_ArchiveDumper.add_representer(list, _represent_list)
 _ArchiveDumper.add_representer(
     _FlowList,
     lambda dumper, data: dumper.represent_sequence(
@@ -979,6 +1012,160 @@ def read_ymf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
             f"and reads version {ARCHIVE_FORMAT_VERSION}"
         )
     return document.get("domain", {}), document.get("extra")
+
+
+def load_array(item: Dict[str, Any], base_dir: str | Path = "."):
+    """The array a DataItem holds or points at, as a numpy array.
+
+    Inline ``Values`` are reshaped to ``Dimensions``; an HDF5 reference
+    ``"file.h5:/dataset"`` is read with the file relative to ``base_dir``
+    (the archive's directory). Needs numpy, and h5py for references --
+    imported here, so the archive core still needs neither.
+    """
+    import numpy
+    if "Values" in item:
+        dtype = "f%d" % item["Precision"] if item["DataType"] == "Float" else (
+            "u%d" if item["DataType"] in ("UInt", "UChar") else "i%d") % item["Precision"]
+        return numpy.array(item["Values"], dtype=dtype).reshape(item["Dimensions"])
+    if item.get("Format") == "HDF" and "Data" in item:
+        import h5py
+        filename, dataset = str(item["Data"]).rsplit(":", 1)
+        with h5py.File(Path(base_dir) / filename, "r") as f:
+            return f[dataset][()]
+    raise YmfArchiveError("load_array: no inline Values or HDF5 reference in %r" % (item,))
+
+
+def _data_items(domain: Dict[str, Any]):
+    """Every DataItem dict of a canonical domain, with a readable path."""
+    for collection in domain.get("TimeCollections", []):
+        for i, step in enumerate(collection["Data"]):
+            for j, g in enumerate(step.get("SpatialCollection", [step])):
+                where = "%s/%d%s" % (collection["Name"], i, "" if "Topology" in step else "/%d" % j)
+                yield where + "/Topology", g["Topology"]
+                yield where + "/Geometry", g["Geometry"]
+                for a in g["Attributes"]:
+                    yield "%s/%s/%s" % (where, a.get("Center", "Node"), a["Name"]), a
+
+
+def inline_domain(domain: Dict[str, Any], base_dir: str | Path = ".") -> Dict[str, Any]:
+    """A copy of ``domain`` with every referenced array copied in as ``Values``.
+
+    The result needs no HDF5 file or sidecar: the ``.ymf`` (and the ``.xmf``
+    derived from it) is self-contained.
+    """
+    import copy
+    out = copy.deepcopy(canonicalize_domain(domain))
+    for _, owner in _data_items(out):
+        item = owner["DataItem"]
+        if "Values" in item:
+            continue
+        array = load_array(item, base_dir)
+        owner["DataItem"] = data_item_for(array, inline=True, dimensions=item["Dimensions"])
+    return validate_domain(out)
+
+
+def rebase_domain(domain: Dict[str, Any], from_dir: str | Path,
+                  to_dir: str | Path) -> Dict[str, Any]:
+    """A copy of ``domain`` whose HDF5 references resolve from ``to_dir``.
+
+    References are relative to the archive that holds them. An output
+    carried into an archive in another directory (by ``extends``) keeps
+    pointing at the same files.
+    """
+    import copy
+    import os
+    out = copy.deepcopy(canonicalize_domain(domain))
+    if Path(from_dir).resolve() == Path(to_dir).resolve():
+        return out
+    for _, owner in _data_items(out):
+        item = owner["DataItem"]
+        if item.get("Format") == "HDF" and "Data" in item:
+            filename, dataset = str(item["Data"]).rsplit(":", 1)
+            moved = os.path.relpath(Path(from_dir).resolve() / filename,
+                                    Path(to_dir).resolve())
+            item["Data"] = "%s:%s" % (Path(moved).as_posix(), dataset)
+    return out
+
+
+def domain_arrays(domain: Dict[str, Any], base_dir: str | Path = "."):
+    """{path: array} for every DataItem, however each is stored."""
+    return {where: load_array(owner["DataItem"], base_dir)
+            for where, owner in _data_items(canonicalize_domain(domain))}
+
+
+# ---------------------------------------------------------------------------
+# documents: a specification, or an archive -- the specification plus the
+# outputs computed from it (see ymf.closure)
+# ---------------------------------------------------------------------------
+
+
+def _release(version: str) -> Tuple[int, ...]:
+    """(major, minor, patch) of a version string; () if it has none."""
+    import re
+    m = re.match(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?", str(version))
+    return tuple(int(g) for g in m.groups() if g is not None) if m else ()
+
+
+def package_version() -> str:
+    """The installed ymf version: the version every document is written as."""
+    from ymf import __version__
+    return __version__
+
+
+def check_version(document: Dict[str, Any], where: str = "document") -> None:
+    """Refuse a document written by a newer ymf than this one.
+
+    The ``ymf:`` key holds the package version that wrote a document; the
+    schema version is the package version. A newer writer may use fields
+    this reader does not know, so it is refused rather than half-read. An
+    unversioned (development) reader cannot tell, and does not refuse.
+    """
+    written = _release(document.get("ymf", ""))
+    reader = _release(package_version())
+    if written and reader and reader != (0, 0, 0) and written > reader:
+        raise YmfArchiveError(
+            "%s was written by ymf %s, newer than this ymf %s; upgrade ymf to read it"
+            % (where, document["ymf"], package_version()))
+
+
+def read_document(path: str | Path) -> Dict[str, Any]:
+    """Load a YMF document (spec or archive) as plain data, quickly.
+
+    pyyaml with libyaml, no schema: archives hold arrays, and strictyaml
+    is far too slow for them. Validate the specification part with
+    ymf.schema (ymf.closure.load does).
+    """
+    document = _load(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(document, dict):
+        raise YmfArchiveError(f"{path}: expected a YAML mapping at the top level")
+    check_version(document, str(path))
+    return document
+
+
+def write_document(path: str | Path, document: Dict[str, Any]) -> None:
+    """Write a spec or archive: ``ymf:`` first, then the rest in order.
+
+    Each output's ``approximation`` is validated and canonicalized, and
+    written with one-line Dimensions and Values.
+    """
+    out: Dict[str, Any] = {"ymf": package_version()}
+    for key, value in document.items():
+        if key == "ymf":
+            continue
+        if key == "outputs":
+            value = {k: _canonical_output(k, v) for k, v in value.items()}
+        out[key] = value
+    Path(path).write_text(_dump(out), encoding="utf-8")
+
+
+def _canonical_output(key: str, output: Dict[str, Any]) -> Dict[str, Any]:
+    output = dict(output)
+    if "approximation" in output:
+        try:
+            output["approximation"] = validate_domain(output["approximation"])
+        except YmfArchiveError as exc:
+            raise YmfArchiveError("outputs[%s].approximation: %s" % (key, exc)) from exc
+    return output
 
 
 def dump_grid(g: Dict[str, Any]) -> str:

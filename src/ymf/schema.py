@@ -119,6 +119,13 @@ DiscretizationEntry = Map(
         Optional("proteus_modules"): Map({"physics": Str(), "numerics": Str()}),
         # --- v0.2 additions ---
         Optional("bmi_interface"): Bool(),
+        # The mesh a run uses: cells along each side of the domain's box
+        # (the coarsest mesh) and levels of uniform refinement. A list is
+        # a study: each value is one realization (see ymf.closure).
+        Optional("mesh"): Map({
+            "cells": Int() | Seq(Int()),
+            Optional("levels"): Int() | Seq(Int()),
+        }),
         Optional("roughness_source"): Map(
             {
                 "type": Str(),
@@ -165,6 +172,9 @@ UnknownDef = Str() | Map(
         Optional("std_name"): Str(),
         # Overrides strong_form.provenance for this unknown alone.
         Optional("provenance"): ProvenanceEnum,
+        # 0 for a scalar (the default), 1 for a vector with one component
+        # per space dimension.
+        Optional("rank"): Int(),
     }
 )
 
@@ -187,6 +197,9 @@ BoundaryConditionDef = Map(
         "variable": Str(),
         "type": BCTypeEnum,
         Optional("value"): Float(),
+        # A value that varies along the boundary or in time: an expression
+        # in x, y, z, t and the coefficients; "(a, b)" for a vector variable.
+        Optional("formula"): Str(),
         Optional("units"): Str(),
         Optional("source"): Str(),
         Optional("source_url"): Str(),
@@ -270,8 +283,14 @@ StrongFormDef = Map(
         "provenance": ProvenanceEnum,
         "unknowns": Seq(UnknownDef),  # CHANGED in v0.2: was Seq(Str())
         "equation_formulation": Str(),
-        "strong_form_expression": Str(),
+        # Superseded by ``equations``, which is written in the same notation
+        # and read by ymf.symbolic; kept so older documents still validate.
+        Optional("strong_form_expression"): Str(),
+        # "Ω = [0, 1] × [0, 1]", optionally ", t ∈ (0, 50]" for the time
+        # interval of a transient problem.
         "domain": Str(),
+        # geometry is a membership test in the spec notation: "∂Ω" (all of
+        # it), "y = 0 or y = H", "x = 0 and y = 0".
         "boundary_regions": Seq(Map({"name": Str(), "geometry": Str()})),
         Optional("initial_conditions"): Seq(InitialConditionDef),
         Optional("boundary_conditions"): Seq(BoundaryConditionDef),
@@ -280,6 +299,10 @@ StrongFormDef = Map(
         ),
         Optional("coefficients"): MapPattern(Str(), Any()),
         Optional("dimensional_check"): DimensionalCheckDef,
+        # The equations, one string per (vector or scalar) equation, in the
+        # notation of ymf.symbolic.notation -- "∂T/∂t = ∇·(κ∇T)  in Ω",
+        # "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f" -- ordered like the unknowns.
+        Optional("equations"): Seq(Str()),
     }
 )
 
@@ -325,20 +348,24 @@ YMF_SCHEMA = Map(
 )
 
 
-def _partial(validator):
+def _partial(validator, keep=()):
     """The same validator with every mapping key made optional.
 
     Used for files that hold only part of a problem: a model, or a problem
-    that extends one. Only mappings reached through mapping keys are
-    relaxed. Entries of lists (an unknown, a weak form, a discretization)
-    and of pattern maps keep their required keys, since an entry that is
-    present at all should be complete.
+    that extends one. Entries of lists are relaxed too, except for the key
+    that names them (``name`` or ``label``): a file may change one field of
+    an inherited discretization by naming it and giving only that field.
+    The composed document is validated in full, so an entry that is new
+    and incomplete is still caught there.
     """
     if isinstance(validator, Map):
         return Map({
-            (key if isinstance(key, Optional) else Optional(key)): _partial(value)
+            (key if isinstance(key, Optional) or key in keep else Optional(key)):
+                _partial(value)
             for key, value in validator._validator.items()
         })
+    if isinstance(validator, Seq) and isinstance(validator._validator, Map):
+        return Seq(_partial(validator._validator, keep=("name", "label")))
     return validator
 
 

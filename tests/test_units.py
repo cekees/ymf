@@ -1,3 +1,4 @@
+import math
 import pytest
 
 from ymf.units import (
@@ -171,21 +172,21 @@ def test_compute_dimensionless_numbers_missing_scale_omitted():
 
 
 def _heat_doc_with_numbers(coefficients_yaml):
-    """examples/heat_equation.yaml with a velocity scale, the given
+    """examples/heat_equation.ymf with a velocity scale, the given
     coefficients block, and coefficient-referencing dimensionless numbers."""
     from pathlib import Path
 
-    text = (Path(__file__).parent.parent / "examples" / "heat_equation.yaml").read_text()
-    scales = "    time: {value: 50.66, units: s}\n"
-    coefficients = "    coefficients:\n      kappa: {value: 1.0e-3, units: m2/s}\n"
+    text = (Path(__file__).parent.parent / "examples" / "heat_equation.ymf").read_text()
+    scales = '    time: {derived: true, formula: "1/(2π²κ)", units: s}\n'
+    coefficients = "    coefficients:\n      κ: {value: 1.0e-3, units: m2/s}\n"
     assert scales in text and coefficients in text
     text = text.replace(
         scales,
         scales
         + "    velocity: {value: 0.5, units: m/s}\n"
         + "\n  dimensionless_numbers:\n"
-        + '    Peclet: {formula: "U * L / kappa"}\n'
-        + '    Fourier: {formula: "kappa * time / L**2"}\n',
+        + '    Peclet: {formula: "U * L / κ"}\n'
+        + '    Fourier: {formula: "κ * time / L**2"}\n',
     )
     return text.replace(coefficients, "    coefficients:\n" + coefficients_yaml)
 
@@ -193,9 +194,9 @@ def _heat_doc_with_numbers(coefficients_yaml):
 @pytest.mark.parametrize(
     "coefficients_yaml",
     [
-        "      kappa: {value: 1.0e-3, units: m2/s}\n",
-        "      kappa: 1.0e-3\n",
-        '      kappa: "1.0e-3"\n',
+        "      κ: {value: 1.0e-3, units: m2/s}\n",
+        "      κ: 1.0e-3\n",
+        '      κ: "1.0e-3"\n',
     ],
     ids=["value-map", "bare-float", "quoted-float"],
 )
@@ -208,7 +209,8 @@ def test_compute_dimensionless_numbers_uses_validated_coefficients(coefficients_
     doc = validate_ymf(_heat_doc_with_numbers(coefficients_yaml))
     numbers = compute_dimensionless_numbers(doc["Problem"])
     assert numbers["Peclet"] == pytest.approx(0.5 * 1.0 / 1.0e-3)
-    assert numbers["Fourier"] == pytest.approx(1.0e-3 * 50.66 / 1.0**2)
+    # the time scale is derived, 1/(2π²κ), so κ·time/L² is 1/(2π²) exactly
+    assert numbers["Fourier"] == pytest.approx(1.0 / (2.0 * math.pi ** 2))
 
 
 def test_compute_dimensionless_numbers_ignores_non_numeric_coefficients():

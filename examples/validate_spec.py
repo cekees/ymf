@@ -1,7 +1,7 @@
 """Walk a YMF problem specification through the front-end.
 
     python examples/validate_spec.py                      # every example spec
-    python examples/validate_spec.py examples/kovasznay_flow.yaml
+    python examples/validate_spec.py examples/kovasznay_flow.ymf
 
 For each document this prints what the validating front-end knows about
 it: whether it passes the schema, its unknowns, the branch tree from
@@ -98,7 +98,7 @@ def show_a_unit_error() -> None:
     print("=" * 72)
     print("a deliberate mistake: the wall temperature given in metres")
     print("=" * 72)
-    doc = copy.deepcopy(load_ymf(EXAMPLES / "heat_equation.yaml"))
+    doc = copy.deepcopy(load_ymf(EXAMPLES / "heat_equation.ymf"))
     doc["Problem"]["strong_form"]["boundary_conditions"][0]["units"] = "m"
     result = check_units(doc)
     print("unit check: %s" % ("ok" if result else "FAILED"))
@@ -106,12 +106,24 @@ def show_a_unit_error() -> None:
         print("  %s" % (issue,))
 
 
+def standalone(path: Path) -> bool:
+    """A spec that loads as it is checked in: not an archive ymf_run wrote,
+    and not one extending such an archive (it needs that run first)."""
+    if path.name.endswith(".archive.ymf"):
+        return False
+    import re
+    m = re.search(r"^extends:\s*(\S+)", path.read_text(encoding="utf-8"), re.M)
+    return not (m and m.group(1).endswith(".archive.ymf")
+                and not (path.parent / m.group(1)).exists())
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("specs", nargs="*", type=Path,
                         help="YMF documents to check (default: every example)")
     args = parser.parse_args(argv)
-    specs = [p.resolve() for p in args.specs] or sorted(EXAMPLES.rglob("*.yaml"))
+    specs = [p.resolve() for p in args.specs] or [
+        p for p in sorted(EXAMPLES.rglob("*.ymf")) if standalone(p)]
     ok = all([describe(p) for p in specs])
     if not args.specs:
         show_a_unit_error()
