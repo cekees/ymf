@@ -306,6 +306,56 @@ copied verbatim. `parun <stem>_<digest>_so.py` runs them, and its solution
 is bitwise the archived one. They are a way to read exactly what was
 solved, or to start a hand-written Proteus model from it.
 
+## The domain
+
+`model.strong_form.domain` is the region the model is posed on. It is
+either the notation short form, which means a box:
+
+```yaml
+domain: "Ω = [0, 1] × [0, 1],  t ∈ (0, 50]"
+```
+
+or a mapping that says what **kind** of domain it is:
+
+| kind | holds | for |
+|---|---|---|
+| `box` | `lower`, `upper`, optional `time` | the same thing the string says |
+| `piecewise_linear` | `vertices`, `segments` (2-D) or `facets`/`volumes` (3-D), `holes`, `regions` | a boundary representation — Proteus's PSLG and PLC |
+| `discrete` | `topology`, `geometry` | already a mesh; the one kind XDMF holds directly |
+| `file` | `format`, `path` | someone else's language — a `.geo`, an STL, a CAD model |
+
+```yaml
+domain:
+  kind: piecewise_linear
+  dimension: 2
+  vertices: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+  segments: [[0, 1], [1, 2], [2, 3], [3, 0]]
+  boundary_tags: {bottom: 1, right: 2, top: 3, left: 4}
+```
+
+`kind` is written, not inferred: a reader should know what it is holding
+before it reads it, and whoever writes a domain should have to say what
+they are making. A kind is checked against what it requires, and against
+what belongs to *another* kind — a `kind: box` carrying `vertices` is a
+confusion worth catching, and the message says which kind that key belongs
+to.
+
+Many domains are technically expressible in YAML and should still be
+`kind: file`. Inlining a CAD model helps nobody, and half of Proteus's own
+domain classes are already a path and a format.
+
+**What a domain is not.** It is not how to mesh the region — that is
+`discretizations[].mesh` — and it is not the state of whatever object
+holds it. Proteus's `Domain` classes carry both, and neither is part of
+what a domain *is*.
+
+**`domain` in an archive** is this same domain, discretized: XDMF's
+`<Domain>` holding grids of `topology` and `geometry`. The same region at
+two levels, as with strong and weak forms.
+
+Only `kind: box` can be solved today. The others validate and are carried,
+and `adr_problem` says so rather than failing obscurely.
+
 ## Branching: one problem, several solution paths
 
 The schema exists to let one document hold *competing* approaches to the
@@ -667,9 +717,11 @@ nobody has to rediscover them:
   different numbers from the solver reading the same file. A bare
   `ymf[units]` install still works, and still sees only the coefficients
   that are already numbers.
-- **Only Dirichlet and periodic conditions run.** Neumann, Robin and
-  `hydrograph` conditions validate but `adr_problem` refuses them, and the
-  domain must be a box.
+- **Only Dirichlet and periodic conditions run**, and only on a box.
+  Neumann, Robin and `hydrograph` validate but `adr_problem` refuses them.
+  A domain of any kind now validates and is carried — see
+  [The domain](#the-domain) — but only `kind: box` is solved, and
+  `adr_problem` says which kind it was given rather than failing obscurely.
 - **The notation's limits**, each of which now reports the fix as well as
   the fault. Functions need parentheses — `sin πx` says to write `sin(x)`,
   not `sin x`. There are no subscripts — `p₀` says to write `p0` and declare

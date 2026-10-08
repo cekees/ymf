@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional
 
 import sympy
 
+from ymf.domain import box_bounds
 from ymf.symbolic.adr import adr_form, to_code
 from ymf.symbolic.language import Space, SymbolicError, parse_equation, parse_expression
 
@@ -205,7 +206,14 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
 
     problem = doc["model"]
     strong = problem["strong_form"]
-    dim = _domain_dimension(strong["domain"])
+    domain = strong["domain"]
+    box = box_bounds(domain)
+    if box is None and not isinstance(domain, str):
+        raise SymbolicError(
+            "strong_form.domain: adr_problem can run a box; this one is kind "
+            "%r. Other kinds validate and are carried, but nothing solves them "
+            "yet." % (domain.get("kind"),))
+    dim = len(box[0]) if box else _domain_dimension(domain)
     if not strong.get("equations"):
         raise SymbolicError("strong_form.equations is needed to run a spec")
     ranks = {}
@@ -217,10 +225,15 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
 
     coefficients = _coefficients(strong.get("coefficients") or {}, dim)
     space = Space(dim, ranks, coefficients)
-    try:
-        lower, upper, time = Parser(Space(dim, {}, coefficients)).domain(strong["domain"])
-    except NotationError as exc:
-        raise SymbolicError("strong_form.domain: %s" % exc) from exc
+    if box is not None:
+        lower, upper = box
+        interval = domain.get("time")
+        time = tuple(interval) if interval else None
+    else:
+        try:
+            lower, upper, time = Parser(Space(dim, {}, coefficients)).domain(domain)
+        except NotationError as exc:
+            raise SymbolicError("strong_form.domain: %s" % exc) from exc
 
     residuals: List[sympy.Expr] = []
     for text in strong["equations"]:

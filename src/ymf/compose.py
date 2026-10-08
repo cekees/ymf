@@ -62,6 +62,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import strictyaml
 import yaml
 
+from ymf.domain import validate_domain_block
 from ymf.references import apply_defaults, resolve
 from ymf.schema import _ALLOW_FLOW_STYLE, PARTIAL_YMF_SCHEMA, YMF_SCHEMA
 
@@ -450,6 +451,14 @@ def _compose(path: Path, chain: Tuple[Path, ...]):
             provenance, inherited, record)
 
 
+def _check_document(doc: Dict[str, Any]) -> None:
+    """The checks a finished document gets, whichever path produced it."""
+    resolve(doc)
+    strong = (doc.get("model") or {}).get("strong_form") or {}
+    if "domain" in strong:
+        validate_domain_block(strong["domain"], "model.strong_form.domain")
+
+
 def load_composed(path: str | Path) -> Dict[str, Any]:
     """Load a YMF document, following ``extends``, and validate the result.
 
@@ -478,7 +487,7 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
             # recorded even for one file, so the document still says how it
             # came to hold a reference its author did not write
             document["composition"] = {"defaults": filled}
-        resolve(document)
+        _check_document(document)
         return document
     (merged, sources, overrides, removals, defaults, provenance, outputs,
      record) = _compose(path, ())
@@ -507,7 +516,7 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
     if kind == "model":
         # Kept, so that whoever receives this knows it is not a problem yet.
         merged["kind"] = "model"
-        resolve(merged)
+        _check_document(merged)
         return merged
     # The composed document has no file of its own, so it is written out as
     # YAML and validated as text, under a label naming the chain. (Not
@@ -531,5 +540,5 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
         data["composition"] = composition
     if outputs:
         data["outputs"] = outputs
-    resolve(data)
+    _check_document(data)
     return data

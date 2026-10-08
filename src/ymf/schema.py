@@ -215,6 +215,48 @@ BoundaryConditionDef = Map(
     }
 )
 
+# A domain is the notation short form -- "Ω = [0, 1] × [0, 1],  t ∈ (0, 50]",
+# which means a box and is parsed by ymf.symbolic -- or a mapping tagged by
+# kind. See ymf.domain, which checks the mapping against its kind; the schema
+# only says what keys may appear, because strictyaml cannot express "these
+# keys given that kind" and a message naming the kind is worth more than one
+# naming the schema.
+DomainDef = Str() | Map(
+    {
+        "kind": Enum(["box", "piecewise_linear", "discrete", "file"]),
+        Optional("name"): Str(),
+        Optional("dimension"): Int(),
+        Optional("units"): Str(),
+        # the time interval of a transient model, as the notation
+        # form states it ("..., t ∈ (0, 50]")
+        Optional("time"): Seq(Float()),
+        # A name for each boundary, so a condition can say "bottom" instead
+        # of 3. The integer is the flag Proteus and the mesh generators use.
+        Optional("boundary_tags"): MapPattern(Str(), Int()),
+        # kind: box
+        Optional("lower"): Seq(Float()),
+        Optional("upper"): Seq(Float()),
+        # kind: piecewise_linear -- a boundary representation
+        Optional("vertices"): Seq(Seq(Float())),
+        Optional("segments"): Seq(Seq(Int())),
+        Optional("facets"): Any(),
+        Optional("volumes"): Any(),
+        Optional("holes"): Seq(Seq(Float())),
+        Optional("regions"): Seq(Map({"point": Seq(Float()),
+                                      Optional("flag"): Int()})),
+        Optional("vertex_flags"): Seq(Int()),
+        Optional("segment_flags"): Seq(Int()),
+        Optional("facet_flags"): Seq(Int()),
+        Optional("region_flags"): Seq(Int()),
+        # kind: discrete -- already a mesh, in the archive's vocabulary
+        Optional("topology"): Any(),
+        Optional("geometry"): Any(),
+        # kind: file -- someone else's language
+        Optional("format"): Str(),
+        Optional("path"): Str(),
+    }
+)
+
 ScaleDef = Map(
     {
         Optional("value"): Float(),
@@ -323,7 +365,7 @@ StrongFormDef = Map(
         Optional("strong_form_expression"): Str(),
         # "Ω = [0, 1] × [0, 1]", optionally ", t ∈ (0, 50]" for the time
         # interval of a transient problem.
-        "domain": Str(),
+        "domain": DomainDef,
         # geometry is a membership test in the spec notation: "∂Ω" (all of
         # it), "y = 0 or y = H", "x = 0 and y = 0".
         # "where" is a membership predicate, not geometry: "∂Ω" (all of
