@@ -585,10 +585,14 @@ nobody has to rediscover them:
   an assumption or a field a model stated took a whole new model file.
   `remove:` now does it, recorded in `composition.removals`. See
   [Composing documents](#composing-documents-models-and-problems).
-- **An error in a composed problem that no single file holds** (say, a
-  required key that none of the files sets) is reported against a line of
-  the merged document, labelled with the chain of files, not against a
-  source file.
+- *(Closed.)* An error that no single file holds -- a required key none of
+  them sets -- was reported against a line of the merged document, which
+  exists nowhere on disk. The message now also names the path and the files
+  that write it: *no file in the chain sets `equation_formulation` under
+  `Problem.strong_form`; `Problem.strong_form` is written by
+  `model.ymf`, `problem.ymf`*. Where one file added an incomplete entry,
+  only that file is named. The path is the same shape `remove:` and the
+  override log use, so it can be pasted between them.
 - **Duplicated values are only caught by name.** The check above covers a
   `density` or `viscosity` scale against a `ρ`/`rho` or `μ`/`mu` coefficient. A
   coefficient under another name (`nu`, `eta`), or a velocity scale that

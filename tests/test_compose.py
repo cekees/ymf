@@ -214,3 +214,101 @@ Problem:
     assert doc["composition"]["overrides"] == [{
         "path": "Problem.characteristic_scales.length.value",
         "was": 1.0, "now": 2.5, "set_by": "variant.ymf"}]
+
+
+# ---------------------------------------------------------------------------
+# attributing a composed document's failure to a file
+# ---------------------------------------------------------------------------
+#
+# A composed problem has no file of its own. strictyaml could only point at a
+# line of a document that exists nowhere on disk, labelled with the chain, so
+# the reader was left to work out which of several files to open. The failure
+# that only a composition can have is a required key that no file in the
+# chain sets -- each file is valid on its own against the partial schema, and
+# only the whole is checked in full.
+
+
+BASE = """\
+kind: model
+Problem:
+  name: "flow"
+  strong_form:
+    provenance: llm_derived
+    equation_formulation: "f"
+    unknowns: ["v"]
+    domain: "Ω"
+    boundary_regions:
+      - {name: "w", geometry: "∂Ω"}
+solution_paths:
+  analytical: []
+  discretizations: []
+"""
+
+
+def test_a_missing_required_key_names_the_files_that_write_its_mapping(tmp_path):
+    write(tmp_path,
+          model=BASE.replace('    equation_formulation: "f"\n', ""),
+          problem="""
+extends: model.ymf
+Problem:
+  strong_form:
+    coefficients:
+      ρ: {value: 1.0}
+""")
+    with pytest.raises(strictyaml.YAMLValidationError) as caught:
+        load_ymf(tmp_path / "problem.ymf")
+    note = str(caught.value)
+    assert "no file in the chain sets equation_formulation under Problem.strong_form" in note
+    # both files write that mapping, named in chain order
+    assert "Problem.strong_form is written by model.ymf, problem.ymf" in note
+
+
+def test_an_incomplete_new_entry_names_the_file_that_added_it(tmp_path):
+    """The useful case: one file added it, so there is one file to open."""
+    write(tmp_path, model=BASE, problem="""
+extends: model.ymf
+solution_paths:
+  discretizations:
+    - name: "new_path"
+      provenance: llm_derived
+""")
+    with pytest.raises(strictyaml.YAMLValidationError) as caught:
+        load_ymf(tmp_path / "problem.ymf")
+    note = str(caught.value)
+    assert "solution_paths.discretizations[new_path] is written by problem.ymf" in note
+    assert "model.ymf" not in note.split("is written by")[-1]
+
+
+def test_the_attributed_path_is_the_one_remove_and_overrides_use(tmp_path):
+    """So a path out of an error can be pasted into remove:, and vice versa."""
+    write(tmp_path, model=BASE, problem="""
+extends: model.ymf
+solution_paths:
+  discretizations:
+    - name: "new_path"
+      provenance: llm_derived
+""")
+    with pytest.raises(strictyaml.YAMLValidationError) as caught:
+        load_ymf(tmp_path / "problem.ymf")
+    # "[new_path]", not ".name" -- the entry, not the key carrying its identity
+    assert "discretizations[new_path]" in str(caught.value)
+
+
+def test_a_file_that_is_wrong_on_its_own_still_cites_itself(tmp_path):
+    """Unchanged: per-file errors never needed attributing.
+
+    Each file is validated as written before anything is merged, so an error
+    a single file holds is reported against that file's own line. Only what
+    no file holds alone reaches the composed check.
+    """
+    write(tmp_path, model=BASE, problem="""
+extends: model.ymf
+Problem:
+  strong_form:
+    provenance: not_a_provenance
+""")
+    with pytest.raises(strictyaml.YAMLValidationError) as caught:
+        load_ymf(tmp_path / "problem.ymf")
+    message = str(caught.value)
+    assert "problem.ymf" in message
+    assert "composed from" not in message
