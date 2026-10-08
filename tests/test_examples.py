@@ -33,7 +33,8 @@ def test_validate_spec_walks_every_example_and_shows_the_unit_error():
     for spec in SPECS:
         assert spec.name in out
     assert "composed from: navier_stokes_model.ymf <- plane_poiseuille.ymf <- plane_poiseuille_re100.ymf" in out
-    assert "override Problem.strong_form.coefficients.μ.value: '1.0' -> '0.01' (plane_poiseuille_re100.ymf)" in out
+    # unquoted: a typed coefficient prints as the number it is
+    assert "override Problem.strong_form.coefficients.μ.value: 1.0 -> 0.01 (plane_poiseuille_re100.ymf)" in out
     assert "schema: INVALID" not in out
     assert "dimensionless numbers: {'Re': 40.0}" in out
     assert "incompatible with 'T''s declared units 'K'" in out

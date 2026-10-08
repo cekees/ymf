@@ -105,6 +105,7 @@ ParaView and VisIt read natively. Nothing in this module knows about XML.
 
 from __future__ import annotations
 
+import re
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -960,8 +961,35 @@ def _dump(obj: Any) -> str:
     )
 
 
+# PyYAML implements YAML 1.1, whose float grammar wants a decimal point and
+# a signed exponent. So "1.0e-10" is a number while "1e-10", "1E-10",
+# "1e+10", "-1e-10" and "1.5e3" all come back as *strings*. strictyaml,
+# which reads a spec as written, accepts every one of them as a number.
+#
+# That left the same file meaning two different things depending on which
+# reader saw it: a spec validated as a file had a numeric tolerance, and the
+# same spec carried inside an archive had a string. Nothing warned; the
+# value simply stopped being a number somewhere downstream.
+#
+# This resolver adds the exponent forms YAML 1.2 and JSON accept. It is
+# registered on a subclass, so pyyaml's own SafeLoader -- which other code
+# in the same process may be using -- is left exactly as it was.
+_YAML12_FLOAT = re.compile(
+    r"^[-+]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)[eE][-+]?[0-9]+$"
+)
+
+
+class _SpecLoader(_YamlLoader):  # noqa: D401 - a loader, not a function
+    """``_YamlLoader`` that also reads YAML 1.2 scientific notation."""
+
+
+_SpecLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:float", _YAML12_FLOAT, list("-+.0123456789")
+)
+
+
 def _load(text: str) -> Any:
-    return yaml.load(text, Loader=_YamlLoader)
+    return yaml.load(text, Loader=_SpecLoader)
 
 
 def write_ymf(

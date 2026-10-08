@@ -216,16 +216,43 @@ ScaleDef = Map(
     }
 )
 
-CharacteristicScalesDef = Map(
+# A coefficient is a number, a map, or an expression -- tried in that order.
+#
+# Typing this mattered more than it looks. It used to be Any(), under which
+# strictyaml returns every scalar as a string: "kappa: 1.0e-3" loaded as the
+# string '1.0e-3'. Only compute_dimensionless_numbers coerced it, so every
+# other consumer saw a string, and a formula coefficient that referred to a
+# numeric one silently dropped out of scope, taking any number built on it.
+#
+# Float() first, so a numeric scalar is a number however it was written --
+# and so strictyaml agrees with the pyyaml that reads a spec carried inside
+# an archive. Str() last, as the fallback for an expression ("π²",
+# "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"), which is a coefficient too.
+#
+# The map form keeps every key optional on purpose: a model file declares
+# "ρ: {units: kg/m3}" with no value, leaving the value to the problem that
+# extends it.
+CoefficientMapDef = Map(
     {
-        Optional("length"): ScaleDef,
-        Optional("velocity"): ScaleDef,
-        Optional("time"): ScaleDef,
-        Optional("density"): ScaleDef,
-        Optional("viscosity"): ScaleDef,
-        Optional("temperature"): ScaleDef,
+        Optional("value"): Float(),
+        Optional("units"): Str(),
+        Optional("formula"): Str(),
     }
 )
+
+CoefficientDef = Float() | CoefficientMapDef | Str()
+
+# Any named scale, not a fixed set.
+#
+# This was a closed Map of six: length, velocity, time, density, viscosity,
+# temperature. A problem with a diffusivity or a pressure scale had nowhere
+# to put it and had to leave it out of its dimensionless numbers.
+#
+# Those six keep their meaning: characteristic_scale_values aliases them to
+# the bare names L, U, rho, mu, T that the report's formulas use. Any other
+# name resolves under itself, so "diffusivity: {value: 1.0e-3}" is usable in
+# a formula as "diffusivity".
+CharacteristicScalesDef = MapPattern(Str(), ScaleDef)
 
 DimensionlessNumberDef = Map({"formula": Str(), Optional("value"): Float()})
 
@@ -297,7 +324,7 @@ StrongFormDef = Map(
         Optional("known_analytical_solution"): Map(
             {"formula": Str(), "reference": Str()}
         ),
-        Optional("coefficients"): MapPattern(Str(), Any()),
+        Optional("coefficients"): MapPattern(Str(), CoefficientDef),
         Optional("dimensional_check"): DimensionalCheckDef,
         # The equations, one string per (vector or scalar) equation, in the
         # notation of ymf.symbolic.notation -- "∂T/∂t = ∇·(κ∇T)  in Ω",

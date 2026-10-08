@@ -512,14 +512,16 @@ nobody has to rediscover them:
 
 - **Branch references aren't resolved.** A `from_weak_form` or `branch_ref`
   that names nothing still validates.
-- **Coefficients come back as strings.** `coefficients` is untyped in the
-  schema, so after `load_ymf` a value like `kappa: 1.0e-3` is the string
-  `'1.0e-3'`. `compute_dimensionless_numbers` coerces numeric strings, both
-  bare and as `{value: ..., units: ...}`, so a Péclet or Fourier formula
-  that refers to `kappa` now evaluates. Every other consumer of
-  `coefficients` still sees strings, and a non-numeric coefficient (a
-  formula such as `"π²"`) is still left out of the formula scope, which
-  silently drops any number that refers to it.
+- **A formula-valued coefficient resolves for `ymf.symbolic` but not for
+  `ymf.units`.** `coefficients` is now typed, so a numeric value arrives as
+  a number from every reader. What remains is that a coefficient written as
+  an expression (`λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"`) needs evaluating
+  before it is a number, and the evaluator is `ymf.symbolic`, which the
+  `frontend` extra does not install. So `compute_dimensionless_numbers`
+  leaves such a coefficient out of scope, and silently omits any number
+  that refers to it, while `adr_problem` resolves it. Closing this means
+  either adding sympy to `frontend` or reporting the omission rather than
+  passing over it.
 - **Only Dirichlet and periodic conditions run.** Neumann, Robin and
   `hydrograph` conditions validate but `adr_problem` refuses them, and the
   domain must be a box.
@@ -527,15 +529,21 @@ nobody has to rediscover them:
   `sin πx`); there are no subscript characters (`p₀`), so write `p0` and
   declare it; and a multi-letter name must be declared to be a name rather
   than a product (`Re` is R·e unless it is a coefficient).
-- **SUPG/PSPG with equal-order P1 converges below its a priori rates on
-  Kovasznay flow** (velocity about 1.5 instead of 2, pressure not
-  converging) through Proteus's `NavierStokesASGS_velocity_pressure`,
-  while Taylor-Hood on the same problem converges at 3 and 2 and the
-  stabilized branch of plane Poiseuille flow meets its rates. Not yet
-  explained.
-- **Write `1.0e-10`, not `1e-10`.** strictyaml accepts both, but PyYAML
-  (YAML 1.1), which reads a spec carried inside an archive, treats `1e-10`
-  as a string.
+- **SUPG/PSPG with equal-order P1 on Kovasznay flow is pre-asymptotic at
+  reachable mesh sizes**, not wrong. Measured rates sit below the a priori
+  values on coarse meshes and climb towards them as the mesh refines (1.88
+  for velocity at 512 cells). This was investigated and closed: it is a
+  resolution limit, not a defect in `NavierStokesASGS_velocity_pressure`.
+  Taylor-Hood on the same problem reaches its rates sooner, so a
+  side-by-side comparison at one mesh size misleads. Reaching the
+  asymptotic range needs an iterative solver (512 cells is already 24 GB
+  with MUMPS) or a lower-Reynolds companion case.
+- *(Closed.)* `1e-10` used to be a string to PyYAML and a number to
+  strictyaml, so a spec meant different things read as a file and read
+  inside an archive. The archive reader now resolves YAML 1.2 scientific
+  notation, so `1e-10`, `1E-10`, `1e+10`, `-1e-10` and `1.5e3` are all
+  numbers to both. The resolver is registered on a subclass, so pyyaml's own
+  loaders are unchanged for anything else in the process.
 - **Composition can add and change, but not remove.** A problem cannot
   drop an assumption or a field its model states. That takes a new model.
 - **An error in a composed problem that no single file holds** (say, a
@@ -547,5 +555,7 @@ nobody has to rediscover them:
   coefficient under another name (`nu`, `eta`), or a velocity scale that
   restates a boundary speed, isn't checked. Derive scales from coefficients
   wherever possible.
-- **`characteristic_scales` is a fixed set** of six. There is no slot for a
-  diffusivity or a pressure scale.
+- *(Closed.)* `characteristic_scales` was a fixed set of six, with no slot
+  for a diffusivity or a pressure scale. It now takes any name. The
+  original six keep their aliases (`L`, `U`, `rho`, `mu`, `T`) in formula
+  scope; any other name resolves under itself.

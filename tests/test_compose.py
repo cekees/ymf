@@ -71,7 +71,8 @@ def test_couette_composes_the_model_with_its_own_additions():
     assert strong["equations"][0].startswith("ρ ∂v/∂t")
     assert [u["name"] for u in strong["unknowns"]] == ["v", "p"]
     # merged: the model's units, the problem's value
-    assert strong["coefficients"]["μ"] == {"units": "Pa*s", "value": "0.1"}
+    # a number, not the string '0.1': coefficients are typed in the schema
+    assert strong["coefficients"]["μ"] == {"units": "Pa*s", "value": 0.1}
     # string lists are unioned in order
     assert doc["Problem"]["physical_model"]["assumptions"] == [
         "newtonian", "constant_density", "isothermal", "steady", "fully_developed"]
@@ -93,7 +94,7 @@ def test_a_parameter_variant_records_exactly_what_it_overrides():
     }
     assert by_path["Problem.strong_form.coefficients.μ.value"] == {
         "path": "Problem.strong_form.coefficients.μ.value",
-        "was": "1.0", "now": "0.01", "set_by": "plane_poiseuille_re100.ymf"}
+        "was": 1.0, "now": 0.01, "set_by": "plane_poiseuille_re100.ymf"}
 
 
 def test_the_composed_variant_resolves_its_reynolds_number():
