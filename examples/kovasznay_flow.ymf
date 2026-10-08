@@ -158,7 +158,7 @@ vvuq:
     method: "exact_comparison"
     reference:
       type: "analytical"
-      branch_ref: "kovasznay_exact"
+      analytical: "kovasznay_exact"
     branches: ["taylor_hood", "equal_order_p1"]
     expected_rates:  # a priori L2 rates on smooth solutions
       taylor_hood: {error_L2_velocity: 3, error_L2_pressure: 2}

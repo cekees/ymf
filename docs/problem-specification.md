@@ -108,7 +108,9 @@ Optional notes record inf-sup stability, existence, uniqueness and
 regularity, plus the stabilization method.
 
 **`discretizations`**: each has a `name`, `provenance`, `solver`, and
-usually `from_weak_form` and `finite_element`. `finite_element` takes
+usually `finite_element` and `from_weak_form` (a weak form's label, which
+may be omitted when the document has only one — see
+[Branching](#branching-one-problem-several-solution-paths)). `finite_element` takes
 `fields`, or `velocity` and `pressure` for mixed problems, each as
 `{family: CG|DG|RT|BDM|RTF|N1curl, order: n}`. The `solver` block takes
 `type` (`linear | nonlinear | time_marching | saddle_point`),
@@ -259,11 +261,9 @@ solved, or to start a hand-written Proteus model from it.
 ## Branching: one problem, several solution paths
 
 The schema exists to let one document hold *competing* approaches to the
-same problem, and to keep track of how they relate. Each discretization
-names the weak form it implements with `from_weak_form` (a label, or an
-integer index into `weak_forms`), and the `vvuq` block names the branches
-it compares. [`examples/kovasznay_flow.ymf`](../examples/kovasznay_flow.ymf)
-has this tree:
+same problem, and to keep track of how they relate.
+[`examples/kovasznay_flow.ymf`](../examples/kovasznay_flow.ymf) has this
+tree:
 
 ```text
 strong form: incompressible Navier-Stokes, primitive variables
@@ -271,6 +271,62 @@ strong form: incompressible Navier-Stokes, primitive variables
   weak form 'stabilized_equal_order' ── discretization 'equal_order_p1'  velocity CG1, pressure CG1
   analytical 'kovasznay_exact' ◄─────── vvuq.verification.reference
 ```
+
+### The edges
+
+Those relations are cross-references, and there are four of them:
+
+| from | names |
+|---|---|
+| `solution_paths.discretizations[].from_weak_form` | a `weak_forms[].label` |
+| `vvuq.verification.reference.analytical` | an `analytical[].name` |
+| `vvuq.verification.branches[]` | a `discretizations[].name` |
+| `vvuq.verification.expected_rates` keys | a `discretizations[].name` |
+
+Each is checked after composition. A reference that names nothing is an
+error, with the available names listed — before, it simply validated and
+was ignored, so a typo in a verification plan did nothing and said nothing.
+
+A weak form is named by its **label**. Integer indices into `weak_forms`
+used to be accepted too, and are not any more: `remove:` can delete a weak
+form, which would silently renumber every index after it and repoint
+discretizations at a form they do not implement.
+
+An analytical entry has no `from_weak_form`. It solves the strong form; the
+weak formulation belongs to theory and numerics. (Non-classical solutions
+constructed directly from the integral form of a conservation law are a
+real thing, but they are not what that key meant.)
+
+### What may be left unsaid
+
+Two of the edges are single-valued, and where the graph does not branch
+they may be omitted. A discretization in a document with one weak form can
+only implement that one; a verification plan in a document with one
+analytical solution can only compare against that one. So
+[`examples/poisson.ymf`](../examples/poisson.ymf) states neither, and
+[`examples/kovasznay_flow.ymf`](../examples/kovasznay_flow.ymf), which
+branches, states both.
+
+An omitted reference is filled in and **written into the composed
+document**, and recorded:
+
+```yaml
+composition:
+  defaults:
+    - path: solution_paths.discretizations[P1_backward_euler].from_weak_form
+      value: galerkin
+      because: the document has one weak form
+      defaulted_by: heat_equation.ymf
+```
+
+so the document that comes out holds no implicit bindings, and neither does
+an archive carrying it.
+
+Filling in happens as each file is composed, not once at the end. A model
+with one weak form is unambiguous when it is written; a problem extending
+it may add a second. Resolving against the finished document would make the
+model's omission retroactively ambiguous — punishing a file for what a
+later file did.
 
 Adding a branch adds entries; it never edits existing ones. That is what
 makes a document safe for several contributors, or an LLM and a person, to
@@ -546,8 +602,12 @@ is implemented separately; see [archive-format.md](archive-format.md).
 These are real limitations of the current schema and code, recorded here so
 nobody has to rediscover them:
 
-- **Branch references aren't resolved.** A `from_weak_form` or `branch_ref`
-  that names nothing still validates.
+- *(Closed.)* Branch references were not resolved: a `from_weak_form` or a
+  `branch_ref` that named nothing still validated. All four edges of the
+  reference graph are now checked, `branch_ref` has become
+  `reference.analytical`, integer indices into `weak_forms` are gone, and a
+  single-valued reference may be omitted where the graph does not branch.
+  See [Branching](#branching-one-problem-several-solution-paths).
 - *(Closed.)* `coefficients` was untyped, so every scalar arrived as a
   string, and a coefficient written as an expression
   (`λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"`, `Q: "π²"`) was dropped from

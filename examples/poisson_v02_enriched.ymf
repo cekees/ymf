@@ -65,7 +65,6 @@ solution_paths:
   discretizations:
     - name: "P1_linear"
       provenance: llm_derived
-      from_weak_form: "global"
       finite_element:
         fields: {family: CG, order: 1}
       mesh: {cells: [4, 8]}      # a study: one output per mesh

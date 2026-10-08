@@ -62,6 +62,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import strictyaml
 import yaml
 
+from ymf.references import apply_defaults, resolve
 from ymf.schema import _ALLOW_FLOW_STYLE, PARTIAL_YMF_SCHEMA, YMF_SCHEMA
 
 __all__ = ["YmfCompositionError", "load_composed"]
@@ -408,17 +409,22 @@ def _compose(path: Path, chain: Tuple[Path, ...]):
         provenance: Dict[str, List[str]] = {}
         _record_paths(own, "", path.name, provenance)
         removals = _apply_removals(own, drop, path.name) if drop else []
-        return (own, [path], [], removals, provenance, dict(outputs or {}),
-                data.get("composition"))
-    parent, sources, overrides, removals, provenance, inherited, record = _compose(
-        (path.parent / data["extends"]).resolve(), chain + (path,))
+        defaults = apply_defaults(own, path.name)
+        return (own, [path], [], removals, defaults, provenance,
+                dict(outputs or {}), data.get("composition"))
+    (parent, sources, overrides, removals, defaults, provenance, inherited,
+     record) = _compose((path.parent / data["extends"]).resolve(),
+                        chain + (path,))
     merged = _merge(parent, own, "", path.name, overrides, provenance)
     # after the merge, so a file can drop an inherited item and add its
     # replacement in the same step
     removals = removals + _apply_removals(merged, drop, path.name)
+    # and after the removals: a file that drops a weak form changes what is
+    # left to default to. "At that point" is this point, for this file.
+    defaults = defaults + apply_defaults(merged, path.name)
     inherited.update(outputs or {})          # a file's own outputs win
-    return (merged, sources + [path], overrides, removals, provenance,
-            inherited, record)
+    return (merged, sources + [path], overrides, removals, defaults,
+            provenance, inherited, record)
 
 
 def load_composed(path: str | Path) -> Dict[str, Any]:
@@ -441,10 +447,17 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
     if "extends" not in data and kind == "problem" and not archive:
         # A self-contained problem: validate the text itself, so errors
         # cite its own lines exactly as they appear in the file.
-        return strictyaml.dirty_load(
+        document = strictyaml.dirty_load(
             text, YMF_SCHEMA, label=str(path), allow_flow_style=_ALLOW_FLOW_STYLE,
         ).data
-    (merged, sources, overrides, removals, provenance, outputs,
+        filled = apply_defaults(document, path.name)
+        if filled:
+            # recorded even for one file, so the document still says how it
+            # came to hold a reference its author did not write
+            document["composition"] = {"defaults": filled}
+        resolve(document)
+        return document
+    (merged, sources, overrides, removals, defaults, provenance, outputs,
      record) = _compose(path, ())
     composition = None
     if len(sources) > 1:
@@ -454,17 +467,24 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
         # an untyped (Any) key.
         if overrides:
             composition["overrides"] = overrides
-        if removals:
-            composition["removals"] = removals
         if record:
             composition["inherited"] = record
     elif record:
         composition = record                  # an archive's own record, kept
+    # A single file can remove from itself and can have a reference filled
+    # in for it, so these are recorded whether or not anything was composed.
+    if removals or defaults:
+        composition = dict(composition or {})
+        if removals:
+            composition["removals"] = removals
+        if defaults:
+            composition["defaults"] = defaults
     if composition:
         merged["composition"] = composition
     if kind == "model":
         # Kept, so that whoever receives this knows it is not a problem yet.
         merged["kind"] = "model"
+        resolve(merged)
         return merged
     # The composed document has no file of its own, so it is written out as
     # YAML and validated as text, under a label naming the chain. (Not
@@ -488,4 +508,5 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
         data["composition"] = composition
     if outputs:
         data["outputs"] = outputs
+    resolve(data)
     return data

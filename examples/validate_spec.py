@@ -46,9 +46,16 @@ def describe(path: Path) -> bool:
         print("schema: valid -- %s" % (problem["name"],))
     composition = doc.get("composition")
     if composition:
-        print("composed from: %s" % " <- ".join(composition["sources"]))
+        # A single file can carry a composition block too, when a reference
+        # it omitted was filled in for it.
+        if composition.get("sources"):
+            print("composed from: %s" % " <- ".join(composition["sources"]))
         for o in composition.get("overrides", []):
             print("  override %s: %r -> %r (%s)" % (o["path"], o["was"], o["now"], o["set_by"]))
+        for r in composition.get("removals", []):
+            print("  remove %s: was %r (%s)" % (r["path"], r["was"], r["removed_by"]))
+        for d in composition.get("defaults", []):
+            print("  default %s = %r (%s)" % (d["path"], d["value"], d["because"]))
 
     strong = problem.get("strong_form", {})
     # An unknown without its own provenance inherits the strong form's.

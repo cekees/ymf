@@ -146,7 +146,7 @@ vvuq:
     method: "grid_convergence"
     reference:
       type: "analytical"
-      branch_ref: "poiseuille_exact"
+      analytical: "poiseuille_exact"
     expected_rates:  # a priori L2 rates on smooth solutions
       equal_order_p1: {error_L2_velocity: 2, error_L2_pressure: 1}
     expected: >-

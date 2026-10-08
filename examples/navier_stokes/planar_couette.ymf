@@ -98,7 +98,6 @@ solution_paths:
   discretizations:
     - name: "taylor_hood"
       provenance: human_specified
-      from_weak_form: "galerkin_periodic"
       finite_element:
         velocity: {family: CG, order: 2}
         pressure: {family: CG, order: 1}
@@ -114,7 +113,7 @@ vvuq:
     method: "exact_comparison"
     reference:
       type: "analytical"
-      branch_ref: "couette_exact"
+      analytical: "couette_exact"
     expected: >-
       The exact velocity is linear and the exact pressure constant, so both
       lie in the Taylor-Hood spaces. The discrete solution should equal the

@@ -88,11 +88,14 @@ SolverConfig = Map(
     }
 )
 
+# No from_weak_form here. An analytical solution solves the strong form;
+# the weak formulation is the business of theory and numerics. (Non-classical
+# solutions built directly from the integral form of a conservation law are a
+# real thing, but they are not what this key meant, and nothing used it.)
 AnalyticalEntry = Map(
     {
         "name": Str(),
         "provenance": ProvenanceEnum,
-        Optional("from_weak_form"): Any(),
         "method": Str(),
         "solution": Map(
             {
@@ -109,7 +112,12 @@ DiscretizationEntry = Map(
     {
         "name": Str(),
         "provenance": ProvenanceEnum,
-        Optional("from_weak_form"): Any(),
+        # A weak form's label. Integer indices into weak_forms used to be
+        # accepted too; they are not, because "remove:" can delete a weak
+        # form and silently renumber every index after it. May be omitted
+        # when the document has exactly one weak form -- ymf.references
+        # fills it in during composition.
+        Optional("from_weak_form"): Str(),
         Optional("finite_element"): FiniteElementDef,
         Optional("discretization"): Any(),
         "solver": SolverConfig,

@@ -76,7 +76,7 @@ def test_couette_composes_the_model_with_its_own_additions():
     # string lists are unioned in order
     assert doc["Problem"]["physical_model"]["assumptions"] == [
         "newtonian", "constant_density", "isothermal", "steady", "fully_developed"]
-    assert doc["composition"] == {
+    assert {k: v for k, v in doc["composition"].items() if k != "defaults"} == {
         "sources": ["navier_stokes_model.ymf", "planar_couette.ymf"]}
 
 
