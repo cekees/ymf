@@ -345,7 +345,7 @@ StrongFormDef = Map(
 # Problem (updated: + characteristic_scales, units, unit_systems, mesh_generation)
 # ---------------------------------------------------------------------------
 
-ProblemDef = Map(
+ModelDef = Map(
     {
         "name": Str(),
         Optional("physical_model"): PhysicalModelDef,
@@ -365,7 +365,7 @@ ProblemDef = Map(
 
 YMF_SCHEMA = Map(
     {
-        "problem": ProblemDef,
+        "model": ModelDef,
         "solution_paths": DiscretizationCategory,
         Optional("vvuq"): Map(
             {Optional("verification"): Any(), Optional("validation"): Any()}
@@ -377,7 +377,7 @@ YMF_SCHEMA = Map(
         # physics but is not yet a well-posed problem; "composition" is
         # written by the loader into a composed document.
         Optional("extends"): Str(),
-        Optional("kind"): Enum(["model", "problem"]),
+        Optional("kind"): Enum(["model", "model"]),
         Optional("composition"): Any(),
         # "remove" lists paths this file drops from what it extends --
         # "Problem.physical_model.assumptions[incompressible]". Composition

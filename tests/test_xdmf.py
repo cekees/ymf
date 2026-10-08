@@ -134,7 +134,7 @@ def test_no_information_element_when_ymf_extra_omitted(tmp_path):
 # ---------------------------------------------------------------------------
 
 SAMPLE_YMF_EXTRA = {
-    "problem": {
+    "model": {
         "name": "Poisson 3D (unit cube, tetrahedral mesh)",
         "strong_form": {
             "provenance": "llm_derived",
@@ -227,7 +227,7 @@ def test_full_notebook_example_round_trips(tmp_path):
     from ymf import validate_ymf
 
     poisson_problem_yaml = """
-problem:
+model:
   name: "Poisson 3D (unit cube, tetrahedral mesh)"
   physical_model:
     provenance: llm_derived
@@ -266,7 +266,7 @@ solution_paths:
 
     assert domain == canonicalize_domain(SAMPLE_DOMAIN)
     assert ymf_extra == problem_doc
-    assert ymf_extra["problem"]["name"] == "Poisson 3D (unit cube, tetrahedral mesh)"
+    assert ymf_extra["model"]["name"] == "Poisson 3D (unit cube, tetrahedral mesh)"
 
 
 # ==========================================================================

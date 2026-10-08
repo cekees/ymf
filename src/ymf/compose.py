@@ -372,7 +372,7 @@ def _is_archive_text(text: str) -> bool:
 #: "problem:" would not merge -- they would become siblings, and the result
 #: would be a document with two problems. An alias eases a rename; it is not
 #: a standing second spelling.
-_KEY_ALIASES = {"Problem": "problem", "Xdmf": "xdmf"}
+_KEY_ALIASES = {"Problem": "model", "problem": "model", "Xdmf": "xdmf"}
 
 
 def _read_text(path: Path) -> str:

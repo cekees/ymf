@@ -13,7 +13,7 @@
 # switched on. Reynolds number 40, from the characteristic scales below.
 # ============================================================
 
-problem:
+model:
   name: "Kovasznay flow, Re = 40"
   physical_model:
     provenance: llm_derived

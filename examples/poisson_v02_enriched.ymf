@@ -4,7 +4,7 @@
 # characteristic_scales, dimensional_check, boundary_conditions.
 # ============================================================
 
-problem:
+model:
   name: "Poisson heat conduction"
   physical_model:
     provenance: llm_derived

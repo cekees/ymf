@@ -24,7 +24,7 @@ strictyaml = pytest.importorskip("strictyaml")
 
 MODEL = """\
 kind: model
-problem:
+model:
   name: "flow"
   physical_model:
     provenance: llm_derived
@@ -73,58 +73,58 @@ def test_an_assumption_can_be_dropped(tmp_path):
     """Incompressible flow, solved as compressible."""
     doc = load_ymf(write(tmp_path, """\
 remove:
-  - "problem.physical_model.assumptions[incompressible]"
+  - "model.physical_model.assumptions[incompressible]"
 """))
-    assert doc["problem"]["physical_model"]["assumptions"] == ["viscous", "steady"]
+    assert doc["model"]["physical_model"]["assumptions"] == ["viscous", "steady"]
 
 
 def test_dropping_and_adding_in_one_step(tmp_path):
     """The merge unions the lists first, then the removal takes the one named."""
     doc = load_ymf(write(tmp_path, """\
 remove:
-  - "problem.physical_model.assumptions[incompressible]"
-problem:
+  - "model.physical_model.assumptions[incompressible]"
+model:
   physical_model:
     assumptions: [compressible]
 """))
-    assert doc["problem"]["physical_model"]["assumptions"] == [
+    assert doc["model"]["physical_model"]["assumptions"] == [
         "viscous", "steady", "compressible"]
 
 
 def test_an_unknown_field_can_be_dropped(tmp_path):
     doc = load_ymf(write(tmp_path, """\
 remove:
-  - "problem.strong_form.unknowns[p]"
+  - "model.strong_form.unknowns[p]"
 """))
-    assert doc["problem"]["strong_form"]["unknowns"] == ["v"]
+    assert doc["model"]["strong_form"]["unknowns"] == ["v"]
 
 
 def test_a_coefficient_can_be_dropped(tmp_path):
     """Euler: the same model without its viscosity."""
     doc = load_ymf(write(tmp_path, """\
 remove:
-  - "problem.strong_form.coefficients.μ"
+  - "model.strong_form.coefficients.μ"
 """))
-    assert set(doc["problem"]["strong_form"]["coefficients"]) == {"ρ"}
+    assert set(doc["model"]["strong_form"]["coefficients"]) == {"ρ"}
 
 
 def test_a_labelled_list_entry_can_be_dropped(tmp_path):
     doc = load_ymf(write(tmp_path, """\
 remove:
-  - "problem.weak_forms[stabilized]"
+  - "model.weak_forms[stabilized]"
 """))
-    assert [w["label"] for w in doc["problem"]["weak_forms"]] == ["galerkin"]
+    assert [w["label"] for w in doc["model"]["weak_forms"]] == ["galerkin"]
 
 
 def test_several_paths_in_one_file(tmp_path):
     doc = load_ymf(write(tmp_path, """\
 remove:
-  - "problem.physical_model.assumptions[viscous]"
-  - "problem.strong_form.coefficients.μ"
+  - "model.physical_model.assumptions[viscous]"
+  - "model.strong_form.coefficients.μ"
 """))
-    assert doc["problem"]["physical_model"]["assumptions"] == [
+    assert doc["model"]["physical_model"]["assumptions"] == [
         "incompressible", "steady"]
-    assert set(doc["problem"]["strong_form"]["coefficients"]) == {"ρ"}
+    assert set(doc["model"]["strong_form"]["coefficients"]) == {"ρ"}
 
 
 # --------------------------------------------------------------------------
@@ -135,10 +135,10 @@ remove:
 def test_a_removal_is_recorded_with_what_it_took_and_who_took_it(tmp_path):
     doc = load_ymf(write(tmp_path, """\
 remove:
-  - "problem.strong_form.coefficients.μ"
+  - "model.strong_form.coefficients.μ"
 """))
     assert doc["composition"]["removals"] == [{
-        "path": "problem.strong_form.coefficients.μ",
+        "path": "model.strong_form.coefficients.μ",
         "was": {"value": 1.0, "units": "Pa*s"},
         "removed_by": "variant.ymf",
     }]
@@ -148,8 +148,8 @@ def test_removals_sit_beside_overrides_not_inside_them(tmp_path):
     """A consumer reading overrides expects every entry to have a `now`."""
     doc = load_ymf(write(tmp_path, """\
 remove:
-  - "problem.strong_form.coefficients.μ"
-problem:
+  - "model.strong_form.coefficients.μ"
+model:
   strong_form:
     coefficients:
       ρ: {value: 2.0}
@@ -157,12 +157,12 @@ problem:
     composition = doc["composition"]
     assert all("now" in o for o in composition["overrides"])
     assert [r["path"] for r in composition["removals"]] == [
-        "problem.strong_form.coefficients.μ"]
+        "model.strong_form.coefficients.μ"]
 
 
 def test_a_document_that_removes_nothing_records_nothing(tmp_path):
     doc = load_ymf(write(tmp_path, """\
-problem:
+model:
   strong_form:
     coefficients:
       ρ: {value: 2.0}
@@ -176,11 +176,11 @@ problem:
 
 
 @pytest.mark.parametrize("path,fragment", [
-    ("problem.strong_form.coefficients.κ", "nothing to remove"),
-    ("problem.physical_model.assumptions[turbulent]", "no entry 'turbulent'"),
-    ("problem.weak_forms[petrov]", "no entry 'petrov'"),
-    ("problem.nonexistent.deeper", "nothing at"),
-    ("problem.strong_form.domain[x]", "is not a list"),
+    ("model.strong_form.coefficients.κ", "nothing to remove"),
+    ("model.physical_model.assumptions[turbulent]", "no entry 'turbulent'"),
+    ("model.weak_forms[petrov]", "no entry 'petrov'"),
+    ("model.nonexistent.deeper", "nothing at"),
+    ("model.strong_form.domain[x]", "is not a list"),
 ])
 def test_removing_what_is_not_there_is_an_error(tmp_path, path, fragment):
     """A stale path means the document moved under the file removing from it.
@@ -194,4 +194,4 @@ def test_removing_what_is_not_there_is_an_error(tmp_path, path, fragment):
 
 def test_a_malformed_path_is_refused(tmp_path):
     with pytest.raises(YmfRemovalError, match="unclosed"):
-        load_ymf(write(tmp_path, 'remove:\n  - "problem.weak_forms[galerkin"\n'))
+        load_ymf(write(tmp_path, 'remove:\n  - "model.weak_forms[galerkin"\n'))

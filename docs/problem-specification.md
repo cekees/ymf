@@ -43,7 +43,7 @@ The document is the reviewable artifact.
 ## Document structure
 
 ```yaml
-problem:                     # required
+model:                     # required
   name: ...                  # required
   physical_model: ...        # stage 0
   strong_form: ...           # stages 1-2
@@ -128,7 +128,7 @@ integrator in `heat_equation.ymf`; its `dt` may be a list too.
 capitalized.**
 
 ```yaml
-problem:
+model:
   strong_form:
     unknowns: ["u"]
     coefficients:
@@ -159,8 +159,8 @@ comes back from a round trip is the lower-case form.
 
 ### Why the rule, and not case-insensitivity
 
-Composition pairs keys by exact match. A model file writing `Problem:` and a
-variant writing `problem:` would not merge — they would become siblings, and
+Composition pairs keys by exact match. A model file writing `Model:` and a
+variant writing `model:` would not merge — they would become siblings, and
 the result would be a document with two problems, failing the schema
 somewhere unhelpful. The same exact-string assumption runs through the
 identity keys that pair list entries, `remove:` paths, the override log and
@@ -410,7 +410,7 @@ what it adds:
 
 ```yaml
 extends: navier_stokes_model.ymf   # relative to this file
-problem:
+model:
   name: "Planar Couette flow, Re = 10"
   physical_model:
     provenance: human_specified
@@ -446,11 +446,11 @@ also lists every source file:
 composition:
   sources: [navier_stokes_model.ymf, plane_poiseuille.ymf, plane_poiseuille_re100.ymf]
   overrides:
-    - path: problem.strong_form.coefficients.μ.value
+    - path: model.strong_form.coefficients.μ.value
       was: 1.0
       now: 0.01
       set_by: plane_poiseuille_re100.ymf
-    - path: problem.strong_form.coefficients.G.value
+    - path: model.strong_form.coefficients.G.value
       ...
 ```
 
@@ -461,8 +461,8 @@ and add its replacement in one step:
 ```yaml
 extends: navier_stokes_model.ymf
 remove:
-  - "problem.physical_model.assumptions[incompressible]"
-problem:
+  - "model.physical_model.assumptions[incompressible]"
+model:
   physical_model:
     assumptions: [compressible]
 ```
@@ -483,7 +483,7 @@ Removals are recorded beside the overrides, with what they took:
 ```yaml
 composition:
   removals:
-    - path: problem.strong_form.coefficients.μ
+    - path: model.strong_form.coefficients.μ
       was: {value: 1.0, units: Pa*s}
       removed_by: euler_variant.ymf
 ```
@@ -700,8 +700,8 @@ nobody has to rediscover them:
   them sets -- was reported against a line of the merged document, which
   exists nowhere on disk. The message now also names the path and the files
   that write it: *no file in the chain sets `equation_formulation` under
-  `problem.strong_form`; `problem.strong_form` is written by
-  `model.ymf`, `problem.ymf`*. Where one file added an incomplete entry,
+  `model.strong_form`; `model.strong_form` is written by
+  `model.ymf`, `model.ymf`*. Where one file added an incomplete entry,
   only that file is named. The path is the same shape `remove:` and the
   override log use, so it can be pasted between them.
 - *(Mostly closed.)* Duplicated values were caught by name only, so a

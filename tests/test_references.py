@@ -24,7 +24,7 @@ strictyaml = pytest.importorskip("strictyaml")
 def spec(weak_forms, discretizations, analytical="", vvuq="", extra=""):
     return """\
 kind: model
-problem:
+model:
   name: "p"
   strong_form:
     provenance: llm_derived
@@ -135,7 +135,7 @@ def test_a_file_unambiguous_when_written_stays_bound(tmp_path):
     variant = write(tmp_path, """\
 kind: model
 extends: model.ymf
-problem:
+model:
   weak_forms:%s
 solution_paths:
   discretizations:%s
@@ -153,7 +153,7 @@ def test_removing_the_weak_form_a_binding_points_at_is_caught(tmp_path):
 kind: model
 extends: model.ymf
 remove:
-  - "problem.weak_forms[only]"
+  - "model.weak_forms[only]"
 """, "variant.ymf")
     with pytest.raises(YmfReferenceError, match="not a weak form label"):
         load_ymf(variant)

@@ -49,7 +49,7 @@ class YmfReferenceError(ValueError):
 
 
 def _problem(doc: Dict[str, Any]) -> Dict[str, Any]:
-    return doc.get("problem") or {}
+    return doc.get("model") or {}
 
 
 def _paths(doc: Dict[str, Any]) -> Dict[str, Any]:

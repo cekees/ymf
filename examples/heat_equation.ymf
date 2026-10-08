@@ -10,7 +10,7 @@
 # writes, so the output carries the problem it came from.
 # ============================================================
 
-problem:
+model:
   name: "Transient heat conduction, unit square"
   physical_model:
     provenance: human_specified

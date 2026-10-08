@@ -203,7 +203,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     """
     from ymf.symbolic.notation import NotationError, Parser
 
-    problem = doc["problem"]
+    problem = doc["model"]
     strong = problem["strong_form"]
     dim = _domain_dimension(strong["domain"])
     if not strong.get("equations"):

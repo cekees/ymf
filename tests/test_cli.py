@@ -123,7 +123,7 @@ def test_the_extra_payload_survives_the_conversion(tmp_path):
     """
     from ymf.xdmf import read_xdmf
 
-    extra = {"problem": {"name": "poisson", "provenance": "proteus_derived"}}
+    extra = {"model": {"name": "poisson", "provenance": "proteus_derived"}}
     path = tmp_path / "run.ymf"
     write_ymf(make_domain(), path, extra=extra)
     _, recovered = read_xdmf(ymf2xmf(path))

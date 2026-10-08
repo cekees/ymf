@@ -76,7 +76,7 @@ def main(argv=None) -> int:
     base_dir = args.archive.parent
 
     domain, extra = read_ymf(args.archive)
-    problem = extra["problem"]
+    problem = extra["model"]
     kappa_spec = float(problem["strong_form"]["coefficients"]["κ"]["value"])
     t_wall = problem["strong_form"]["boundary_conditions"][0]["value"]
     print("problem: %s" % problem["name"])

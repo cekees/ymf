@@ -130,7 +130,7 @@ def input_slice(doc: Dict[str, Any], discretization: str,
     """The part of the input one output depends on (see the module docstring)."""
     paths = doc.get("solution_paths") or {}
     return plain({
-        "problem": doc["problem"],
+        "model": doc["model"],
         "analytical": paths.get("analytical") or [],
         "discretization": realize(_discretization(doc, discretization), realization),
         "realization": realization,

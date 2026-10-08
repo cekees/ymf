@@ -19,7 +19,7 @@
 
 extends: plane_poiseuille.ymf
 
-problem:
+model:
   name: "Plane Poiseuille flow, Re = 100"
   strong_form:
     coefficients:

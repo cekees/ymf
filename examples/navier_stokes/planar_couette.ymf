@@ -9,7 +9,7 @@
 
 extends: navier_stokes_model.ymf
 
-problem:
+model:
   name: "Planar Couette flow, Re = 10"
   physical_model:
     provenance: human_specified
