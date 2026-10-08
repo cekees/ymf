@@ -157,10 +157,10 @@ def _only_data_item(elem: Element, where: str, what: str) -> Element:
 
 def _data_item_attrs(data_item: Dict[str, Any]) -> Dict[str, str]:
     return {
-        "Format": data_item["Format"],
-        "DataType": data_item["DataType"],
-        "Precision": str(data_item["Precision"]),
-        "Dimensions": " ".join(str(d) for d in data_item["Dimensions"]),
+        "Format": data_item["format"],
+        "DataType": data_item["data_type"],
+        "Precision": str(data_item["precision"]),
+        "Dimensions": " ".join(str(d) for d in data_item["dimensions"]),
     }
 
 
@@ -185,16 +185,16 @@ def _add_data_item(parent: Element, data_item: Dict[str, Any]) -> Element:
     as the element's text -- a self-contained ``.xmf``.
     """
     elem = SubElement(parent, "DataItem", _data_item_attrs(data_item))
-    if "Values" in data_item:
-        elem.text = _format_values(data_item["Values"], data_item["Dimensions"])
-    elif "Include" in data_item:
+    if "values" in data_item:
+        elem.text = _format_values(data_item["values"], data_item["dimensions"])
+    elif "include" in data_item:
         SubElement(
             elem,
             "xi:include",
-            {"parse": "text", "href": str(data_item["Include"])},
+            {"parse": "text", "href": str(data_item["include"])},
         )
     else:
-        elem.text = str(data_item["Data"])
+        elem.text = str(data_item["data"])
     return elem
 
 
@@ -217,10 +217,10 @@ def _parse_data_item(elem: Element, where: str = "DataItem") -> Dict[str, Any]:
     precision = elem.attrib.get("Precision", "4")
     fmt = elem.attrib.get("Format", "XML")  # XDMF's default
     item: Dict[str, Any] = {
-        "Format": fmt,
-        "DataType": _attr(elem, _NUMBER_TYPE, where, "Float"),
-        "Precision": int(precision) if precision.isdigit() else precision,
-        "Dimensions": [int(d) for d in _attr(elem, ("Dimensions",), where).split()],
+        "format": fmt,
+        "data_type": _attr(elem, _NUMBER_TYPE, where, "Float"),
+        "precision": int(precision) if precision.isdigit() else precision,
+        "dimensions": [int(d) for d in _attr(elem, ("Dimensions",), where).split()],
     }
     # An xi:include child means the values live in a sidecar file. Match on
     # the local name so the lookup works whether the document used the
@@ -233,58 +233,58 @@ def _parse_data_item(elem: Element, where: str = "DataItem") -> Dict[str, Any]:
             include = child.attrib.get("href")
             break
     if include is not None:
-        item["Include"] = include
+        item["include"] = include
     elif fmt == "XML":
-        item["Values"] = _parse_values(elem.text or "", item, where)
+        item["values"] = _parse_values(elem.text or "", item, where)
     else:
-        item["Data"] = (elem.text or "").strip()
+        item["data"] = (elem.text or "").strip()
     return item
 
 
 def _add_grid_body(grid_elem: Element, grid: Dict[str, Any]) -> None:
     """Write a grid's Topology, Geometry and Attributes into ``grid_elem``."""
-    topo = grid["Topology"]
+    topo = grid["topology"]
     topo_attrs = {
-        "Type": topo["Type"],
-        "NumberOfElements": str(topo["NumberOfElements"]),
+        "Type": topo["type"],
+        "NumberOfElements": str(topo["number_of_elements"]),
     }
-    if "NodesPerElement" in topo:
-        topo_attrs["NodesPerElement"] = str(topo["NodesPerElement"])
-    _add_data_item(SubElement(grid_elem, "Topology", topo_attrs), topo["DataItem"])
+    if "nodes_per_element" in topo:
+        topo_attrs["NodesPerElement"] = str(topo["nodes_per_element"])
+    _add_data_item(SubElement(grid_elem, "Topology", topo_attrs), topo["data_item"])
 
-    geom = grid["Geometry"]
-    _add_data_item(SubElement(grid_elem, "Geometry", {"Type": geom["Type"]}), geom["DataItem"])
+    geom = grid["geometry"]
+    _add_data_item(SubElement(grid_elem, "Geometry", {"Type": geom["type"]}), geom["data_item"])
 
-    for attr in grid.get("Attributes", []):
+    for attr in grid.get("attributes", []):
         attr_elem = SubElement(
             grid_elem,
             "Attribute",
             {
-                "Name": attr["Name"],
-                "AttributeType": attr["AttributeType"],
-                "Center": attr["Center"],
+                "Name": attr["name"],
+                "AttributeType": attr["attribute_type"],
+                "Center": attr["center"],
             },
         )
-        _add_data_item(attr_elem, attr["DataItem"])
+        _add_data_item(attr_elem, attr["data_item"])
 
 
 def _parse_values(text: str, item: Dict[str, Any], where: str) -> List[Any]:
     """Inline DataItem text as a flat list of numbers, checked for count."""
-    integral = item["DataType"] in ("Int", "UInt", "Char", "UChar")
+    integral = item["data_type"] in ("Int", "UInt", "Char", "UChar")
     tokens = text.split()
     try:
         values = [int(t) if integral else float(t) for t in tokens]
     except ValueError as exc:
         raise YmfArchiveError(
             "%s: inline values are not all %s numbers (%s)"
-            % (where, item["DataType"], exc)) from exc
+            % (where, item["data_type"], exc)) from exc
     expected = 1
-    for d in item["Dimensions"]:
+    for d in item["dimensions"]:
         expected *= d
     if len(values) != expected:
         raise YmfArchiveError(
             "%s: Dimensions %s declare %d values, but %d are inline"
-            % (where, item["Dimensions"], expected, len(values)))
+            % (where, item["dimensions"], expected, len(values)))
     return values
 
 
@@ -310,22 +310,22 @@ def _parse_grid_body(grid_elem: Element, where: str = "Grid") -> Dict[str, Any]:
             raise YmfArchiveError(
                 "%s: element count %r is not a single number" % (at, count))
         topo: Dict[str, Any] = {
-            "Type": topo_type,
-            "NumberOfElements": int(count),
-            "DataItem": _parse_data_item(
+            "type": topo_type,
+            "number_of_elements": int(count),
+            "data_item": _parse_data_item(
                 _only_data_item(topology_elem, at, "Topology"), at + ".DataItem"),
         }
         if "NodesPerElement" in topology_elem.attrib:
-            topo["NodesPerElement"] = int(topology_elem.attrib["NodesPerElement"])
-        grid["Topology"] = topo
+            topo["nodes_per_element"] = int(topology_elem.attrib["NodesPerElement"])
+        grid["topology"] = topo
 
     geometry_elem = grid_elem.find("Geometry")
     if geometry_elem is not None:
         at = where + ".Geometry"
         _refuse_reference(geometry_elem, at)
-        grid["Geometry"] = {
-            "Type": _attr(geometry_elem, _GEOMETRY_TYPE, at, "XYZ"),
-            "DataItem": _parse_data_item(
+        grid["geometry"] = {
+            "type": _attr(geometry_elem, _GEOMETRY_TYPE, at, "XYZ"),
+            "data_item": _parse_data_item(
                 _only_data_item(geometry_elem, at, "Geometry"), at + ".DataItem"),
         }
 
@@ -339,13 +339,13 @@ def _parse_grid_body(grid_elem: Element, where: str = "Grid") -> Dict[str, Any]:
                 "finite-element function (dofmap plus values)"
                 % (at, attr_elem.attrib["ItemType"]))
         attributes.append({
-            "Name": _attr(attr_elem, ("Name",), at),
-            "AttributeType": attr_elem.attrib.get("AttributeType", "Scalar"),
-            "Center": attr_elem.attrib.get("Center", "Node"),
-            "DataItem": _parse_data_item(
+            "name": _attr(attr_elem, ("Name",), at),
+            "attribute_type": attr_elem.attrib.get("AttributeType", "Scalar"),
+            "center": attr_elem.attrib.get("Center", "Node"),
+            "data_item": _parse_data_item(
                 _only_data_item(attr_elem, at, "Attribute"), at + ".DataItem"),
         })
-    grid["Attributes"] = attributes
+    grid["attributes"] = attributes
 
     for unsupported in ("Set",):
         if grid_elem.find(unsupported) is not None:
@@ -370,7 +370,7 @@ def parse_grid_element(grid_elem: Element) -> Dict[str, Any]:
     """
     grid: Dict[str, Any] = {}
     if "Name" in grid_elem.attrib:
-        grid["Name"] = grid_elem.attrib["Name"]
+        grid["name"] = grid_elem.attrib["Name"]
     grid.update(_parse_grid_body(grid_elem, "Grid[%s]" % grid_elem.attrib.get("Name", "")))
     return grid
 
@@ -421,16 +421,16 @@ def build_xdmf_tree(
         ``docs/ymf-schema.md`` §5, e.g.::
 
             {
-                "TimeCollection": {
-                    "Name": "Mesh Spatial_Domain",
-                    "Data": [
+                "time_collection": {
+                    "name": "Mesh Spatial_Domain",
+                    "data": [
                         {
-                            "Time": 0.0,
-                            "Topology": {"Type": "Tetrahedron",
-                                         "NumberOfElements": 687737,
-                                         "DataItem": {...}},
-                            "Geometry": {"Type": "XYZ",
-                                         "DataItem": {...}},
+                            "time": 0.0,
+                            "topology": {"type": "Tetrahedron",
+                                         "number_of_elements": 687737,
+                                         "data_item": {...}},
+                            "geometry": {"type": "XYZ",
+                                         "data_item": {...}},
                         },
                         ...
                     ],
@@ -438,7 +438,7 @@ def build_xdmf_tree(
             }
     ymf_extra:
         Optional additional YMF content with no XDMF equivalent (e.g. the
-        ``Problem``/``solution_paths``/``vvuq`` sections of a full YMF
+        ``problem``/``solution_paths``/``vvuq`` sections of a full YMF
         document). If given, it's serialized to JSON, base64-encoded, and
         embedded as an ``<Information Name="YMF" Value="...">`` child of
         ``<Domain>`` so :func:`read_xdmf` can recover it later. See the
@@ -468,18 +468,18 @@ def build_xdmf_tree(
     # Canonicalize up front so this function reads one well-defined shape
     # rather than re-deriving defaults inline at every use.
     canonical = canonicalize_domain(domain)
-    for time_collection in canonical.get("TimeCollections", []):
+    for time_collection in canonical.get("time_collections", []):
         collection_elem = SubElement(
             domain_elem,
             "Grid",
             {
-                "Name": time_collection["Name"],
+                "Name": time_collection["name"],
                 "GridType": "Collection",
                 "CollectionType": "Temporal",
             },
         )
-        for i, step in enumerate(time_collection["Data"]):
-            if "SpatialCollection" in step:
+        for i, step in enumerate(time_collection["data"]):
+            if "spatial_collection" in step:
                 # One grid per subdomain. Time hangs off the spatial
                 # collection, not off each subdomain grid, so a viewer sees
                 # a single instant made of several pieces.
@@ -489,17 +489,17 @@ def build_xdmf_tree(
                     {"GridType": "Collection", "CollectionType": "Spatial"},
                 )
                 SubElement(
-                    spatial_elem, "Time", {"Value": str(step["Time"]), "Name": str(i)}
+                    spatial_elem, "Time", {"Value": str(step["time"]), "Name": str(i)}
                 )
-                for subdomain in step["SpatialCollection"]:
+                for subdomain in step["spatial_collection"]:
                     attrs = {"GridType": "Uniform"}
-                    if "Name" in subdomain:
-                        attrs["Name"] = subdomain["Name"]
+                    if "name" in subdomain:
+                        attrs["Name"] = subdomain["name"]
                     _add_grid_body(SubElement(spatial_elem, "Grid", attrs), subdomain)
             else:
                 grid_elem = SubElement(collection_elem, "Grid", {"GridType": "Uniform"})
                 SubElement(
-                    grid_elem, "Time", {"Value": str(step["Time"]), "Name": str(i)}
+                    grid_elem, "Time", {"Value": str(step["time"]), "Name": str(i)}
                 )
                 _add_grid_body(grid_elem, step)
 
@@ -541,7 +541,7 @@ def _parse_step(step_elem: Element, where: str) -> Dict[str, Any]:
     """One instant: a uniform grid, or a spatial collection of them."""
     kind = _grid_kind(step_elem)
     time = grid_element_time(step_elem, where)
-    step: Dict[str, Any] = {"Time": time if time is not None else 0.0}
+    step: Dict[str, Any] = {"time": time if time is not None else 0.0}
     if kind == "uniform":
         step.update(_parse_grid_body(step_elem, where))
     elif kind == "spatial":
@@ -556,12 +556,12 @@ def _parse_step(step_elem: Element, where: str) -> Dict[str, Any]:
             # produces, so a parsed document compares equal to a canonical one.
             sub: Dict[str, Any] = {}
             if "Name" in sub_elem.attrib:
-                sub["Name"] = sub_elem.attrib["Name"]
+                sub["name"] = sub_elem.attrib["Name"]
             sub.update(_parse_grid_body(sub_elem, at))
             subgrids.append(sub)
         if not subgrids:
             raise YmfArchiveError("%s: empty spatial collection" % (where,))
-        step["SpatialCollection"] = subgrids
+        step["spatial_collection"] = subgrids
     else:
         raise YmfArchiveError(
             "%s: a temporal collection inside a time step; a YMF step is one "
@@ -609,11 +609,11 @@ def parse_xdmf_domain(root: Element) -> Dict[str, Any]:
             steps = [_parse_step(collection_elem, where)]
             default_name = "Grid %d" % (ci,)
         collections.append({
-            "Name": name if name is not None else default_name,
-            "Data": steps,
+            "name": name if name is not None else default_name,
+            "data": steps,
         })
 
-    return {"TimeCollections": collections} if collections else {}
+    return {"time_collections": collections} if collections else {}
 
 
 def parse_xdmf_extra(root: Element) -> Optional[Any]:

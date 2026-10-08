@@ -90,22 +90,22 @@ def make_spatial_domain(n_ranks=3):
 
 def test_data_item_infers_hdf_format_from_data():
     item = data_item([10], "f.h5:/x")
-    assert item["Format"] == "HDF"
-    assert item["Data"] == "f.h5:/x"
-    assert "Include" not in item
+    assert item["format"] == "HDF"
+    assert item["data"] == "f.h5:/x"
+    assert "include" not in item
 
 
 def test_data_item_infers_xml_format_from_include():
     item = data_item([10], include="./data/x.txt")
-    assert item["Format"] == "XML"
-    assert item["Include"] == "./data/x.txt"
-    assert "Data" not in item
+    assert item["format"] == "XML"
+    assert item["include"] == "./data/x.txt"
+    assert "data" not in item
 
 
 def test_data_item_precision_defaults_to_xdmf_default_of_four():
     # XDMF's own documented default. Faithful to the format, and usually
     # *not* what a float64 array wants -- hence data_item_for().
-    assert data_item([10], "f.h5:/x")["Precision"] == 4
+    assert data_item([10], "f.h5:/x")["precision"] == 4
 
 
 @pytest.mark.parametrize(
@@ -123,12 +123,12 @@ def test_data_item_requires_exactly_one_of_data_or_include(kwargs):
 def test_topology_omits_nodes_per_element_when_not_given():
     # There is no correct value to invent for a Tetrahedron, so the key
     # stays absent rather than being defaulted to something wrong.
-    assert "NodesPerElement" not in topology("Tetrahedron", 5, data_item([5, 4], "f.h5:/e"))
+    assert "nodes_per_element" not in topology("Tetrahedron", 5, data_item([5, 4], "f.h5:/e"))
 
 
 def test_topology_keeps_nodes_per_element_when_given():
     topo = topology("Polyline", 5, data_item([10], "f.h5:/e"), nodes_per_element=2)
-    assert topo["NodesPerElement"] == 2
+    assert topo["nodes_per_element"] == 2
 
 
 # --------------------------------------------------------------------------
@@ -140,21 +140,21 @@ def test_data_item_for_infers_dimensions_datatype_and_precision():
     numpy = pytest.importorskip("numpy")
     arr = numpy.zeros((118084, 3), dtype="float64")
     item = data_item_for(arr, "out.h5:/nodes")
-    assert item["Dimensions"] == [118084, 3]
-    assert item["DataType"] == "Float"
-    assert item["Precision"] == 8  # read off the dtype, not defaulted to 4
+    assert item["dimensions"] == [118084, 3]
+    assert item["data_type"] == "Float"
+    assert item["precision"] == 8  # read off the dtype, not defaulted to 4
 
 
 def test_data_item_for_distinguishes_float32_from_float64():
     numpy = pytest.importorskip("numpy")
-    assert data_item_for(numpy.zeros(4, dtype="float32"), "f.h5:/x")["Precision"] == 4
-    assert data_item_for(numpy.zeros(4, dtype="float64"), "f.h5:/x")["Precision"] == 8
+    assert data_item_for(numpy.zeros(4, dtype="float32"), "f.h5:/x")["precision"] == 4
+    assert data_item_for(numpy.zeros(4, dtype="float64"), "f.h5:/x")["precision"] == 8
 
 
 def test_data_item_for_maps_integer_kinds():
     numpy = pytest.importorskip("numpy")
-    assert data_item_for(numpy.zeros(4, dtype="int32"), "f.h5:/x")["DataType"] == "Int"
-    assert data_item_for(numpy.zeros(4, dtype="uint8"), "f.h5:/x")["DataType"] == "UInt"
+    assert data_item_for(numpy.zeros(4, dtype="int32"), "f.h5:/x")["data_type"] == "Int"
+    assert data_item_for(numpy.zeros(4, dtype="uint8"), "f.h5:/x")["data_type"] == "UInt"
 
 
 def test_data_item_for_allows_deliberate_flattening():
@@ -162,7 +162,7 @@ def test_data_item_for_allows_deliberate_flattening():
     numpy = pytest.importorskip("numpy")
     arr = numpy.zeros((100, 4), dtype="int32")
     item = data_item_for(arr, "f.h5:/e", dimensions=[400])
-    assert item["Dimensions"] == [400]
+    assert item["dimensions"] == [400]
 
 
 def test_data_item_for_rejects_a_genuine_shape_mismatch():
@@ -192,8 +192,8 @@ def test_check_dimensions_accepts_a_flattened_declaration():
 
 
 def test_check_dimensions_rejects_a_mismatch_and_names_the_field():
-    with pytest.raises(YmfArchiveError, match=r"u\.DataItem\.Dimensions"):
-        check_dimensions(data_item([99], "f.h5:/x"), (100,), where="u.DataItem")
+    with pytest.raises(YmfArchiveError, match=r"u\.data_item\.dimensions"):
+        check_dimensions(data_item([99], "f.h5:/x"), (100,), where="u.data_item")
 
 
 # --------------------------------------------------------------------------
@@ -213,35 +213,35 @@ def test_canonicalize_is_idempotent_for_spatial_domains():
 
 def test_canonicalize_fills_every_documented_default():
     sparse = {
-        "TimeCollection": {
-            "Data": [
+        "time_collection": {
+            "data": [
                 {
-                    "Time": 0.0,
-                    "Topology": {
-                        "Type": "Triangle",
-                        "NumberOfElements": 2,
-                        "DataItem": {"Dimensions": [2, 3], "Data": "f.h5:/e"},
+                    "time": 0.0,
+                    "topology": {
+                        "type": "Triangle",
+                        "number_of_elements": 2,
+                        "data_item": {"dimensions": [2, 3], "data": "f.h5:/e"},
                     },
-                    "Geometry": {"DataItem": {"Dimensions": [4, 2], "Data": "f.h5:/n"}},
-                    "Attributes": [{"Name": "u", "DataItem": {"Dimensions": [4], "Data": "f.h5:/u"}}],
+                    "geometry": {"data_item": {"dimensions": [4, 2], "data": "f.h5:/n"}},
+                    "attributes": [{"name": "u", "data_item": {"dimensions": [4], "data": "f.h5:/u"}}],
                 }
             ]
         }
     }
     c = canonicalize_domain(sparse)
     # the singular input form normalizes into the canonical list form
-    assert list(c) == ["TimeCollections"]
-    assert len(c["TimeCollections"]) == 1
-    tc = c["TimeCollections"][0]
-    assert tc["Name"] == "TimeCollection"
-    step = tc["Data"][0]
-    assert step["Geometry"]["Type"] == "XYZ"
-    assert step["Topology"]["DataItem"]["Format"] == "HDF"
-    assert step["Topology"]["DataItem"]["DataType"] == "Float"
-    assert step["Topology"]["DataItem"]["Precision"] == 4
-    attr = step["Attributes"][0]
-    assert attr["AttributeType"] == "Scalar"
-    assert attr["Center"] == "Node"
+    assert list(c) == ["time_collections"]
+    assert len(c["time_collections"]) == 1
+    tc = c["time_collections"][0]
+    assert tc["name"] == "TimeCollection"
+    step = tc["data"][0]
+    assert step["geometry"]["type"] == "XYZ"
+    assert step["topology"]["data_item"]["format"] == "HDF"
+    assert step["topology"]["data_item"]["data_type"] == "Float"
+    assert step["topology"]["data_item"]["precision"] == 4
+    attr = step["attributes"][0]
+    assert attr["attribute_type"] == "Scalar"
+    assert attr["center"] == "Node"
 
 
 def test_canonicalize_supplies_an_empty_attributes_list():
@@ -251,7 +251,7 @@ def test_canonicalize_supplies_an_empty_attributes_list():
         topology("Triangle", 1, data_item([1, 3], "f.h5:/e")),
         geometry(data_item([3, 2], "f.h5:/n")),
     )
-    assert canonicalize_domain(domain)["TimeCollections"][0]["Data"][0]["Attributes"] == []
+    assert canonicalize_domain(domain)["time_collections"][0]["data"][0]["attributes"] == []
 
 
 def test_canonicalize_of_an_empty_domain_is_empty():
@@ -260,13 +260,13 @@ def test_canonicalize_of_an_empty_domain_is_empty():
 
 def test_step_cannot_be_both_uniform_and_spatial():
     domain = {
-        "TimeCollection": {
-            "Data": [
+        "time_collection": {
+            "data": [
                 {
-                    "Time": 0.0,
-                    "SpatialCollection": [],
-                    "Topology": {"Type": "Triangle", "NumberOfElements": 1,
-                                 "DataItem": {"Dimensions": [1], "Data": "f.h5:/e"}},
+                    "time": 0.0,
+                    "spatial_collection": [],
+                    "topology": {"type": "Triangle", "number_of_elements": 1,
+                                 "data_item": {"dimensions": [1], "data": "f.h5:/e"}},
                 }
             ]
         }
@@ -277,20 +277,20 @@ def test_step_cannot_be_both_uniform_and_spatial():
 
 def test_step_must_be_either_uniform_or_spatial():
     with pytest.raises(YmfArchiveError, match="neither"):
-        canonicalize_domain({"TimeCollection": {"Data": [{"Time": 0.0}]}})
+        canonicalize_domain({"time_collection": {"data": [{"time": 0.0}]}})
 
 
-@pytest.mark.parametrize("missing", ["Type", "NumberOfElements", "DataItem"])
+@pytest.mark.parametrize("missing", ["type", "number_of_elements", "data_item"])
 def test_canonicalize_reports_a_missing_topology_key_by_path(missing):
     topo = topology("Triangle", 1, data_item([1, 3], "f.h5:/e"))
     del topo[missing]
     domain = {
-        "TimeCollection": {
-            "Data": [{"Time": 0.0, "Topology": topo,
-                      "Geometry": geometry(data_item([3, 2], "f.h5:/n"))}]
+        "time_collection": {
+            "data": [{"time": 0.0, "topology": topo,
+                      "geometry": geometry(data_item([3, 2], "f.h5:/n"))}]
         }
     }
-    with pytest.raises(YmfArchiveError, match=rf"TimeCollections\[0\]\.Data\[0\]\.Topology.*{missing}"):
+    with pytest.raises(YmfArchiveError, match=rf"time_collections\[0\]\.data\[0\]\.topology.*{missing}"):
         canonicalize_domain(domain)
 
 
@@ -310,7 +310,7 @@ def test_validate_returns_the_canonicalized_document():
 
 def test_validate_rejects_an_unknown_topology_type():
     domain = make_uniform_domain()
-    domain["TimeCollections"][0]["Data"][0]["Topology"]["Type"] = "Dodecahedron"
+    domain["time_collections"][0]["data"][0]["topology"]["type"] = "Dodecahedron"
     with pytest.raises(YmfArchiveError, match="not a known XDMF topology type"):
         validate_domain(domain)
 
@@ -330,22 +330,22 @@ def test_validate_accepts_every_topology_type_proteus_emits():
 
 def test_validate_rejects_a_bad_centering():
     domain = make_uniform_domain()
-    domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["Center"] = "Vertex"
-    with pytest.raises(YmfArchiveError, match=r"Attributes\[0\]\.Center"):
+    domain["time_collections"][0]["data"][0]["attributes"][0]["center"] = "Vertex"
+    with pytest.raises(YmfArchiveError, match=r"attributes\[0\]\.center"):
         validate_domain(domain)
 
 
 def test_validate_rejects_a_bad_attribute_type():
     domain = make_uniform_domain()
-    domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["AttributeType"] = "Scalarr"
-    with pytest.raises(YmfArchiveError, match=r"Attributes\[0\]\.AttributeType"):
+    domain["time_collections"][0]["data"][0]["attributes"][0]["attribute_type"] = "Scalarr"
+    with pytest.raises(YmfArchiveError, match=r"attributes\[0\]\.attribute_type"):
         validate_domain(domain)
 
 
 def test_validate_rejects_a_bad_data_type():
     domain = make_uniform_domain()
-    domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["DataItem"]["DataType"] = "Double"
-    with pytest.raises(YmfArchiveError, match="DataType"):
+    domain["time_collections"][0]["data"][0]["attributes"][0]["data_item"]["data_type"] = "Double"
+    with pytest.raises(YmfArchiveError, match="data_type"):
         validate_domain(domain)
 
 
@@ -353,9 +353,9 @@ def test_validate_rejects_duplicate_attribute_names_within_one_grid():
     # Viewers key fields by name within a grid, so a duplicate silently
     # shadows rather than erroring at read time -- worth catching on write.
     domain = make_uniform_domain()
-    attrs = domain["TimeCollections"][0]["Data"][0]["Attributes"]
-    attrs[1]["Name"] = attrs[0]["Name"]
-    attrs[1]["Center"] = attrs[0]["Center"]
+    attrs = domain["time_collections"][0]["data"][0]["attributes"]
+    attrs[1]["name"] = attrs[0]["name"]
+    attrs[1]["center"] = attrs[0]["center"]
     with pytest.raises(YmfArchiveError, match="duplicate .*-centred attribute name"):
         validate_domain(domain)
 
@@ -364,9 +364,9 @@ def test_validate_allows_the_same_name_on_different_centerings():
     # Point data and cell data are separate namespaces in a viewer; an
     # exporter writing T both cell- and node-centred is legitimate.
     domain = make_uniform_domain()
-    attrs = domain["TimeCollections"][0]["Data"][0]["Attributes"]
-    attrs[1]["Name"] = attrs[0]["Name"]
-    attrs[0]["Center"], attrs[1]["Center"] = "Cell", "Node"
+    attrs = domain["time_collections"][0]["data"][0]["attributes"]
+    attrs[1]["name"] = attrs[0]["name"]
+    attrs[0]["center"], attrs[1]["center"] = "Cell", "Node"
     validate_domain(domain)
 
 
@@ -384,14 +384,14 @@ def test_validate_rejects_an_empty_spatial_collection():
 
 def test_validate_rejects_empty_dimensions():
     domain = make_uniform_domain()
-    domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["DataItem"]["Dimensions"] = []
+    domain["time_collections"][0]["data"][0]["attributes"][0]["data_item"]["dimensions"] = []
     with pytest.raises(YmfArchiveError, match="must not be empty"):
         validate_domain(domain)
 
 
 def test_validate_rejects_a_negative_dimension():
     domain = make_uniform_domain()
-    domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["DataItem"]["Dimensions"] = [-1]
+    domain["time_collections"][0]["data"][0]["attributes"][0]["data_item"]["dimensions"] = [-1]
     with pytest.raises(YmfArchiveError, match="non-negative"):
         validate_domain(domain)
 
@@ -434,7 +434,7 @@ def test_text_include_data_items_round_trip_through_yaml(tmp_path):
     write_ymf(domain, path)
     read_domain, _ = read_ymf(path)
     assert read_domain == canonicalize_domain(domain)
-    assert read_domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["DataItem"]["Include"] == "./d/u.txt"
+    assert read_domain["time_collections"][0]["data"][0]["attributes"][0]["data_item"]["include"] == "./d/u.txt"
 
 
 def test_extra_payload_round_trips_and_is_stored_readably(tmp_path):
@@ -483,17 +483,17 @@ def test_read_ymf_rejects_a_non_mapping_document(tmp_path):
 
 def test_write_ymf_validates_by_default(tmp_path):
     domain = make_uniform_domain()
-    domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["Center"] = "Nowhere"
-    with pytest.raises(YmfArchiveError, match="Center"):
+    domain["time_collections"][0]["data"][0]["attributes"][0]["center"] = "Nowhere"
+    with pytest.raises(YmfArchiveError, match="center"):
         write_ymf(domain, tmp_path / "archive.ymf")
 
 
 def test_write_ymf_can_skip_validation_deliberately(tmp_path):
     domain = make_uniform_domain()
-    domain["TimeCollections"][0]["Data"][0]["Attributes"][0]["Center"] = "Nowhere"
+    domain["time_collections"][0]["data"][0]["attributes"][0]["center"] = "Nowhere"
     path = tmp_path / "archive.ymf"
     write_ymf(domain, path, validate=False)
-    assert read_ymf(path)[0]["TimeCollections"][0]["Data"][0]["Attributes"][0]["Center"] == "Nowhere"
+    assert read_ymf(path)[0]["time_collections"][0]["data"][0]["attributes"][0]["center"] == "Nowhere"
 
 
 # --------------------------------------------------------------------------
@@ -502,7 +502,7 @@ def test_write_ymf_can_skip_validation_deliberately(tmp_path):
 
 
 def test_a_single_grid_fragment_round_trips_as_a_string():
-    g = make_spatial_domain()["TimeCollections"][0]["Data"][0]["SpatialCollection"][0]
+    g = make_spatial_domain()["time_collections"][0]["data"][0]["spatial_collection"][0]
     assert load_grid(dump_grid(g)) == g
 
 
@@ -511,13 +511,13 @@ def test_grid_fragments_reassemble_into_a_spatial_step():
     # to a string, the strings are collected, and the master reassembles.
     original = make_spatial_domain(n_ranks=4)
     fragments = [
-        dump_grid(g) for g in original["TimeCollections"][0]["Data"][0]["SpatialCollection"]
+        dump_grid(g) for g in original["time_collections"][0]["data"][0]["spatial_collection"]
     ]
-    rebuilt = new_domain(original["TimeCollections"][0]["Name"])
+    rebuilt = new_domain(original["time_collections"][0]["name"])
     add_spatial_step(rebuilt, 0.0, [load_grid(f) for f in fragments])
     assert (
-        canonicalize_domain(rebuilt)["TimeCollections"][0]["Data"][0]
-        == canonicalize_domain(original)["TimeCollections"][0]["Data"][0]
+        canonicalize_domain(rebuilt)["time_collections"][0]["data"][0]
+        == canonicalize_domain(original)["time_collections"][0]["data"][0]
     )
 
 
@@ -565,14 +565,14 @@ def _two_space_domain():
 
 def test_new_domain_starts_with_one_named_collection():
     domain = new_domain("Mesh Spatial_Domain")
-    assert [c["Name"] for c in domain["TimeCollections"]] == ["Mesh Spatial_Domain"]
+    assert [c["name"] for c in domain["time_collections"]] == ["Mesh Spatial_Domain"]
 
 
 def test_add_collection_appends_a_second_mesh():
     domain = _two_space_domain()
-    names = [c["Name"] for c in domain["TimeCollections"]]
+    names = [c["name"] for c in domain["time_collections"]]
     assert names == ["Mesh Spatial_Domain", "Mesh_c0p2_Lagrange"]
-    assert [len(c["Data"]) for c in domain["TimeCollections"]] == [2, 2]
+    assert [len(c["data"]) for c in domain["time_collections"]] == [2, 2]
 
 
 def test_add_collection_rejects_a_duplicate_name():
@@ -583,12 +583,12 @@ def test_add_collection_rejects_a_duplicate_name():
 
 def test_steps_can_target_a_collection_by_name_or_index():
     domain = _two_space_domain()
-    by_name = domain["TimeCollections"][1]["Data"]
-    assert all(step["Topology"]["Type"] == "Tri_6" for step in by_name)
+    by_name = domain["time_collections"][1]["data"]
+    assert all(step["topology"]["type"] == "Tri_6" for step in by_name)
     # index 0 is the default target
     assert all(
-        step["Topology"]["Type"] == "Triangle"
-        for step in domain["TimeCollections"][0]["Data"]
+        step["topology"]["type"] == "Triangle"
+        for step in domain["time_collections"][0]["data"]
     )
 
 
@@ -630,9 +630,9 @@ def test_the_same_attribute_name_may_appear_in_different_collections():
 
 def test_duplicate_collection_names_are_rejected_at_canonicalization():
     domain = {
-        "TimeCollections": [
-            {"Name": "Mesh", "Data": []},
-            {"Name": "Mesh", "Data": []},
+        "time_collections": [
+            {"name": "Mesh", "data": []},
+            {"name": "Mesh", "data": []},
         ]
     }
     with pytest.raises(YmfArchiveError, match="duplicate collection name"):
@@ -640,8 +640,8 @@ def test_duplicate_collection_names_are_rejected_at_canonicalization():
 
 
 def test_singular_time_collection_is_accepted_as_input_sugar():
-    singular = {"TimeCollection": {"Name": "Mesh", "Data": []}}
-    plural = {"TimeCollections": [{"Name": "Mesh", "Data": []}]}
+    singular = {"time_collection": {"name": "Mesh", "data": []}}
+    plural = {"time_collections": [{"name": "Mesh", "data": []}]}
     assert canonicalize_domain(singular) == canonicalize_domain(plural)
 
 
@@ -652,8 +652,8 @@ def test_singular_time_collection_is_accepted_as_input_sugar():
 
 def test_data_item_takes_values_inline_and_flattens_them_row_major():
     item = data_item([2, 3], values=[[0, 1, 3], [0, 3, 2]], data_type="Int")
-    assert item == {"Format": "XML", "DataType": "Int", "Precision": 4,
-                    "Dimensions": [2, 3], "Values": [0, 1, 3, 0, 3, 2]}
+    assert item == {"format": "XML", "data_type": "Int", "precision": 4,
+                    "dimensions": [2, 3], "values": [0, 1, 3, 0, 3, 2]}
 
 
 def test_data_item_needs_exactly_one_of_data_include_and_values():
@@ -664,9 +664,9 @@ def test_data_item_needs_exactly_one_of_data_include_and_values():
 def test_data_item_for_inline_copies_an_array_in():
     np = pytest.importorskip("numpy")
     item = data_item_for(np.arange(6, dtype=np.int32).reshape(2, 3), inline=True)
-    assert item["Values"] == [0, 1, 2, 3, 4, 5]
-    assert (item["Format"], item["DataType"], item["Precision"]) == ("XML", "Int", 4)
-    assert all(type(v) is int for v in item["Values"])
+    assert item["values"] == [0, 1, 2, 3, 4, 5]
+    assert (item["format"], item["data_type"], item["precision"]) == ("XML", "Int", 4)
+    assert all(type(v) is int for v in item["values"])
 
 
 def test_data_item_for_inline_takes_no_reference():
@@ -677,9 +677,9 @@ def test_data_item_for_inline_takes_no_reference():
 
 @pytest.mark.parametrize("values, data_type, message", [
     ([1, 2], "Float", r"declared \[3\] \(3 values\) but the array has shape \[2\]"),
-    ([1, 2, 2.5], "Int", r"Values\[2\]: 2.5 is not an integer"),
-    ([1, "2", 3], "Float", r"Values\[1\]: '2' is not a number"),
-    ([1, True, 3], "Int", r"Values\[1\]: True is not a number"),
+    ([1, 2, 2.5], "Int", r"values\[2\]: 2.5 is not an integer"),
+    ([1, "2", 3], "Float", r"values\[1\]: '2' is not a number"),
+    ([1, True, 3], "Int", r"values\[1\]: True is not a number"),
 ])
 def test_inline_values_are_checked(values, data_type, message):
     with pytest.raises(YmfArchiveError, match=message):
@@ -692,8 +692,8 @@ def test_validate_refuses_inline_values_under_another_format():
                      topology("Polyvertex", 1, data_item([1], values=[0], data_type="Int"),
                               nodes_per_element=1),
                      geometry(data_item([1, 3], values=[0.0, 0.0, 0.0])))
-    domain["TimeCollections"][0]["Data"][0]["Geometry"]["DataItem"]["Format"] = "HDF"
-    with pytest.raises(YmfArchiveError, match=r"Geometry\.DataItem: inline 'Values' need Format='XML'"):
+    domain["time_collections"][0]["data"][0]["geometry"]["data_item"]["format"] = "HDF"
+    with pytest.raises(YmfArchiveError, match=r"geometry\.data_item: inline 'values' need format='XML'"):
         validate_domain(domain)
 
 
@@ -707,7 +707,7 @@ def test_an_inline_archive_round_trips_and_writes_each_array_on_few_lines(tmp_pa
     path = tmp_path / "self_contained.ymf"
     write_ymf(domain, path)
     text = path.read_text()
-    assert "Values: [0, 1, 3, 0, 3, 2]" in text
+    assert "values: [0, 1, 3, 0, 3, 2]" in text
     read_back, _ = read_ymf(path)
     assert read_back == validate_domain(domain)
 
@@ -724,7 +724,7 @@ def test_dimensions_are_written_on_one_line(tmp_path):
                      geometry(data_item([9, 3], "m.h5:/n", precision=8)))
     write_ymf(domain, tmp_path / "a.ymf")
     text = (tmp_path / "a.ymf").read_text()
-    assert "Dimensions: [8, 3]" in text and "Dimensions: [9, 3]" in text
+    assert "dimensions: [8, 3]" in text and "dimensions: [9, 3]" in text
 
 
 def test_inline_domain_copies_hdf5_arrays_in_exactly(tmp_path):
@@ -741,7 +741,7 @@ def test_inline_domain_copies_hdf5_arrays_in_exactly(tmp_path):
                      [attribute("u", data_item_for(u, "m.h5:/u"))])
     referenced = domain_arrays(domain, tmp_path)
     inline = inline_domain(domain, tmp_path)
-    assert all("Values" in a["DataItem"] for a in inline["TimeCollections"][0]["Data"][0]["Attributes"])
+    assert all("values" in a["data_item"] for a in inline["time_collections"][0]["data"][0]["attributes"])
     copied = domain_arrays(inline)            # no base directory needed any more
     assert set(copied) == set(referenced)
     for key in referenced:

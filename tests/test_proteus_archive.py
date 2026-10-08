@@ -74,24 +74,24 @@ def test_fixtures_are_present():
 def test_fixtures_cover_every_observed_topology_type():
     found = set()
     for path in FIXTURES:
-        for collection in _parse(path)["TimeCollections"]:
-            for step in collection["Data"]:
-                found.add(step["Topology"]["Type"])
+        for collection in _parse(path)["time_collections"]:
+            for step in collection["data"]:
+                found.add(step["topology"]["type"])
     assert found == EXPECTED_TOPOLOGY_TYPES
 
 
 @pytest.mark.parametrize("path", FIXTURES, ids=lambda p: p.stem)
 def test_real_proteus_archive_parses_into_the_domain_model(path):
     domain = _parse(path)
-    collections = domain["TimeCollections"]
+    collections = domain["time_collections"]
     assert collections, "archive has no time collections"
     for tc in collections:
-        assert tc["Name"], "time collection has no name"
-        assert tc["Data"], "time collection has no timesteps"
-        for step in tc["Data"]:
-            assert "Time" in step
-            assert step["Topology"]["NumberOfElements"] > 0
-            assert step["Geometry"]["DataItem"]["Dimensions"]
+        assert tc["name"], "time collection has no name"
+        assert tc["data"], "time collection has no timesteps"
+        for step in tc["data"]:
+            assert "time" in step
+            assert step["topology"]["number_of_elements"] > 0
+            assert step["geometry"]["data_item"]["dimensions"]
 
 
 @pytest.mark.parametrize("path", FIXTURES, ids=lambda p: p.stem)
@@ -139,15 +139,15 @@ def test_reemitted_xmf_preserves_every_hdf5_dataset_reference(path, tmp_path):
 
     def references(domain):
         refs = []
-        for collection in domain["TimeCollections"]:
-            refs.append(collection["Name"])
-            for step in collection["Data"]:
-                grids = step.get("SpatialCollection", [step])
+        for collection in domain["time_collections"]:
+            refs.append(collection["name"])
+            for step in collection["data"]:
+                grids = step.get("spatial_collection", [step])
                 for g in grids:
-                    refs.append(g["Topology"]["DataItem"].get("Data"))
-                    refs.append(g["Geometry"]["DataItem"].get("Data"))
-                    for attr in g.get("Attributes", []):
-                        refs.append((attr["Name"], attr["DataItem"].get("Data")))
+                    refs.append(g["topology"]["data_item"].get("data"))
+                    refs.append(g["geometry"]["data_item"].get("data"))
+                    for attr in g.get("attributes", []):
+                        refs.append((attr["name"], attr["data_item"].get("data")))
         return refs
 
     original = _parse(path)
@@ -179,9 +179,9 @@ def test_reemitted_xmf_differs_from_proteus_only_in_explicit_defaults(path, tmp_
         added = set(reemitted) - set(original)
         assert added <= {"Precision"}, f"unexpected added attributes: {added}"
         assert not set(original) - set(reemitted), "attributes were dropped"
-        if "Precision" in added:
-            assert original.get("DataType") == "Int"
-            assert reemitted["Precision"] == "4"  # XDMF's default, made explicit
+        if "precision" in added:
+            assert original.get("data_type") == "Int"
+            assert reemitted["precision"] == "4"  # XDMF's default, made explicit
         for key in set(original) & set(reemitted):
             assert original[key] == reemitted[key], f"{key} changed"
 

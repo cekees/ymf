@@ -13,52 +13,52 @@ from ymf.xdmf import (
 )
 
 SAMPLE_DOMAIN = {
-    "TimeCollection": {
-        "Name": "Mesh Spatial_Domain",
-        "Data": [
+    "time_collection": {
+        "name": "Mesh Spatial_Domain",
+        "data": [
             {
-                "Time": 0.0,
-                "Topology": {
-                    "Type": "Tetrahedron",
-                    "NumberOfElements": 687737,
-                    "DataItem": {
-                        "Format": "HDF",
-                        "DataType": "Int",
-                        "Dimensions": [687737, 4],
-                        "Data": "poisson_3.h5:/elementsSpatial_Domain0",
+                "time": 0.0,
+                "topology": {
+                    "type": "Tetrahedron",
+                    "number_of_elements": 687737,
+                    "data_item": {
+                        "format": "HDF",
+                        "data_type": "Int",
+                        "dimensions": [687737, 4],
+                        "data": "poisson_3.h5:/elementsSpatial_Domain0",
                     },
                 },
-                "Geometry": {
-                    "Type": "XYZ",
-                    "DataItem": {
-                        "Format": "HDF",
-                        "DataType": "Float",
-                        "Precision": 8,
-                        "Dimensions": [118084, 3],
-                        "Data": "poisson_3.h5:/nodesSpatial_Domain0",
+                "geometry": {
+                    "type": "XYZ",
+                    "data_item": {
+                        "format": "HDF",
+                        "data_type": "Float",
+                        "precision": 8,
+                        "dimensions": [118084, 3],
+                        "data": "poisson_3.h5:/nodesSpatial_Domain0",
                     },
                 },
             },
             {
-                "Time": 1.0,
-                "Topology": {
-                    "Type": "Tetrahedron",
-                    "NumberOfElements": 687737,
-                    "DataItem": {
-                        "Format": "HDF",
-                        "DataType": "Int",
-                        "Dimensions": [687737, 4],
-                        "Data": "poisson_3.h5:/elementsSpatial_Domain1",
+                "time": 1.0,
+                "topology": {
+                    "type": "Tetrahedron",
+                    "number_of_elements": 687737,
+                    "data_item": {
+                        "format": "HDF",
+                        "data_type": "Int",
+                        "dimensions": [687737, 4],
+                        "data": "poisson_3.h5:/elementsSpatial_Domain1",
                     },
                 },
-                "Geometry": {
-                    "Type": "XYZ",
-                    "DataItem": {
-                        "Format": "HDF",
-                        "DataType": "Float",
-                        "Precision": 8,
-                        "Dimensions": [118084, 3],
-                        "Data": "poisson_3.h5:/nodesSpatial_Domain1",
+                "geometry": {
+                    "type": "XYZ",
+                    "data_item": {
+                        "format": "HDF",
+                        "data_type": "Float",
+                        "precision": 8,
+                        "dimensions": [118084, 3],
+                        "data": "poisson_3.h5:/nodesSpatial_Domain1",
                     },
                 },
             },
@@ -108,8 +108,8 @@ def test_canonicalize_domain_is_idempotent():
 def test_canonicalize_domain_fills_precision_default():
     # SAMPLE_DOMAIN's Topology DataItem has no explicit Precision.
     canonical = canonicalize_domain(SAMPLE_DOMAIN)
-    topo_data_item = canonical["TimeCollections"][0]["Data"][0]["Topology"]["DataItem"]
-    assert topo_data_item["Precision"] == 4  # XDMF default for Int
+    topo_data_item = canonical["time_collections"][0]["data"][0]["topology"]["data_item"]
+    assert topo_data_item["precision"] == 4  # XDMF default for Int
 
 
 def test_round_trip_equal_domain_only():
@@ -396,8 +396,8 @@ def test_absent_nodes_per_element_stays_absent():
     )
     root = build_xdmf_tree(domain).getroot()
     topo_elem = root.find("Domain").find("Grid").find("Grid").find("Topology")
-    assert "NodesPerElement" not in topo_elem.attrib
-    assert "NodesPerElement" not in parse_xdmf_domain(root)["TimeCollections"][0]["Data"][0]["Topology"]
+    assert "nodes_per_element" not in topo_elem.attrib
+    assert "nodes_per_element" not in parse_xdmf_domain(root)["time_collections"][0]["data"][0]["topology"]
 
 
 def _text_include_domain():
@@ -515,30 +515,30 @@ def test_a_bare_uniform_grid_reads_as_a_one_step_collection(tmp_path):
     path.write_text(XDMF3_UNIFORM)
     domain, extra = read_xdmf(path)
     assert extra is None
-    (collection,) = domain["TimeCollections"]
-    assert collection["Name"] == "plate"
-    (step,) = collection["Data"]
-    assert step["Time"] == 0.0
+    (collection,) = domain["time_collections"]
+    assert collection["name"] == "plate"
+    (step,) = collection["data"]
+    assert step["time"] == 0.0
     # XDMF 3 names, read
-    assert step["Topology"]["Type"] == "Triangle"
-    assert step["Geometry"]["Type"] == "XY"
-    assert step["Topology"]["DataItem"]["DataType"] == "Int"
+    assert step["topology"]["type"] == "Triangle"
+    assert step["geometry"]["type"] == "XY"
+    assert step["topology"]["data_item"]["data_type"] == "Int"
     # XDMF defaults: Scalar, Float
-    assert step["Attributes"][0]["AttributeType"] == "Scalar"
-    assert step["Attributes"][0]["DataItem"]["DataType"] == "Float"
+    assert step["attributes"][0]["attribute_type"] == "Scalar"
+    assert step["attributes"][0]["data_item"]["data_type"] == "Float"
     validate_domain(domain)
 
 
 def test_a_bare_uniform_grid_keeps_its_time():
     domain = _read(_uniform('<Time Value="2.5"/>' + TRIANGLE + XYZ))
-    assert domain["TimeCollections"][0]["Data"][0]["Time"] == 2.5
+    assert domain["time_collections"][0]["data"][0]["time"] == 2.5
 
 
 def test_unnamed_top_level_grids_are_numbered_so_names_stay_unique():
     text = "<Xdmf><Domain>%s%s</Domain></Xdmf>" % (
         "<Grid>" + TRIANGLE + XYZ + "</Grid>", "<Grid>" + TRIANGLE + XYZ + "</Grid>")
     domain = _read(text)
-    assert [c["Name"] for c in domain["TimeCollections"]] == ["Grid 0", "Grid 1"]
+    assert [c["name"] for c in domain["time_collections"]] == ["Grid 0", "Grid 1"]
     validate_domain(domain)
 
 
@@ -546,36 +546,37 @@ def test_a_top_level_spatial_collection_reads_as_one_spatial_step():
     sub = '<Grid Name="r%d">' + TRIANGLE + XYZ + '</Grid>'
     domain = _read(_uniform('<Time Value="1.0"/>' + sub % 0 + sub % 1,
                             'Name="parts" GridType="Collection" CollectionType="Spatial"'))
-    (step,) = domain["TimeCollections"][0]["Data"]
-    assert step["Time"] == 1.0
-    assert [g["Name"] for g in step["SpatialCollection"]] == ["r0", "r1"]
+    (step,) = domain["time_collections"][0]["data"]
+    assert step["time"] == 1.0
+    assert [g["name"] for g in step["spatial_collection"]] == ["r0", "r1"]
 
 
 def test_a_collection_without_collection_type_is_spatial_as_xdmf_defaults():
     domain = _read(_uniform("<Grid>" + TRIANGLE + XYZ + "</Grid>", 'GridType="Collection"'))
-    assert "SpatialCollection" in domain["TimeCollections"][0]["Data"][0]
+    assert "spatial_collection" in domain["time_collections"][0]["data"][0]
 
 
 def test_inline_values_with_no_format_are_read_as_xdmf_defaults_them():
     # No Format: XDMF's default is XML, i.e. the text is the values.
     body = ('<Topology Type="Triangle" NumberOfElements="1">'
             '<DataItem Dimensions="1 3" NumberType="Int">0 1 2</DataItem></Topology>' + XYZ)
-    item = _read(_uniform(body))["TimeCollections"][0]["Data"][0]["Topology"]["DataItem"]
-    assert item == {"Format": "XML", "DataType": "Int", "Precision": 4,
-                    "Dimensions": [1, 3], "Values": [0, 1, 2]}
+    item = _read(_uniform(body))["time_collections"][0]["data"][0]["topology"]["data_item"]
+    assert item == {"format": "XML", "data_type": "Int", "precision": 4,
+                    "dimensions": [1, 3], "values": [0, 1, 2]}
 
 
 def test_explicit_inline_xml_values_are_read_as_floats():
     body = TRIANGLE + ('<Geometry Type="XYZ"><DataItem Format="XML" Dimensions="3 3">'
                        '0 0 0\n1 0 0\n0 1 0.5</DataItem></Geometry>')
-    item = _read(_uniform(body))["TimeCollections"][0]["Data"][0]["Geometry"]["DataItem"]
-    assert item["Values"] == [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5]
-    assert all(isinstance(v, float) for v in item["Values"])
+    item = _read(_uniform(body))["time_collections"][0]["data"][0]["geometry"]["data_item"]
+    assert item["values"] == [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.5]
+    assert all(isinstance(v, float) for v in item["values"])
 
 
 def test_inline_values_must_match_their_dimensions():
     body = ('<Topology Type="Triangle" NumberOfElements="1">'
             '<DataItem Dimensions="1 3" DataType="Int">0 1</DataItem></Topology>' + XYZ)
+    # an XDMF document is being parsed, so the error uses XDMF's names
     with pytest.raises(YmfArchiveError, match=r"Topology\.DataItem: Dimensions \[1, 3\] declare 3 values, but 2 are inline"):
         _read(_uniform(body))
 
@@ -651,9 +652,9 @@ def test_dimensions_in_place_of_number_of_elements_is_the_element_count():
     body = ('<Topology TopologyType="Hexahedron" Dimensions="27">'
             '<DataItem Dimensions="27 8" NumberType="Int" Precision="8" Format="HDF">'
             'hex.h5:/Data0</DataItem></Topology>' + XYZ)
-    topo = _read(_uniform(body))["TimeCollections"][0]["Data"][0]["Topology"]
-    assert topo["Type"] == "Hexahedron"
-    assert topo["NumberOfElements"] == 27
+    topo = _read(_uniform(body))["time_collections"][0]["data"][0]["topology"]
+    assert topo["type"] == "Hexahedron"
+    assert topo["number_of_elements"] == 27
 
 
 def test_a_file_that_is_not_xml_is_refused_by_name(tmp_path):
