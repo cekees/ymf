@@ -98,6 +98,7 @@ def test_a_parameter_variant_records_exactly_what_it_overrides():
 
 
 def test_the_composed_variant_resolves_its_reynolds_number():
+    pytest.importorskip("pint")   # resolving it is ymf.units' job
     from ymf.units import compute_dimensionless_numbers
 
     for name, re in [("planar_couette", 10.0), ("plane_poiseuille", 1.0),

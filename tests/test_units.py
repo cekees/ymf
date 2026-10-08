@@ -1,6 +1,11 @@
 import math
 import pytest
 
+# The YMF core deliberately depends on pyyaml alone, so a solver writing
+# archives need not carry the validation stack. This whole module is about
+# ymf.units, which is the pint-backed half of that stack.
+pytest.importorskip("pint")
+
 from ymf.units import (
     UnitCheckResult,
     UnitParseError,

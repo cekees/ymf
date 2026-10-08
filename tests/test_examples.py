@@ -7,6 +7,9 @@ from pathlib import Path
 
 import pytest
 
+# the example scripts walk the unit checks, so they need the units extra
+pytest.importorskip("pint")
+
 from ymf.schema import load_ymf
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
