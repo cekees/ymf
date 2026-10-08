@@ -242,12 +242,13 @@ DomainDef = Str() | Map(
         Optional("facets"): Any(),
         Optional("volumes"): Any(),
         Optional("holes"): Seq(Seq(Float())),
+        # A region carries its own flag; vertex/segment/facet flags stay
+        # parallel arrays, which is what they are and what Proteus holds.
         Optional("regions"): Seq(Map({"point": Seq(Float()),
                                       Optional("flag"): Int()})),
         Optional("vertex_flags"): Seq(Int()),
         Optional("segment_flags"): Seq(Int()),
         Optional("facet_flags"): Seq(Int()),
-        Optional("region_flags"): Seq(Int()),
         # kind: discrete -- already a mesh, in the archive's vocabulary
         Optional("topology"): Any(),
         Optional("geometry"): Any(),

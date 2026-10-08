@@ -59,8 +59,7 @@ DOMAIN_KINDS: Dict[str, Dict[str, Set[str]]] = {
         # segments bound a 2-D region (PSLG); facets and volumes a 3-D one
         # (PLC). holes and regions mark what to leave out and what to tag.
         "optional": {"segments", "facets", "volumes", "holes", "regions",
-                     "vertex_flags", "segment_flags", "facet_flags",
-                     "region_flags"},
+                     "vertex_flags", "segment_flags", "facet_flags"},
     },
     "discrete": {
         "required": {"topology", "geometry"},
