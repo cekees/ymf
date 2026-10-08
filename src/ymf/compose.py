@@ -362,6 +362,29 @@ def _is_archive_text(text: str) -> bool:
     return re.search(r"^(ymf|outputs):", text, re.M) is not None
 
 
+#: Spellings accepted on input and folded to the canonical one as the file is
+#: read. Keys are lower_case_with_underscores (see "Naming" in
+#: docs/problem-specification.md); these two were capitalized before that rule
+#: was written down.
+#:
+#: Folding happens before anything is merged, deliberately. Composition pairs
+#: keys by exact match, so a model writing "Problem:" and a variant writing
+#: "problem:" would not merge -- they would become siblings, and the result
+#: would be a document with two problems. An alias eases a rename; it is not
+#: a standing second spelling.
+_KEY_ALIASES = {"Problem": "problem", "Xdmf": "xdmf"}
+
+
+def _read_text(path: Path) -> str:
+    """The file's text, with deprecated top-level spellings folded."""
+    text = path.read_text(encoding="utf-8")
+    for old, new in _KEY_ALIASES.items():
+        # top level only: a nested key is indented, and a path inside a
+        # string value ("Problem.strong_form...") never starts a line
+        text = re.sub(r"^%s:" % old, "%s:" % new, text, flags=re.M)
+    return text
+
+
 def _read(path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     """Validate one file against the partial schema; return (data, outputs).
 
@@ -370,7 +393,7 @@ def _read(path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     its outputs hold arrays, far too much for strictyaml -- and only its
     specification part is validated. Its outputs come back separately.
     """
-    text = path.read_text(encoding="utf-8")
+    text = _read_text(path)
     if not _is_archive_text(text):
         return strictyaml.dirty_load(text, PARTIAL_YMF_SCHEMA, label=str(path),
                                      allow_flow_style=_ALLOW_FLOW_STYLE).data, None
@@ -440,7 +463,7 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
     path = Path(path).resolve()
     if not path.is_file():
         raise YmfCompositionError("no such file: %s" % (path,))
-    text = path.read_text(encoding="utf-8")
+    text = _read_text(path)
     archive = _is_archive_text(text)
     data, _ = _read(path)
     kind = data.get("kind", "problem")

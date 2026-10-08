@@ -70,7 +70,7 @@ def test_a_key_ignores_other_discretizations_but_not_the_problem(tmp_path):
     key = closure.output_key(spec, "P1_linear", r)
     spec["solution_paths"]["discretizations"][1]["solver"]["tolerance"] = 1e-6
     assert closure.output_key(spec, "P1_linear", r) == key
-    spec["Problem"]["name"] = "renamed"                # prose counts too
+    spec["problem"]["name"] = "renamed"                # prose counts too
     assert closure.output_key(spec, "P1_linear", r) != key
 
 
@@ -80,7 +80,7 @@ def test_an_archive_round_trips_and_its_embedded_spec_gives_the_same_keys(tmp_pa
     archive = tmp_path / "poisson.archive.ymf"
     closure.write(archive, spec, outputs)
     document = read_document(archive)
-    assert list(document)[:2] == ["ymf", "Problem"] and list(document)[-1] == "outputs"
+    assert list(document)[:2] == ["ymf", "problem"] and list(document)[-1] == "outputs"
     again, kept, dropped = closure.load(archive)
     assert set(kept) == set(outputs) and dropped == {}
     assert [k for k, _, _ in closure.planned_outputs(again)] == list(outputs)
@@ -140,7 +140,7 @@ def test_ymf2xmf_writes_one_xmf_per_output(tmp_path):
     assert written == sorted("poisson_%s.xmf" % k.rsplit("/", 1)[1] for k in outputs)
     _, extra = read_xdmf(tmp_path / written[0])
     assert extra["output"] in outputs and "approximation" not in extra
-    assert extra["Problem"]["name"] == spec["Problem"]["name"]
+    assert extra["problem"]["name"] == spec["problem"]["name"]
 
 
 def test_inherited_outputs_still_point_at_their_files(tmp_path):

@@ -365,13 +365,13 @@ ProblemDef = Map(
 
 YMF_SCHEMA = Map(
     {
-        "Problem": ProblemDef,
+        "problem": ProblemDef,
         "solution_paths": DiscretizationCategory,
         Optional("vvuq"): Map(
             {Optional("verification"): Any(), Optional("validation"): Any()}
         ),
         Optional("archive"): Any(),
-        Optional("Xdmf"): Any(),
+        Optional("xdmf"): Any(),
         # File-level keys, see ymf.compose. "extends" names the document
         # this one builds on; "kind: model" marks a file that states the
         # physics but is not yet a well-posed problem; "composition" is
@@ -441,6 +441,11 @@ def validate_ymf(text: str) -> AnyType:
     Does not follow ``extends``, which needs a file to resolve paths
     against; use :func:`load_ymf` for that.
     """
+    from ymf.compose import _KEY_ALIASES
+
+    import re as _re
+    for was, now in _KEY_ALIASES.items():
+        text = _re.sub(r"^%s:" % was, "%s:" % now, text, flags=_re.M)
     parsed = strictyaml.dirty_load(
         text, YMF_SCHEMA, allow_flow_style=_ALLOW_FLOW_STYLE
     )

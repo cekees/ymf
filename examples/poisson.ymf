@@ -9,7 +9,7 @@
 # solution. Bare-string unknowns ([u]) are the v0.1 form, still valid.
 # ============================================================
 
-Problem:
+problem:
   name: "Poisson unit square"
   physical_model:
     provenance: llm_derived

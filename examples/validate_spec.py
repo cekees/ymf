@@ -39,7 +39,7 @@ def describe(path: Path) -> bool:
     except (strictyaml.YAMLValidationError, YmfCompositionError) as exc:
         print("schema: INVALID\n%s" % (exc,))
         return False
-    problem = doc["Problem"]
+    problem = doc["problem"]
     if doc.get("kind") == "model":
         print("schema: valid model (not yet a problem: no domain, conditions or values)")
     else:
@@ -106,7 +106,7 @@ def show_a_unit_error() -> None:
     print("a deliberate mistake: the wall temperature given in metres")
     print("=" * 72)
     doc = copy.deepcopy(load_ymf(EXAMPLES / "heat_equation.ymf"))
-    doc["Problem"]["strong_form"]["boundary_conditions"][0]["units"] = "m"
+    doc["problem"]["strong_form"]["boundary_conditions"][0]["units"] = "m"
     result = check_units(doc)
     print("unit check: %s" % ("ok" if result else "FAILED"))
     for issue in result:

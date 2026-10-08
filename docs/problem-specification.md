@@ -43,7 +43,7 @@ The document is the reviewable artifact.
 ## Document structure
 
 ```yaml
-Problem:                     # required
+problem:                     # required
   name: ...                  # required
   physical_model: ...        # stage 0
   strong_form: ...           # stages 1-2
@@ -121,6 +121,54 @@ domain's box, and levels of uniform refinement (the solution is on the
 finest). Either may be a list, a study with one output per combination.
 `discretization` is a free-form block for anything else, such as the time
 integrator in `heat_equation.ymf`; its `dt` may be a list too.
+
+## Naming
+
+**Keys are `lower_case_with_underscores`. Values that name a type are
+capitalized.**
+
+```yaml
+problem:
+  strong_form:
+    unknowns: ["u"]
+    coefficients:
+      κ: {value: 1.0e-3, units: m2/s}
+solution_paths:
+  discretizations:
+    - name: "p1"
+      finite_element:
+        fields: {family: CG, order: 1}     # CG is a type, not a key
+```
+
+So `strong_form`, `boundary_regions`, `characteristic_scales`, `data_item`,
+`number_of_elements` — and `CG`, `DG`, `RT`, `SI`, `Triangle`,
+`Tetrahedron`, `Scalar`, `Node`, `Float`, `XYZ`, which name kinds of thing
+rather than being keys. A value that is not naming a type is the author's
+to spell as they like: a branch called `taylor_hood` and one called
+`TaylorHood` are both fine, and neither means anything to the schema.
+
+This holds for the archive as well as the specification. The archive's
+vocabulary came from XDMF, which capitalizes everything — elements
+(`Topology`, `DataItem`) and their attributes (`NumberOfElements`,
+`Precision`) alike — and YMF followed by analogy, including for keys XDMF
+does not have at all (`TimeCollections`, `SpatialCollection`, `Attributes`
+as a list). Translation to XDMF is a mapping either way, so the archive
+uses the same rule as everything else and
+[`ymf2xmf`](../src/ymf/cli.py) supplies the capitalization XDMF wants. What
+comes back from a round trip is the lower-case form.
+
+### Why the rule, and not case-insensitivity
+
+Composition pairs keys by exact match. A model file writing `Problem:` and a
+variant writing `problem:` would not merge — they would become siblings, and
+the result would be a document with two problems, failing the schema
+somewhere unhelpful. The same exact-string assumption runs through the
+identity keys that pair list entries, `remove:` paths, the override log and
+the reference graph.
+
+So where a spelling has to be accepted for compatibility it is folded to the
+canonical one as the file is read, before anything is merged. Aliases ease a
+rename; they are not a standing second spelling.
 
 ## Writing it once: the notation
 
@@ -362,7 +410,7 @@ what it adds:
 
 ```yaml
 extends: navier_stokes_model.ymf   # relative to this file
-Problem:
+problem:
   name: "Planar Couette flow, Re = 10"
   physical_model:
     provenance: human_specified
@@ -398,11 +446,11 @@ also lists every source file:
 composition:
   sources: [navier_stokes_model.ymf, plane_poiseuille.ymf, plane_poiseuille_re100.ymf]
   overrides:
-    - path: Problem.strong_form.coefficients.μ.value
+    - path: problem.strong_form.coefficients.μ.value
       was: 1.0
       now: 0.01
       set_by: plane_poiseuille_re100.ymf
-    - path: Problem.strong_form.coefficients.G.value
+    - path: problem.strong_form.coefficients.G.value
       ...
 ```
 
@@ -413,8 +461,8 @@ and add its replacement in one step:
 ```yaml
 extends: navier_stokes_model.ymf
 remove:
-  - "Problem.physical_model.assumptions[incompressible]"
-Problem:
+  - "problem.physical_model.assumptions[incompressible]"
+problem:
   physical_model:
     assumptions: [compressible]
 ```
@@ -435,7 +483,7 @@ Removals are recorded beside the overrides, with what they took:
 ```yaml
 composition:
   removals:
-    - path: Problem.strong_form.coefficients.μ
+    - path: problem.strong_form.coefficients.μ
       was: {value: 1.0, units: Pa*s}
       removed_by: euler_variant.ymf
 ```
@@ -652,7 +700,7 @@ nobody has to rediscover them:
   them sets -- was reported against a line of the merged document, which
   exists nowhere on disk. The message now also names the path and the files
   that write it: *no file in the chain sets `equation_formulation` under
-  `Problem.strong_form`; `Problem.strong_form` is written by
+  `problem.strong_form`; `problem.strong_form` is written by
   `model.ymf`, `problem.ymf`*. Where one file added an incomplete entry,
   only that file is named. The path is the same shape `remove:` and the
   override log use, so it can be pasted between them.

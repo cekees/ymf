@@ -14,7 +14,7 @@
 
 extends: navier_stokes_model.ymf
 
-Problem:
+problem:
   name: "Plane Poiseuille flow, Re = 1"
   physical_model:
     provenance: human_specified

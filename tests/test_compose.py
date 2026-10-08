@@ -12,7 +12,7 @@ NAVIER_STOKES = Path(__file__).parent.parent / "examples" / "navier_stokes"
 
 MODEL = """
 kind: model
-Problem:
+problem:
   physical_model:
     provenance: human_specified
     assumptions: [newtonian]
@@ -29,7 +29,7 @@ Problem:
 
 PROBLEM = """
 extends: model.ymf
-Problem:
+problem:
   name: "problem"
   physical_model:
     provenance: human_specified
@@ -59,14 +59,14 @@ def write(tmp_path, **files):
 def test_the_model_loads_as_a_partial_document():
     doc = load_ymf(NAVIER_STOKES / "navier_stokes_model.ymf")
     assert doc["kind"] == "model"
-    assert "name" not in doc["Problem"]
+    assert "name" not in doc["problem"]
     assert "solution_paths" not in doc
     assert "composition" not in doc
 
 
 def test_couette_composes_the_model_with_its_own_additions():
     doc = load_ymf(NAVIER_STOKES / "planar_couette.ymf")
-    strong = doc["Problem"]["strong_form"]
+    strong = doc["problem"]["strong_form"]
     # from the model
     assert strong["equations"][0].startswith("ρ ∂v/∂t")
     assert [u["name"] for u in strong["unknowns"]] == ["v", "p"]
@@ -74,7 +74,7 @@ def test_couette_composes_the_model_with_its_own_additions():
     # a number, not the string '0.1': coefficients are typed in the schema
     assert strong["coefficients"]["μ"] == {"units": "Pa*s", "value": 0.1}
     # string lists are unioned in order
-    assert doc["Problem"]["physical_model"]["assumptions"] == [
+    assert doc["problem"]["physical_model"]["assumptions"] == [
         "newtonian", "constant_density", "isothermal", "steady", "fully_developed"]
     assert {k: v for k, v in doc["composition"].items() if k != "defaults"} == {
         "sources": ["navier_stokes_model.ymf", "planar_couette.ymf"]}
@@ -88,12 +88,12 @@ def test_a_parameter_variant_records_exactly_what_it_overrides():
     # The parent derives its scales from μ and G, so those two and the
     # name are all the variant has to change.
     assert set(by_path) == {
-        "Problem.name",
-        "Problem.strong_form.coefficients.μ.value",
-        "Problem.strong_form.coefficients.G.value",
+        "problem.name",
+        "problem.strong_form.coefficients.μ.value",
+        "problem.strong_form.coefficients.G.value",
     }
-    assert by_path["Problem.strong_form.coefficients.μ.value"] == {
-        "path": "Problem.strong_form.coefficients.μ.value",
+    assert by_path["problem.strong_form.coefficients.μ.value"] == {
+        "path": "problem.strong_form.coefficients.μ.value",
         "was": 1.0, "now": 0.01, "set_by": "plane_poiseuille_re100.ymf"}
 
 
@@ -104,7 +104,7 @@ def test_the_composed_variant_resolves_its_reynolds_number():
     for name, re in [("planar_couette", 10.0), ("plane_poiseuille", 1.0),
                      ("plane_poiseuille_re100", 100.0)]:
         doc = load_ymf(NAVIER_STOKES / (name + ".ymf"))
-        assert compute_dimensionless_numbers(doc["Problem"])["Re"] == pytest.approx(re)
+        assert compute_dimensionless_numbers(doc["problem"])["Re"] == pytest.approx(re)
 
 
 # --- merge rules -----------------------------------------------------------
@@ -119,7 +119,7 @@ def test_list_entries_merge_by_name_and_new_ones_append(tmp_path):
         units: Pa
     coefficients:"""))
     doc = load_ymf(tmp_path / "problem.ymf")
-    assert doc["Problem"]["strong_form"]["unknowns"] == [
+    assert doc["problem"]["strong_form"]["unknowns"] == [
         {"name": "u", "units": "m/s", "std_name": "x__velocity"},
         {"name": "p", "units": "Pa"},
     ]
@@ -134,7 +134,7 @@ def test_changing_a_list_entry_field_is_an_override_named_by_identity(tmp_path):
     coefficients:"""))
     doc = load_ymf(tmp_path / "problem.ymf")
     assert doc["composition"]["overrides"] == [{
-        "path": "Problem.strong_form.unknowns[u].units",
+        "path": "problem.strong_form.unknowns[u].units",
         "was": "m/s", "now": "km/h", "set_by": "problem.ymf"}]
 
 
@@ -148,13 +148,13 @@ def test_a_model_may_extend_a_model(tmp_path):
     write(tmp_path, model=MODEL, refined="""
 kind: model
 extends: model.ymf
-Problem:
+problem:
   physical_model:
     provenance: human_specified
     assumptions: [isothermal]
 """)
     doc = load_ymf(tmp_path / "refined.ymf")
-    assert doc["Problem"]["physical_model"]["assumptions"] == ["newtonian", "isothermal"]
+    assert doc["problem"]["physical_model"]["assumptions"] == ["newtonian", "isothermal"]
     assert doc["kind"] == "model"
     assert doc["composition"]["sources"] == ["model.ymf", "refined.ymf"]
 
@@ -207,13 +207,13 @@ def test_a_typed_override_keeps_its_type(tmp_path):
         "  strong_form:", "  characteristic_scales:\n    length: {value: 1.0}\n  strong_form:"),
         variant="""
 extends: problem.ymf
-Problem:
+problem:
   characteristic_scales:
     length: {value: 2.5}
 """)
     doc = load_ymf(tmp_path / "variant.ymf")
     assert doc["composition"]["overrides"] == [{
-        "path": "Problem.characteristic_scales.length.value",
+        "path": "problem.characteristic_scales.length.value",
         "was": 1.0, "now": 2.5, "set_by": "variant.ymf"}]
 
 
@@ -231,7 +231,7 @@ Problem:
 
 BASE = """\
 kind: model
-Problem:
+problem:
   name: "flow"
   strong_form:
     provenance: llm_derived
@@ -251,7 +251,7 @@ def test_a_missing_required_key_names_the_files_that_write_its_mapping(tmp_path)
           model=BASE.replace('    equation_formulation: "f"\n', ""),
           problem="""
 extends: model.ymf
-Problem:
+problem:
   strong_form:
     coefficients:
       ρ: {value: 1.0}
@@ -259,9 +259,9 @@ Problem:
     with pytest.raises(strictyaml.YAMLValidationError) as caught:
         load_ymf(tmp_path / "problem.ymf")
     note = str(caught.value)
-    assert "no file in the chain sets equation_formulation under Problem.strong_form" in note
+    assert "no file in the chain sets equation_formulation under problem.strong_form" in note
     # both files write that mapping, named in chain order
-    assert "Problem.strong_form is written by model.ymf, problem.ymf" in note
+    assert "problem.strong_form is written by model.ymf, problem.ymf" in note
 
 
 def test_an_incomplete_new_entry_names_the_file_that_added_it(tmp_path):
@@ -304,7 +304,7 @@ def test_a_file_that_is_wrong_on_its_own_still_cites_itself(tmp_path):
     """
     write(tmp_path, model=BASE, problem="""
 extends: model.ymf
-Problem:
+problem:
   strong_form:
     provenance: not_a_provenance
 """)

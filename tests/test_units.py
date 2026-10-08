@@ -63,7 +63,7 @@ def test_units_compatible():
 
 def _base_doc(**overrides):
     doc = {
-        "Problem": {
+        "problem": {
             "name": "test",
             "strong_form": {
                 "unknowns": [
@@ -81,13 +81,13 @@ def _base_doc(**overrides):
         },
         "solution_paths": {"analytical": [], "discretizations": []},
     }
-    doc["Problem"]["strong_form"].update(overrides)
+    doc["problem"]["strong_form"].update(overrides)
     return doc
 
 
 def test_check_no_units_at_all_is_ok():
     doc = {
-        "Problem": {"name": "bare", "strong_form": {"unknowns": ["u", "p"]}},
+        "problem": {"name": "bare", "strong_form": {"unknowns": ["u", "p"]}},
         "solution_paths": {"analytical": [], "discretizations": []},
     }
     result = check(doc)
@@ -212,7 +212,7 @@ def test_compute_dimensionless_numbers_uses_validated_coefficients(coefficients_
     from ymf import validate_ymf
 
     doc = validate_ymf(_heat_doc_with_numbers(coefficients_yaml))
-    numbers = compute_dimensionless_numbers(doc["Problem"])
+    numbers = compute_dimensionless_numbers(doc["problem"])
     assert numbers["Peclet"] == pytest.approx(0.5 * 1.0 / 1.0e-3)
     # the time scale is derived, 1/(2π²κ), so κ·time/L² is 1/(2π²) exactly
     assert numbers["Fourier"] == pytest.approx(1.0 / (2.0 * math.pi ** 2))
@@ -245,7 +245,7 @@ def test_units_and_the_solver_agree_on_a_coefficient():
     from ymf.units import _coefficient_values
 
     pytest.importorskip("sympy")
-    problem = load_ymf("examples/kovasznay_flow.ymf")["Problem"]
+    problem = load_ymf("examples/kovasznay_flow.ymf")["problem"]
     by_units = _coefficient_values(problem)
     by_solver = coefficient_numbers(problem["strong_form"]["coefficients"])
     assert by_units == by_solver
@@ -260,7 +260,7 @@ def test_units_and_the_solver_agree_on_a_coefficient():
 
 def test_non_dimensionalize_produces_substitutions_for_velocity_and_pressure():
     doc = {
-        "Problem": {
+        "problem": {
             "name": "ns",
             "characteristic_scales": {
                 "length": {"value": 1.0, "units": "m"},
@@ -288,7 +288,7 @@ def test_non_dimensionalize_produces_substitutions_for_velocity_and_pressure():
 
 
 def test_non_dimensionalize_no_units_produces_empty_substitutions():
-    doc = {"Problem": {"name": "bare", "strong_form": {"unknowns": ["u", "p"]}}}
+    doc = {"problem": {"name": "bare", "strong_form": {"unknowns": ["u", "p"]}}}
     result = non_dimensionalize(doc)
     assert result["substitutions"] == {}
 
@@ -297,7 +297,7 @@ def test_non_dimensionalize_no_units_produces_empty_substitutions():
 
 
 def _flow(scales, coefficients):
-    return {"Problem": {
+    return {"problem": {
         "characteristic_scales": scales,
         "dimensionless_numbers": {"Re": {"formula": "rho * U * L / mu"}},
         "strong_form": {"unknowns": [], "coefficients": coefficients},
@@ -313,10 +313,10 @@ def test_a_scale_can_be_derived_from_coefficients():
                  "density": {"derived": True, "formula": "rho"},
                  "viscosity": {"derived": True, "formula": "mu"}},
                 {"rho": {"value": "1.0"}, "mu": {"value": "0.01"}, "G": {"value": "0.08"}})
-    scales = characteristic_scale_values(doc["Problem"])
+    scales = characteristic_scale_values(doc["problem"])
     assert scales["viscosity"] == 0.01
     assert scales["velocity"] == pytest.approx(1.0)
-    assert compute_dimensionless_numbers(doc["Problem"])["Re"] == pytest.approx(100.0)
+    assert compute_dimensionless_numbers(doc["problem"])["Re"] == pytest.approx(100.0)
 
 
 def test_a_derived_scale_raises_no_duplication_issue():
@@ -357,7 +357,7 @@ def test_a_scale_restating_a_coefficient_with_the_same_value_is_a_warning():
 
 
 def _problem(coefficients, scales):
-    return {"Problem": {
+    return {"problem": {
         "name": "p",
         "strong_form": {
             "provenance": "llm_derived", "equation_formulation": "f",

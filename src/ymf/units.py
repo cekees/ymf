@@ -177,7 +177,7 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
     are no ``error``-severity issues (warnings don't affect truthiness).
     """
     result = UnitCheckResult()
-    problem = doc.get("Problem") or {}
+    problem = doc.get("problem") or {}
     strong_form = problem.get("strong_form") or {}
     unknown_units = _collect_unknown_units(strong_form)
 
@@ -526,7 +526,7 @@ def non_dimensionalize(doc: Dict[str, Any]) -> Dict[str, Any]:
     PDE parser and is explicitly deferred (v0.2 delta doc §7: "automatic
     non-dimensionalization pipeline").
     """
-    problem = doc.get("Problem") or {}
+    problem = doc.get("problem") or {}
     scales = characteristic_scale_values(problem)
     numbers = compute_dimensionless_numbers(problem)
 

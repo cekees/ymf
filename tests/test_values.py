@@ -22,7 +22,7 @@ strictyaml = pytest.importorskip("strictyaml")
 
 SPEC = """\
 kind: model
-Problem:
+problem:
   name: "values"
   strong_form:
     provenance: human_edited
@@ -54,7 +54,7 @@ def spec(tmp_path):
 
 
 def coefficients(doc):
-    return doc["Problem"]["strong_form"]["coefficients"]
+    return doc["problem"]["strong_form"]["coefficients"]
 
 
 # --------------------------------------------------------------------------
@@ -120,7 +120,7 @@ def test_both_readers_agree_on_the_same_spec(spec):
     """
     from ymf.archive import _load
 
-    by_pyyaml = _load(SPEC)["Problem"]["strong_form"]["coefficients"]
+    by_pyyaml = _load(SPEC)["problem"]["strong_form"]["coefficients"]
     by_strictyaml = coefficients(load_ymf(spec))
     for name in ("plain", "sci", "short_sci"):
         assert by_pyyaml[name] == by_strictyaml[name]
@@ -149,7 +149,7 @@ def test_pyyamls_own_loaders_are_left_alone():
 
 
 def test_a_scale_outside_the_fixed_six_is_accepted(spec):
-    scales = load_ymf(spec)["Problem"]["characteristic_scales"]
+    scales = load_ymf(spec)["problem"]["characteristic_scales"]
     assert scales["diffusivity"] == {"value": 1.0e-3, "units": "m2/s"}
 
 
@@ -160,6 +160,6 @@ def test_an_extra_scale_resolves_under_its_own_name(tmp_path):
 
     path = tmp_path / "scales.ymf"
     path.write_text(SPEC, encoding="utf-8")
-    values = characteristic_scale_values(load_ymf(path)["Problem"])
+    values = characteristic_scale_values(load_ymf(path)["problem"])
     assert values["diffusivity"] == 1.0e-3
     assert values["length"] == 1.0

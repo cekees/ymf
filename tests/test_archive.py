@@ -438,7 +438,7 @@ def test_text_include_data_items_round_trip_through_yaml(tmp_path):
 
 
 def test_extra_payload_round_trips_and_is_stored_readably(tmp_path):
-    extra = {"Problem": {"name": "poisson", "provenance": "proteus_derived"}}
+    extra = {"problem": {"name": "poisson", "provenance": "proteus_derived"}}
     path = tmp_path / "archive.ymf"
     write_ymf(make_uniform_domain(), path, extra=extra)
     _, read_extra = read_ymf(path)
