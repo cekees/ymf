@@ -25,12 +25,15 @@ The short form stays: ``domain: "Ω = [0, 1] × [0, 1]"`` is the notation a
 spec is written in, and means ``kind: box``. ymf.symbolic parses it.
 
 **What a domain is not.** It is not how to mesh that region, and it is not
-the state of the object that happens to hold it. Proteus's Domain classes
-carry both -- MeshOptions, he, use_gmsh alongside shape_list,
-auxiliaryVariables, use_plex -- and neither belongs here: meshing policy
-has a home already in ``discretizations[].mesh``, and runtime state is not
-data. What is represented here is the region and how its boundary is
-named, which is what the rest of a spec needs to refer to.
+the state of the object that happens to hold it. Neither belongs here:
+meshing policy has a home already in ``discretizations[].mesh``, and
+runtime state is not data. What is represented here is the region and how
+its boundary is named, which is what the rest of a spec needs to refer to.
+
+Proteus used to carry both on its Domain classes -- MeshOptions, he,
+use_gmsh alongside shape_list and auxiliaryVariables. The meshing half now
+lives on ``MeshTools.getMeshOptions(domain)``, so a Proteus domain and a
+YMF domain divide the same way.
 """
 
 from __future__ import annotations
