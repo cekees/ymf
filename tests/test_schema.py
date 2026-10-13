@@ -10,25 +10,25 @@ EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 
 def test_load_v01_compatible_example():
     doc = load_ymf(EXAMPLES_DIR / "poisson.ymf")
-    assert doc["Problem"]["name"] == "Poisson unit square"
+    assert doc["model"]["name"] == "Poisson unit square"
     # v0.1-style bare string unknowns must still validate
-    assert doc["Problem"]["strong_form"]["unknowns"] == ["u"]
+    assert doc["model"]["strong_form"]["unknowns"] == ["u"]
 
 
 def test_load_v02_enriched_example():
     doc = load_ymf(EXAMPLES_DIR / "poisson_v02_enriched.ymf")
-    unknowns = doc["Problem"]["strong_form"]["unknowns"]
+    unknowns = doc["model"]["strong_form"]["unknowns"]
     assert unknowns[0]["name"] == "T"
     assert unknowns[0]["units"] == "K"
     assert unknowns[0]["std_name"] == "land_surface_temperature"
-    bc = doc["Problem"]["strong_form"]["boundary_conditions"][0]
+    bc = doc["model"]["strong_form"]["boundary_conditions"][0]
     assert bc["type"] == "dirichlet"
     assert doc["solution_paths"]["discretizations"][0]["bmi_interface"] is True
 
 
 def test_rejects_unknown_bc_type():
     bad_yaml = """
-Problem:
+model:
   name: "bad"
   strong_form:
     provenance: llm_derived
@@ -38,7 +38,7 @@ Problem:
     domain: "x"
     boundary_regions:
       - name: "a"
-        geometry: "b"
+        where: "b"
     boundary_conditions:
       - region: "a"
         variable: "u"
@@ -54,7 +54,7 @@ solution_paths:
 
 
 MINIMAL_STRONG_FORM = """
-Problem:
+model:
   name: "p"
   strong_form:
 {provenance}    unknowns:
@@ -64,7 +64,7 @@ Problem:
     domain: "x"
     boundary_regions:
       - name: "a"
-        geometry: "b"
+        where: "b"
 solution_paths:
   analytical: []
   discretizations: []
@@ -80,7 +80,7 @@ def test_minimal_strong_form_validates():
     from ymf.schema import validate_ymf
 
     doc = validate_ymf(_strong_form())
-    assert doc["Problem"]["strong_form"]["provenance"] == "llm_derived"
+    assert doc["model"]["strong_form"]["provenance"] == "llm_derived"
 
 
 def test_strong_form_requires_provenance():
@@ -102,7 +102,7 @@ def test_an_unknown_may_override_the_strong_form_provenance():
     from ymf.schema import validate_ymf
 
     doc = validate_ymf(_strong_form(per_unknown="        provenance: human_edited\n"))
-    assert doc["Problem"]["strong_form"]["unknowns"][0]["provenance"] == "human_edited"
+    assert doc["model"]["strong_form"]["unknowns"][0]["provenance"] == "human_edited"
 
 
 def test_an_unknowns_provenance_must_be_a_known_value():

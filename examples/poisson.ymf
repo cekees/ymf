@@ -9,7 +9,7 @@
 # solution. Bare-string unknowns ([u]) are the v0.1 form, still valid.
 # ============================================================
 
-Problem:
+model:
   name: "Poisson unit square"
   physical_model:
     provenance: llm_derived
@@ -25,7 +25,7 @@ Problem:
     domain: "Ω = [0, 1] × [0, 1]"
     boundary_regions:
       - name: "all_boundaries"
-        geometry: "∂Ω"
+        where: "∂Ω"
     boundary_conditions:
       - region: "all_boundaries"
         variable: u
@@ -70,7 +70,6 @@ solution_paths:
   discretizations:
     - name: "P1_linear"
       provenance: llm_derived
-      from_weak_form: "global"
       finite_element:
         fields: {family: CG, order: 1}
       mesh: {cells: [4, 8, 16]}      # a study: one output per mesh
@@ -81,7 +80,6 @@ solution_paths:
 
     - name: "P2_quadratic"
       provenance: human_specified
-      from_weak_form: "global"
       finite_element:
         fields: {family: CG, order: 2}
       mesh: {cells: [4, 8, 16]}

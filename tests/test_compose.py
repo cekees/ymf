@@ -12,7 +12,7 @@ NAVIER_STOKES = Path(__file__).parent.parent / "examples" / "navier_stokes"
 
 MODEL = """
 kind: model
-Problem:
+model:
   physical_model:
     provenance: human_specified
     assumptions: [newtonian]
@@ -29,7 +29,7 @@ Problem:
 
 PROBLEM = """
 extends: model.ymf
-Problem:
+model:
   name: "problem"
   physical_model:
     provenance: human_specified
@@ -38,7 +38,7 @@ Problem:
     domain: "Ω"
     boundary_regions:
       - name: "b"
-        geometry: "∂Ω"
+        where: "∂Ω"
     coefficients:
       mu: {value: 1.0}
 solution_paths:
@@ -59,23 +59,24 @@ def write(tmp_path, **files):
 def test_the_model_loads_as_a_partial_document():
     doc = load_ymf(NAVIER_STOKES / "navier_stokes_model.ymf")
     assert doc["kind"] == "model"
-    assert "name" not in doc["Problem"]
+    assert "name" not in doc["model"]
     assert "solution_paths" not in doc
     assert "composition" not in doc
 
 
 def test_couette_composes_the_model_with_its_own_additions():
     doc = load_ymf(NAVIER_STOKES / "planar_couette.ymf")
-    strong = doc["Problem"]["strong_form"]
+    strong = doc["model"]["strong_form"]
     # from the model
     assert strong["equations"][0].startswith("ρ ∂v/∂t")
     assert [u["name"] for u in strong["unknowns"]] == ["v", "p"]
     # merged: the model's units, the problem's value
-    assert strong["coefficients"]["μ"] == {"units": "Pa*s", "value": "0.1"}
+    # a number, not the string '0.1': coefficients are typed in the schema
+    assert strong["coefficients"]["μ"] == {"units": "Pa*s", "value": 0.1}
     # string lists are unioned in order
-    assert doc["Problem"]["physical_model"]["assumptions"] == [
+    assert doc["model"]["physical_model"]["assumptions"] == [
         "newtonian", "constant_density", "isothermal", "steady", "fully_developed"]
-    assert doc["composition"] == {
+    assert {k: v for k, v in doc["composition"].items() if k != "defaults"} == {
         "sources": ["navier_stokes_model.ymf", "planar_couette.ymf"]}
 
 
@@ -87,22 +88,23 @@ def test_a_parameter_variant_records_exactly_what_it_overrides():
     # The parent derives its scales from μ and G, so those two and the
     # name are all the variant has to change.
     assert set(by_path) == {
-        "Problem.name",
-        "Problem.strong_form.coefficients.μ.value",
-        "Problem.strong_form.coefficients.G.value",
+        "model.name",
+        "model.strong_form.coefficients.μ.value",
+        "model.strong_form.coefficients.G.value",
     }
-    assert by_path["Problem.strong_form.coefficients.μ.value"] == {
-        "path": "Problem.strong_form.coefficients.μ.value",
-        "was": "1.0", "now": "0.01", "set_by": "plane_poiseuille_re100.ymf"}
+    assert by_path["model.strong_form.coefficients.μ.value"] == {
+        "path": "model.strong_form.coefficients.μ.value",
+        "was": 1.0, "now": 0.01, "set_by": "plane_poiseuille_re100.ymf"}
 
 
 def test_the_composed_variant_resolves_its_reynolds_number():
+    pytest.importorskip("pint")   # resolving it is ymf.units' job
     from ymf.units import compute_dimensionless_numbers
 
     for name, re in [("planar_couette", 10.0), ("plane_poiseuille", 1.0),
                      ("plane_poiseuille_re100", 100.0)]:
         doc = load_ymf(NAVIER_STOKES / (name + ".ymf"))
-        assert compute_dimensionless_numbers(doc["Problem"])["Re"] == pytest.approx(re)
+        assert compute_dimensionless_numbers(doc["model"])["Re"] == pytest.approx(re)
 
 
 # --- merge rules -----------------------------------------------------------
@@ -117,7 +119,7 @@ def test_list_entries_merge_by_name_and_new_ones_append(tmp_path):
         units: Pa
     coefficients:"""))
     doc = load_ymf(tmp_path / "problem.ymf")
-    assert doc["Problem"]["strong_form"]["unknowns"] == [
+    assert doc["model"]["strong_form"]["unknowns"] == [
         {"name": "u", "units": "m/s", "std_name": "x__velocity"},
         {"name": "p", "units": "Pa"},
     ]
@@ -132,7 +134,7 @@ def test_changing_a_list_entry_field_is_an_override_named_by_identity(tmp_path):
     coefficients:"""))
     doc = load_ymf(tmp_path / "problem.ymf")
     assert doc["composition"]["overrides"] == [{
-        "path": "Problem.strong_form.unknowns[u].units",
+        "path": "model.strong_form.unknowns[u].units",
         "was": "m/s", "now": "km/h", "set_by": "problem.ymf"}]
 
 
@@ -146,13 +148,13 @@ def test_a_model_may_extend_a_model(tmp_path):
     write(tmp_path, model=MODEL, refined="""
 kind: model
 extends: model.ymf
-Problem:
+model:
   physical_model:
     provenance: human_specified
     assumptions: [isothermal]
 """)
     doc = load_ymf(tmp_path / "refined.ymf")
-    assert doc["Problem"]["physical_model"]["assumptions"] == ["newtonian", "isothermal"]
+    assert doc["model"]["physical_model"]["assumptions"] == ["newtonian", "isothermal"]
     assert doc["kind"] == "model"
     assert doc["composition"]["sources"] == ["model.ymf", "refined.ymf"]
 
@@ -205,11 +207,109 @@ def test_a_typed_override_keeps_its_type(tmp_path):
         "  strong_form:", "  characteristic_scales:\n    length: {value: 1.0}\n  strong_form:"),
         variant="""
 extends: problem.ymf
-Problem:
+model:
   characteristic_scales:
     length: {value: 2.5}
 """)
     doc = load_ymf(tmp_path / "variant.ymf")
     assert doc["composition"]["overrides"] == [{
-        "path": "Problem.characteristic_scales.length.value",
+        "path": "model.characteristic_scales.length.value",
         "was": 1.0, "now": 2.5, "set_by": "variant.ymf"}]
+
+
+# ---------------------------------------------------------------------------
+# attributing a composed document's failure to a file
+# ---------------------------------------------------------------------------
+#
+# A composed problem has no file of its own. strictyaml could only point at a
+# line of a document that exists nowhere on disk, labelled with the chain, so
+# the reader was left to work out which of several files to open. The failure
+# that only a composition can have is a required key that no file in the
+# chain sets -- each file is valid on its own against the partial schema, and
+# only the whole is checked in full.
+
+
+BASE = """\
+kind: model
+model:
+  name: "flow"
+  strong_form:
+    provenance: llm_derived
+    equation_formulation: "f"
+    unknowns: ["v"]
+    domain: "Ω"
+    boundary_regions:
+      - {name: "w", where: "∂Ω"}
+solution_paths:
+  analytical: []
+  discretizations: []
+"""
+
+
+def test_a_missing_required_key_names_the_files_that_write_its_mapping(tmp_path):
+    write(tmp_path,
+          model=BASE.replace('    equation_formulation: "f"\n', ""),
+          problem="""
+extends: model.ymf
+model:
+  strong_form:
+    coefficients:
+      ρ: {value: 1.0}
+""")
+    with pytest.raises(strictyaml.YAMLValidationError) as caught:
+        load_ymf(tmp_path / "problem.ymf")
+    note = str(caught.value)
+    assert "no file in the chain sets equation_formulation under model.strong_form" in note
+    # both files write that mapping, named in chain order
+    assert "model.strong_form is written by model.ymf, problem.ymf" in note
+
+
+def test_an_incomplete_new_entry_names_the_file_that_added_it(tmp_path):
+    """The useful case: one file added it, so there is one file to open."""
+    write(tmp_path, model=BASE, problem="""
+extends: model.ymf
+solution_paths:
+  discretizations:
+    - name: "new_path"
+      provenance: llm_derived
+""")
+    with pytest.raises(strictyaml.YAMLValidationError) as caught:
+        load_ymf(tmp_path / "problem.ymf")
+    note = str(caught.value)
+    assert "solution_paths.discretizations[new_path] is written by problem.ymf" in note
+    assert "model.ymf" not in note.split("is written by")[-1]
+
+
+def test_the_attributed_path_is_the_one_remove_and_overrides_use(tmp_path):
+    """So a path out of an error can be pasted into remove:, and vice versa."""
+    write(tmp_path, model=BASE, problem="""
+extends: model.ymf
+solution_paths:
+  discretizations:
+    - name: "new_path"
+      provenance: llm_derived
+""")
+    with pytest.raises(strictyaml.YAMLValidationError) as caught:
+        load_ymf(tmp_path / "problem.ymf")
+    # "[new_path]", not ".name" -- the entry, not the key carrying its identity
+    assert "discretizations[new_path]" in str(caught.value)
+
+
+def test_a_file_that_is_wrong_on_its_own_still_cites_itself(tmp_path):
+    """Unchanged: per-file errors never needed attributing.
+
+    Each file is validated as written before anything is merged, so an error
+    a single file holds is reported against that file's own line. Only what
+    no file holds alone reaches the composed check.
+    """
+    write(tmp_path, model=BASE, problem="""
+extends: model.ymf
+model:
+  strong_form:
+    provenance: not_a_provenance
+""")
+    with pytest.raises(strictyaml.YAMLValidationError) as caught:
+        load_ymf(tmp_path / "problem.ymf")
+    message = str(caught.value)
+    assert "problem.ymf" in message
+    assert "composed from" not in message

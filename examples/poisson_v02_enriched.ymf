@@ -4,7 +4,7 @@
 # characteristic_scales, dimensional_check, boundary_conditions.
 # ============================================================
 
-Problem:
+model:
   name: "Poisson heat conduction"
   physical_model:
     provenance: llm_derived
@@ -31,7 +31,7 @@ Problem:
     domain: "Ω = [0, 1] × [0, 1]"
     boundary_regions:
       - name: "all_boundaries"
-        geometry: "∂Ω"
+        where: "∂Ω"
     boundary_conditions:
       - region: "all_boundaries"
         variable: "T"
@@ -65,7 +65,6 @@ solution_paths:
   discretizations:
     - name: "P1_linear"
       provenance: llm_derived
-      from_weak_form: "global"
       finite_element:
         fields: {family: CG, order: 1}
       mesh: {cells: [4, 8]}      # a study: one output per mesh

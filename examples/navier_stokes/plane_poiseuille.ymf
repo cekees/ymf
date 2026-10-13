@@ -14,7 +14,7 @@
 
 extends: navier_stokes_model.ymf
 
-Problem:
+model:
   name: "Plane Poiseuille flow, Re = 1"
   physical_model:
     provenance: human_specified
@@ -36,13 +36,13 @@ Problem:
     domain: "Ω = [0, 4] × [0, H]"
     boundary_regions:
       - name: "walls"
-        geometry: "y = 0 or y = H"
+        where: "y = 0 or y = H"
       - name: "ends"
-        geometry: "x = 0 or x = 4"
+        where: "x = 0 or x = 4"
       # A single point fixes the pressure's constant: the corner, with its
       # periodic copy.
       - name: "pressure_datum"
-        geometry: "x = 0 and y = 0 or x = 4 and y = 0"
+        where: "x = 0 and y = 0 or x = 4 and y = 0"
     boundary_conditions:
       - region: "walls"
         variable: v
@@ -146,7 +146,7 @@ vvuq:
     method: "grid_convergence"
     reference:
       type: "analytical"
-      branch_ref: "poiseuille_exact"
+      analytical: "poiseuille_exact"
     expected_rates:  # a priori L2 rates on smooth solutions
       equal_order_p1: {error_L2_velocity: 2, error_L2_pressure: 1}
     expected: >-

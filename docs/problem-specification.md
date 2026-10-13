@@ -43,7 +43,7 @@ The document is the reviewable artifact.
 ## Document structure
 
 ```yaml
-Problem:                     # required
+model:                     # required
   name: ...                  # required
   physical_model: ...        # stage 0
   strong_form: ...           # stages 1-2
@@ -108,7 +108,9 @@ Optional notes record inf-sup stability, existence, uniqueness and
 regularity, plus the stabilization method.
 
 **`discretizations`**: each has a `name`, `provenance`, `solver`, and
-usually `from_weak_form` and `finite_element`. `finite_element` takes
+usually `finite_element` and `from_weak_form` (a weak form's label, which
+may be omitted when the document has only one — see
+[Branching](#branching-one-problem-several-solution-paths)). `finite_element` takes
 `fields`, or `velocity` and `pressure` for mixed problems, each as
 `{family: CG|DG|RT|BDM|RTF|N1curl, order: n}`. The `solver` block takes
 `type` (`linear | nonlinear | time_marching | saddle_point`),
@@ -119,6 +121,54 @@ domain's box, and levels of uniform refinement (the solution is on the
 finest). Either may be a list, a study with one output per combination.
 `discretization` is a free-form block for anything else, such as the time
 integrator in `heat_equation.ymf`; its `dt` may be a list too.
+
+## Naming
+
+**Keys are `lower_case_with_underscores`. Values that name a type are
+capitalized.**
+
+```yaml
+model:
+  strong_form:
+    unknowns: ["u"]
+    coefficients:
+      κ: {value: 1.0e-3, units: m2/s}
+solution_paths:
+  discretizations:
+    - name: "p1"
+      finite_element:
+        fields: {family: CG, order: 1}     # CG is a type, not a key
+```
+
+So `strong_form`, `boundary_regions`, `characteristic_scales`, `data_item`,
+`number_of_elements` — and `CG`, `DG`, `RT`, `SI`, `Triangle`,
+`Tetrahedron`, `Scalar`, `Node`, `Float`, `XYZ`, which name kinds of thing
+rather than being keys. A value that is not naming a type is the author's
+to spell as they like: a branch called `taylor_hood` and one called
+`TaylorHood` are both fine, and neither means anything to the schema.
+
+This holds for the archive as well as the specification. The archive's
+vocabulary came from XDMF, which capitalizes everything — elements
+(`Topology`, `DataItem`) and their attributes (`NumberOfElements`,
+`Precision`) alike — and YMF followed by analogy, including for keys XDMF
+does not have at all (`TimeCollections`, `SpatialCollection`, `Attributes`
+as a list). Translation to XDMF is a mapping either way, so the archive
+uses the same rule as everything else and
+[`ymf2xmf`](../src/ymf/cli.py) supplies the capitalization XDMF wants. What
+comes back from a round trip is the lower-case form.
+
+### Why the rule, and not case-insensitivity
+
+Composition pairs keys by exact match. A model file writing `Model:` and a
+variant writing `model:` would not merge — they would become siblings, and
+the result would be a document with two problems, failing the schema
+somewhere unhelpful. The same exact-string assumption runs through the
+identity keys that pair list entries, `remove:` paths, the override log and
+the reference graph.
+
+So where a spelling has to be accepted for compatibility it is folded to the
+canonical one as the file is read, before anything is merged. Aliases ease a
+rename; they are not a standing second spelling.
 
 ## Writing it once: the notation
 
@@ -133,9 +183,9 @@ strong_form:
     - "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f  in Ω"
   domain: "Ω = [0, 1] × [0, 1],  t ∈ (0, 50]"
   boundary_regions:
-    - {name: walls, geometry: "y = 0 or y = H"}
-    - {name: pressure_datum, geometry: "x = 0 and y = 0"}
-    - {name: all, geometry: "∂Ω"}
+    - {name: walls, where: "y = 0 or y = H"}
+    - {name: pressure_datum, where: "x = 0 and y = 0"}
+    - {name: all, where: "∂Ω"}
   boundary_conditions:
     - {region: walls, variable: v, type: dirichlet, formula: "(U, 0)"}
   coefficients:
@@ -256,14 +306,62 @@ copied verbatim. `parun <stem>_<digest>_so.py` runs them, and its solution
 is bitwise the archived one. They are a way to read exactly what was
 solved, or to start a hand-written Proteus model from it.
 
+## The domain
+
+`model.strong_form.domain` is the region the model is posed on. It is
+either the notation short form, which means a box:
+
+```yaml
+domain: "Ω = [0, 1] × [0, 1],  t ∈ (0, 50]"
+```
+
+or a mapping that says what **kind** of domain it is:
+
+| kind | holds | for |
+|---|---|---|
+| `box` | `lower`, `upper`, optional `time` | the same thing the string says |
+| `piecewise_linear` | `vertices`, `segments` (2-D) or `facets`/`volumes` (3-D), `holes`, `regions` | a boundary representation — Proteus's PSLG and PLC |
+| `discrete` | `topology`, `geometry` | already a mesh; the one kind XDMF holds directly |
+| `file` | `format`, `path` | someone else's language — a `.geo`, an STL, a CAD model |
+
+```yaml
+domain:
+  kind: piecewise_linear
+  dimension: 2
+  vertices: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+  segments: [[0, 1], [1, 2], [2, 3], [3, 0]]
+  boundary_tags: {bottom: 1, right: 2, top: 3, left: 4}
+```
+
+`kind` is written, not inferred: a reader should know what it is holding
+before it reads it, and whoever writes a domain should have to say what
+they are making. A kind is checked against what it requires, and against
+what belongs to *another* kind — a `kind: box` carrying `vertices` is a
+confusion worth catching, and the message says which kind that key belongs
+to.
+
+Many domains are technically expressible in YAML and should still be
+`kind: file`. Inlining a CAD model helps nobody, and half of Proteus's own
+domain classes are already a path and a format.
+
+**What a domain is not.** It is not how to mesh the region — that is
+`discretizations[].mesh` — and it is not the state of whatever object
+holds it. Proteus's `Domain` classes carry both, and neither is part of
+what a domain *is*.
+
+**`domain` in an archive** is this same domain, discretized: XDMF's
+`<Domain>` holding grids of `topology` and `geometry`. The same region at
+two levels, as with strong and weak forms.
+
+Only `kind: box` can be solved today. The others validate and are carried,
+and `adr_problem` says so rather than failing obscurely.
+
 ## Branching: one problem, several solution paths
 
 The schema exists to let one document hold *competing* approaches to the
-same problem, and to keep track of how they relate. Each discretization
-names the weak form it implements with `from_weak_form` (a label, or an
-integer index into `weak_forms`), and the `vvuq` block names the branches
-it compares. [`examples/kovasznay_flow.ymf`](../examples/kovasznay_flow.ymf)
-has this tree:
+same problem, and to keep track of how they relate.
+[`examples/kovasznay_flow.ymf`](../examples/kovasznay_flow.ymf) has this
+tree:
 
 ```text
 strong form: incompressible Navier-Stokes, primitive variables
@@ -271,6 +369,62 @@ strong form: incompressible Navier-Stokes, primitive variables
   weak form 'stabilized_equal_order' ── discretization 'equal_order_p1'  velocity CG1, pressure CG1
   analytical 'kovasznay_exact' ◄─────── vvuq.verification.reference
 ```
+
+### The edges
+
+Those relations are cross-references, and there are four of them:
+
+| from | names |
+|---|---|
+| `solution_paths.discretizations[].from_weak_form` | a `weak_forms[].label` |
+| `vvuq.verification.reference.analytical` | an `analytical[].name` |
+| `vvuq.verification.branches[]` | a `discretizations[].name` |
+| `vvuq.verification.expected_rates` keys | a `discretizations[].name` |
+
+Each is checked after composition. A reference that names nothing is an
+error, with the available names listed — before, it simply validated and
+was ignored, so a typo in a verification plan did nothing and said nothing.
+
+A weak form is named by its **label**. Integer indices into `weak_forms`
+used to be accepted too, and are not any more: `remove:` can delete a weak
+form, which would silently renumber every index after it and repoint
+discretizations at a form they do not implement.
+
+An analytical entry has no `from_weak_form`. It solves the strong form; the
+weak formulation belongs to theory and numerics. (Non-classical solutions
+constructed directly from the integral form of a conservation law are a
+real thing, but they are not what that key meant.)
+
+### What may be left unsaid
+
+Two of the edges are single-valued, and where the graph does not branch
+they may be omitted. A discretization in a document with one weak form can
+only implement that one; a verification plan in a document with one
+analytical solution can only compare against that one. So
+[`examples/poisson.ymf`](../examples/poisson.ymf) states neither, and
+[`examples/kovasznay_flow.ymf`](../examples/kovasznay_flow.ymf), which
+branches, states both.
+
+An omitted reference is filled in and **written into the composed
+document**, and recorded:
+
+```yaml
+composition:
+  defaults:
+    - path: solution_paths.discretizations[P1_backward_euler].from_weak_form
+      value: galerkin
+      because: the document has one weak form
+      defaulted_by: heat_equation.ymf
+```
+
+so the document that comes out holds no implicit bindings, and neither does
+an archive carrying it.
+
+Filling in happens as each file is composed, not once at the end. A model
+with one weak form is unambiguous when it is written; a problem extending
+it may add a second. Resolving against the finished document would make the
+model's omission retroactively ambiguous — punishing a file for what a
+later file did.
 
 Adding a branch adds entries; it never edits existing ones. That is what
 makes a document safe for several contributors, or an LLM and a person, to
@@ -306,7 +460,7 @@ what it adds:
 
 ```yaml
 extends: navier_stokes_model.ymf   # relative to this file
-Problem:
+model:
   name: "Planar Couette flow, Re = 10"
   physical_model:
     provenance: human_specified
@@ -342,16 +496,52 @@ also lists every source file:
 composition:
   sources: [navier_stokes_model.ymf, plane_poiseuille.ymf, plane_poiseuille_re100.ymf]
   overrides:
-    - path: Problem.strong_form.coefficients.μ.value
-      was: '1.0'
-      now: '0.01'
+    - path: model.strong_form.coefficients.μ.value
+      was: 1.0
+      now: 0.01
       set_by: plane_poiseuille_re100.ymf
-    - path: Problem.strong_form.coefficients.G.value
+    - path: model.strong_form.coefficients.G.value
       ...
 ```
 
-(Coefficient values are recorded as strings because the schema leaves
-coefficients untyped; see [Known gaps](#known-gaps).)
+**A file may also remove.** `remove:` lists paths this file drops from what
+it extends, applied after the merge, so a file can drop an inherited item
+and add its replacement in one step:
+
+```yaml
+extends: navier_stokes_model.ymf
+remove:
+  - "model.physical_model.assumptions[incompressible]"
+model:
+  physical_model:
+    assumptions: [compressible]
+```
+
+A path is the same shape the override log prints: `.` for a mapping key,
+`[...]` for an entry in a list — by its own text in a list of strings
+(`assumptions[incompressible]`), by its `label` or `name` in a list of
+mappings (`weak_forms[stabilized]`). So a path read out of `overrides` can
+be pasted into `remove:`.
+
+This exists because the moves are real ones: incompressible flow solved as
+compressible, inviscid Euler as viscous, or in the other direction an
+unknown field dropped or replaced by an analytical expression. Before, each
+took a new model file.
+
+Removals are recorded beside the overrides, with what they took:
+
+```yaml
+composition:
+  removals:
+    - path: model.strong_form.coefficients.μ
+      was: {value: 1.0, units: Pa*s}
+      removed_by: euler_variant.ymf
+```
+
+**A path that names nothing is an error**, not a quiet no-op. It means the
+document being composed has moved under the file doing the removing, and
+composing the unremoved thing silently is how a variant ends up stating the
+opposite of what its author wrote.
 
 This makes a parameter variant a three-line file whose changes a reviewer
 can read off directly. `extends` and `kind` describe a file, not the
@@ -510,42 +700,73 @@ is implemented separately; see [archive-format.md](archive-format.md).
 These are real limitations of the current schema and code, recorded here so
 nobody has to rediscover them:
 
-- **Branch references aren't resolved.** A `from_weak_form` or `branch_ref`
-  that names nothing still validates.
-- **Coefficients come back as strings.** `coefficients` is untyped in the
-  schema, so after `load_ymf` a value like `kappa: 1.0e-3` is the string
-  `'1.0e-3'`. `compute_dimensionless_numbers` coerces numeric strings, both
-  bare and as `{value: ..., units: ...}`, so a Péclet or Fourier formula
-  that refers to `kappa` now evaluates. Every other consumer of
-  `coefficients` still sees strings, and a non-numeric coefficient (a
-  formula such as `"π²"`) is still left out of the formula scope, which
-  silently drops any number that refers to it.
-- **Only Dirichlet and periodic conditions run.** Neumann, Robin and
-  `hydrograph` conditions validate but `adr_problem` refuses them, and the
-  domain must be a box.
-- **The notation's limits.** Functions need parentheses (`sin(πx)`, not
-  `sin πx`); there are no subscript characters (`p₀`), so write `p0` and
-  declare it; and a multi-letter name must be declared to be a name rather
-  than a product (`Re` is R·e unless it is a coefficient).
-- **SUPG/PSPG with equal-order P1 converges below its a priori rates on
-  Kovasznay flow** (velocity about 1.5 instead of 2, pressure not
-  converging) through Proteus's `NavierStokesASGS_velocity_pressure`,
-  while Taylor-Hood on the same problem converges at 3 and 2 and the
-  stabilized branch of plane Poiseuille flow meets its rates. Not yet
-  explained.
-- **Write `1.0e-10`, not `1e-10`.** strictyaml accepts both, but PyYAML
-  (YAML 1.1), which reads a spec carried inside an archive, treats `1e-10`
-  as a string.
-- **Composition can add and change, but not remove.** A problem cannot
-  drop an assumption or a field its model states. That takes a new model.
-- **An error in a composed problem that no single file holds** (say, a
-  required key that none of the files sets) is reported against a line of
-  the merged document, labelled with the chain of files, not against a
-  source file.
-- **Duplicated values are only caught by name.** The check above covers a
-  `density` or `viscosity` scale against a `ρ`/`rho` or `μ`/`mu` coefficient. A
-  coefficient under another name (`nu`, `eta`), or a velocity scale that
-  restates a boundary speed, isn't checked. Derive scales from coefficients
-  wherever possible.
-- **`characteristic_scales` is a fixed set** of six. There is no slot for a
-  diffusivity or a pressure scale.
+- *(Closed.)* Branch references were not resolved: a `from_weak_form` or a
+  `branch_ref` that named nothing still validated. All four edges of the
+  reference graph are now checked, `branch_ref` has become
+  `reference.analytical`, integer indices into `weak_forms` are gone, and a
+  single-valued reference may be omitted where the graph does not branch.
+  See [Branching](#branching-one-problem-several-solution-paths).
+- *(Closed.)* `coefficients` was untyped, so every scalar arrived as a
+  string, and a coefficient written as an expression
+  (`λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"`, `Q: "π²"`) was dropped from
+  formula scope, silently taking any number that referred to it. Numbers
+  are now typed in the schema, and expressions are evaluated by the one
+  resolver `adr_problem` uses, so `ymf.units` and the solver give the same
+  answer for the same coefficient. `sympy` moved into the `frontend` extra
+  for this: a front-end that cannot evaluate an expression would report
+  different numbers from the solver reading the same file. A bare
+  `ymf[units]` install still works, and still sees only the coefficients
+  that are already numbers.
+- **Only Dirichlet and periodic conditions run**, and only on a box.
+  Neumann, Robin and `hydrograph` validate but `adr_problem` refuses them.
+  A domain of any kind now validates and is carried — see
+  [The domain](#the-domain) — but only `kind: box` is solved, and
+  `adr_problem` says which kind it was given rather than failing obscurely.
+- **The notation's limits**, each of which now reports the fix as well as
+  the fault. Functions need parentheses — `sin πx` says to write `sin(x)`,
+  not `sin x`. There are no subscripts — `p₀` says to write `p0` and declare
+  it, since the superscripts `² ³ ⁴` *are* notation (powers) and a subscript
+  is a reasonable guess. And a multi-letter name must be declared to be a
+  name rather than a product — `Re` says to declare it, and that it is not
+  read as `R·e` because `R` and `e` are not names.
+- **SUPG/PSPG with equal-order P1 on Kovasznay flow is pre-asymptotic at
+  reachable mesh sizes**, not wrong. Measured rates sit below the a priori
+  values on coarse meshes and climb towards them as the mesh refines (1.88
+  for velocity at 512 cells). This was investigated and closed: it is a
+  resolution limit, not a defect in `NavierStokesASGS_velocity_pressure`.
+  Taylor-Hood on the same problem reaches its rates sooner, so a
+  side-by-side comparison at one mesh size misleads. Reaching the
+  asymptotic range needs an iterative solver (512 cells is already 24 GB
+  with MUMPS) or a lower-Reynolds companion case.
+- *(Closed.)* `1e-10` used to be a string to PyYAML and a number to
+  strictyaml, so a spec meant different things read as a file and read
+  inside an archive. The archive reader now resolves YAML 1.2 scientific
+  notation, so `1e-10`, `1E-10`, `1e+10`, `-1e-10` and `1.5e3` are all
+  numbers to both. The resolver is registered on a subclass, so pyyaml's own
+  loaders are unchanged for anything else in the process.
+- *(Closed.)* Composition could add and change but not remove, so dropping
+  an assumption or a field a model stated took a whole new model file.
+  `remove:` now does it, recorded in `composition.removals`. See
+  [Composing documents](#composing-documents-models-and-problems).
+- *(Closed.)* An error that no single file holds -- a required key none of
+  them sets -- was reported against a line of the merged document, which
+  exists nowhere on disk. The message now also names the path and the files
+  that write it: *no file in the chain sets `equation_formulation` under
+  `model.strong_form`; `model.strong_form` is written by
+  `model.ymf`, `model.ymf`*. Where one file added an incomplete entry,
+  only that file is named. The path is the same shape `remove:` and the
+  override log use, so it can be pasted between them.
+- *(Mostly closed.)* Duplicated values were caught by name only, so a
+  coefficient called `nu` or `eta`, or any scale outside the conventional
+  six, was invisible. A scale whose value *and dimension* match a
+  coefficient's is now reported whatever either is called. Dimension is what
+  separates a duplicate from a coincidence: in a non-dimensionalized problem
+  half the quantities are 1.0, and 1.0 kg/m3 beside 1.0 m is not one value
+  written twice. Where either side states no units, nothing is said, because
+  there is no way to tell. Still unchecked: a velocity scale that restates a
+  boundary speed, which would need the boundary condition's expression
+  evaluated. Derive scales from coefficients wherever possible.
+- *(Closed.)* `characteristic_scales` was a fixed set of six, with no slot
+  for a diffusivity or a pressure scale. It now takes any name. The
+  original six keep their aliases (`L`, `U`, `rho`, `mu`, `T`) in formula
+  scope; any other name resolves under itself.

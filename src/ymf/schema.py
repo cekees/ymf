@@ -88,11 +88,14 @@ SolverConfig = Map(
     }
 )
 
+# No from_weak_form here. An analytical solution solves the strong form;
+# the weak formulation is the business of theory and numerics. (Non-classical
+# solutions built directly from the integral form of a conservation law are a
+# real thing, but they are not what this key meant, and nothing used it.)
 AnalyticalEntry = Map(
     {
         "name": Str(),
         "provenance": ProvenanceEnum,
-        Optional("from_weak_form"): Any(),
         "method": Str(),
         "solution": Map(
             {
@@ -109,7 +112,12 @@ DiscretizationEntry = Map(
     {
         "name": Str(),
         "provenance": ProvenanceEnum,
-        Optional("from_weak_form"): Any(),
+        # A weak form's label. Integer indices into weak_forms used to be
+        # accepted too; they are not, because "remove:" can delete a weak
+        # form and silently renumber every index after it. May be omitted
+        # when the document has exactly one weak form -- ymf.references
+        # fills it in during composition.
+        Optional("from_weak_form"): Str(),
         Optional("finite_element"): FiniteElementDef,
         Optional("discretization"): Any(),
         "solver": SolverConfig,
@@ -207,6 +215,49 @@ BoundaryConditionDef = Map(
     }
 )
 
+# A domain is the notation short form -- "Ω = [0, 1] × [0, 1],  t ∈ (0, 50]",
+# which means a box and is parsed by ymf.symbolic -- or a mapping tagged by
+# kind. See ymf.domain, which checks the mapping against its kind; the schema
+# only says what keys may appear, because strictyaml cannot express "these
+# keys given that kind" and a message naming the kind is worth more than one
+# naming the schema.
+DomainDef = Str() | Map(
+    {
+        "kind": Enum(["box", "piecewise_linear", "discrete", "file"]),
+        Optional("name"): Str(),
+        Optional("dimension"): Int(),
+        Optional("units"): Str(),
+        # the time interval of a transient model, as the notation
+        # form states it ("..., t ∈ (0, 50]")
+        Optional("time"): Seq(Float()),
+        # A name for each boundary, so a condition can say "bottom" instead
+        # of 3. The integer is the flag Proteus and the mesh generators use.
+        Optional("boundary_tags"): MapPattern(Str(), Int()),
+        # kind: box
+        Optional("lower"): Seq(Float()),
+        Optional("upper"): Seq(Float()),
+        # kind: piecewise_linear -- a boundary representation
+        Optional("vertices"): Seq(Seq(Float())),
+        Optional("segments"): Seq(Seq(Int())),
+        Optional("facets"): Any(),
+        Optional("volumes"): Any(),
+        Optional("holes"): Seq(Seq(Float())),
+        # A region carries its own flag; vertex/segment/facet flags stay
+        # parallel arrays, which is what they are and what Proteus holds.
+        Optional("regions"): Seq(Map({"point": Seq(Float()),
+                                      Optional("flag"): Int()})),
+        Optional("vertex_flags"): Seq(Int()),
+        Optional("segment_flags"): Seq(Int()),
+        Optional("facet_flags"): Seq(Int()),
+        # kind: discrete -- already a mesh, in the archive's vocabulary
+        Optional("topology"): Any(),
+        Optional("geometry"): Any(),
+        # kind: file -- someone else's language
+        Optional("format"): Str(),
+        Optional("path"): Str(),
+    }
+)
+
 ScaleDef = Map(
     {
         Optional("value"): Float(),
@@ -216,16 +267,43 @@ ScaleDef = Map(
     }
 )
 
-CharacteristicScalesDef = Map(
+# A coefficient is a number, a map, or an expression -- tried in that order.
+#
+# Typing this mattered more than it looks. It used to be Any(), under which
+# strictyaml returns every scalar as a string: "kappa: 1.0e-3" loaded as the
+# string '1.0e-3'. Only compute_dimensionless_numbers coerced it, so every
+# other consumer saw a string, and a formula coefficient that referred to a
+# numeric one silently dropped out of scope, taking any number built on it.
+#
+# Float() first, so a numeric scalar is a number however it was written --
+# and so strictyaml agrees with the pyyaml that reads a spec carried inside
+# an archive. Str() last, as the fallback for an expression ("π²",
+# "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"), which is a coefficient too.
+#
+# The map form keeps every key optional on purpose: a model file declares
+# "ρ: {units: kg/m3}" with no value, leaving the value to the problem that
+# extends it.
+CoefficientMapDef = Map(
     {
-        Optional("length"): ScaleDef,
-        Optional("velocity"): ScaleDef,
-        Optional("time"): ScaleDef,
-        Optional("density"): ScaleDef,
-        Optional("viscosity"): ScaleDef,
-        Optional("temperature"): ScaleDef,
+        Optional("value"): Float(),
+        Optional("units"): Str(),
+        Optional("formula"): Str(),
     }
 )
+
+CoefficientDef = Float() | CoefficientMapDef | Str()
+
+# Any named scale, not a fixed set.
+#
+# This was a closed Map of six: length, velocity, time, density, viscosity,
+# temperature. A problem with a diffusivity or a pressure scale had nowhere
+# to put it and had to leave it out of its dimensionless numbers.
+#
+# Those six keep their meaning: characteristic_scale_values aliases them to
+# the bare names L, U, rho, mu, T that the report's formulas use. Any other
+# name resolves under itself, so "diffusivity: {value: 1.0e-3}" is usable in
+# a formula as "diffusivity".
+CharacteristicScalesDef = MapPattern(Str(), ScaleDef)
 
 DimensionlessNumberDef = Map({"formula": Str(), Optional("value"): Float()})
 
@@ -288,16 +366,19 @@ StrongFormDef = Map(
         Optional("strong_form_expression"): Str(),
         # "Ω = [0, 1] × [0, 1]", optionally ", t ∈ (0, 50]" for the time
         # interval of a transient problem.
-        "domain": Str(),
+        "domain": DomainDef,
         # geometry is a membership test in the spec notation: "∂Ω" (all of
         # it), "y = 0 or y = H", "x = 0 and y = 0".
-        "boundary_regions": Seq(Map({"name": Str(), "geometry": Str()})),
+        # "where" is a membership predicate, not geometry: "∂Ω" (all of
+        # it), "y = 0 or y = H", "x = 0 and y = 0". adr_problem already
+        # calls this thing "where" in the conditions it returns.
+        "boundary_regions": Seq(Map({"name": Str(), "where": Str()})),
         Optional("initial_conditions"): Seq(InitialConditionDef),
         Optional("boundary_conditions"): Seq(BoundaryConditionDef),
         Optional("known_analytical_solution"): Map(
             {"formula": Str(), "reference": Str()}
         ),
-        Optional("coefficients"): MapPattern(Str(), Any()),
+        Optional("coefficients"): MapPattern(Str(), CoefficientDef),
         Optional("dimensional_check"): DimensionalCheckDef,
         # The equations, one string per (vector or scalar) equation, in the
         # notation of ymf.symbolic.notation -- "∂T/∂t = ∇·(κ∇T)  in Ω",
@@ -310,7 +391,7 @@ StrongFormDef = Map(
 # Problem (updated: + characteristic_scales, units, unit_systems, mesh_generation)
 # ---------------------------------------------------------------------------
 
-ProblemDef = Map(
+ModelDef = Map(
     {
         "name": Str(),
         Optional("physical_model"): PhysicalModelDef,
@@ -330,20 +411,25 @@ ProblemDef = Map(
 
 YMF_SCHEMA = Map(
     {
-        "Problem": ProblemDef,
+        "model": ModelDef,
         "solution_paths": DiscretizationCategory,
         Optional("vvuq"): Map(
             {Optional("verification"): Any(), Optional("validation"): Any()}
         ),
         Optional("archive"): Any(),
-        Optional("Xdmf"): Any(),
+        Optional("xdmf"): Any(),
         # File-level keys, see ymf.compose. "extends" names the document
         # this one builds on; "kind: model" marks a file that states the
         # physics but is not yet a well-posed problem; "composition" is
         # written by the loader into a composed document.
         Optional("extends"): Str(),
-        Optional("kind"): Enum(["model", "problem"]),
+        Optional("kind"): Enum(["model", "model"]),
         Optional("composition"): Any(),
+        # "remove" lists paths this file drops from what it extends --
+        # "Problem.physical_model.assumptions[incompressible]". Composition
+        # could only add and change before, so dropping an assumption or a
+        # field took a new model file even when the change was one line.
+        Optional("remove"): Seq(Str()),
     }
 )
 
@@ -401,6 +487,11 @@ def validate_ymf(text: str) -> AnyType:
     Does not follow ``extends``, which needs a file to resolve paths
     against; use :func:`load_ymf` for that.
     """
+    from ymf.compose import _KEY_ALIASES
+
+    import re as _re
+    for was, now in _KEY_ALIASES.items():
+        text = _re.sub(r"^%s:" % was, "%s:" % now, text, flags=_re.M)
     parsed = strictyaml.dirty_load(
         text, YMF_SCHEMA, allow_flow_style=_ALLOW_FLOW_STYLE
     )

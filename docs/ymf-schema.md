@@ -357,7 +357,7 @@ vvuq:
     grid_levels: [64, 128, 256]
     reference:
       type: "analytical"
-      branch_ref: "exact_poisson_reference"
+      analytical: "exact_poisson_reference"
       # type: "manufactured"       # MMS
       # formula: "..."
     results:

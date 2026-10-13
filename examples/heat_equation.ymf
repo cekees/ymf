@@ -10,7 +10,7 @@
 # writes, so the output carries the problem it came from.
 # ============================================================
 
-Problem:
+model:
   name: "Transient heat conduction, unit square"
   physical_model:
     provenance: human_specified
@@ -40,7 +40,7 @@ Problem:
     domain: "Ω = [0, 1] × [0, 1],  t ∈ (0, 50]"
     boundary_regions:
       - name: "walls"
-        geometry: "∂Ω"
+        where: "∂Ω"
     initial_conditions:
       - field: T
         type: function
@@ -78,7 +78,6 @@ solution_paths:
   analytical:
     - name: "separation_of_variables"
       provenance: human_specified
-      from_weak_form: "galerkin"
       method: "separation_of_variables"
       solution:
         formula: "T(x, y, t) = 300 + 10 exp(-2π²κt) sin(πx) sin(πy)"
@@ -89,7 +88,6 @@ solution_paths:
   discretizations:
     - name: "P1_backward_euler"
       provenance: human_specified
-      from_weak_form: "galerkin"
       finite_element:
         fields: {family: CG, order: 1}
       discretization:
@@ -103,7 +101,6 @@ solution_paths:
 
     - name: "P2_backward_euler_fine_dt"
       provenance: human_specified
-      from_weak_form: "galerkin"
       finite_element:
         fields: {family: CG, order: 2}
       discretization:

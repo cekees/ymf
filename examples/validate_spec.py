@@ -39,16 +39,23 @@ def describe(path: Path) -> bool:
     except (strictyaml.YAMLValidationError, YmfCompositionError) as exc:
         print("schema: INVALID\n%s" % (exc,))
         return False
-    problem = doc["Problem"]
+    problem = doc["model"]
     if doc.get("kind") == "model":
         print("schema: valid model (not yet a problem: no domain, conditions or values)")
     else:
         print("schema: valid -- %s" % (problem["name"],))
     composition = doc.get("composition")
     if composition:
-        print("composed from: %s" % " <- ".join(composition["sources"]))
+        # A single file can carry a composition block too, when a reference
+        # it omitted was filled in for it.
+        if composition.get("sources"):
+            print("composed from: %s" % " <- ".join(composition["sources"]))
         for o in composition.get("overrides", []):
             print("  override %s: %r -> %r (%s)" % (o["path"], o["was"], o["now"], o["set_by"]))
+        for r in composition.get("removals", []):
+            print("  remove %s: was %r (%s)" % (r["path"], r["was"], r["removed_by"]))
+        for d in composition.get("defaults", []):
+            print("  default %s = %r (%s)" % (d["path"], d["value"], d["because"]))
 
     strong = problem.get("strong_form", {})
     # An unknown without its own provenance inherits the strong form's.
@@ -99,7 +106,7 @@ def show_a_unit_error() -> None:
     print("a deliberate mistake: the wall temperature given in metres")
     print("=" * 72)
     doc = copy.deepcopy(load_ymf(EXAMPLES / "heat_equation.ymf"))
-    doc["Problem"]["strong_form"]["boundary_conditions"][0]["units"] = "m"
+    doc["model"]["strong_form"]["boundary_conditions"][0]["units"] = "m"
     result = check_units(doc)
     print("unit check: %s" % ("ok" if result else "FAILED"))
     for issue in result:

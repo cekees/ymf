@@ -1,14 +1,14 @@
 """A YMF problem specification -> an ADR problem a solver can run.
 
 :func:`adr_problem` reads a spec -- ``strong_form.domain`` and
-``equations``, the coefficients, the boundary regions' ``geometry``,
+``equations``, the coefficients, the boundary regions' ``where``,
 boundary and initial conditions, and the analytical solution's
 ``formula``, each written once in the notation of
 :mod:`ymf.symbolic.notation` -- and returns a plain-data description:
 
     {"adr": {...},            # ymf.symbolic.adr.adr_form
      "unknowns": {name: [component, ...]},
-     "geometry": {"lower": [...], "upper": [...]},
+     "domain": {"lower": [...], "upper": [...]},
      "dirichlet": [{"component", "region", "where", "value"}, ...],
      "periodic": [{"component", "region", "axes"}, ...],
      "initial": {component: code},
@@ -23,10 +23,12 @@ consumer supplies (a length tolerance for testing points on a boundary).
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, List, Optional
 
 import sympy
 
+from ymf.domain import box_bounds
 from ymf.symbolic.adr import adr_form, to_code
 from ymf.symbolic.language import Space, SymbolicError, parse_equation, parse_expression
 
@@ -46,8 +48,16 @@ def _number(value):
     return None
 
 
-def _coefficients(spec: Dict[str, Any], dim: int) -> Dict[str, sympy.Expr]:
-    """Resolve coefficient values and formulas; formulas may use each other."""
+def _coefficients(spec: Dict[str, Any], dim: int,
+                  strict: bool = True) -> Dict[str, sympy.Expr]:
+    """Resolve coefficient values and formulas; formulas may use each other.
+
+    ``strict`` decides what an unresolvable formula means. Building a problem
+    to solve, it is an error: a coefficient the equations use but nothing
+    defines cannot be run. Reading the same spec to report on it -- which is
+    what :func:`coefficient_numbers` does for ``ymf.units`` -- it is not, and
+    the entry is simply left out.
+    """
     values: Dict[str, sympy.Expr] = {}
     formulas: Dict[str, str] = {}
     for name, entry in spec.items():
@@ -83,10 +93,38 @@ def _coefficients(spec: Dict[str, Any], dim: int) -> Dict[str, sympy.Expr]:
             progressed = True
         if not progressed:
             break
-    if formulas:
+    if formulas and strict:
         raise SymbolicError("coefficients %s could not be resolved (unknown names, "
                             "or a cycle)" % ", ".join(sorted(formulas)))
     return values
+
+
+def coefficient_numbers(spec: Dict[str, Any], dim: int = 3) -> Dict[str, float]:
+    """The coefficients that are numbers, with expressions evaluated.
+
+    ``ymf.units`` needs the same answer about a coefficient that
+    :func:`adr_problem` gets, or the same spec means two things: a
+    dimensionless number built on a coefficient written as an expression
+    would quietly go missing while the solver resolved it without
+    difficulty. Both now come through this one resolver.
+
+    Only coefficients that reduce to a real, finite scalar are returned. A
+    vector (``f: {formula: "(G, 0)"}``), one that still depends on x or t,
+    and one that nothing defines are all left out -- they are coefficients,
+    but they are not numbers.
+    """
+    values = _coefficients(spec, dim, strict=False)
+    numbers: Dict[str, float] = {}
+    for name, value in values.items():
+        if isinstance(value, sympy.MatrixBase) or value.free_symbols:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue            # complex, or not evaluable to a float
+        if math.isfinite(number):
+            numbers[name] = number
+    return numbers
 
 
 def _components(value, name: str, rank: int, space: Space, where: str) -> Dict[str, str]:
@@ -102,7 +140,7 @@ def _components(value, name: str, rank: int, space: Space, where: str) -> Dict[s
 
 
 def _where(text: str, space: Space) -> Optional[str]:
-    """A region's geometry -> boolean code using ``tol`` (None: the whole boundary)."""
+    """A region's ``where`` predicate -> boolean code using ``tol`` (None: the whole boundary)."""
     from ymf.symbolic.notation import NotationError, Parser
     try:
         return Parser(space).predicate(text)
@@ -166,9 +204,16 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     """
     from ymf.symbolic.notation import NotationError, Parser
 
-    problem = doc["Problem"]
+    problem = doc["model"]
     strong = problem["strong_form"]
-    dim = _domain_dimension(strong["domain"])
+    domain = strong["domain"]
+    box = box_bounds(domain)
+    if box is None and not isinstance(domain, str):
+        raise SymbolicError(
+            "strong_form.domain: adr_problem can run a box; this one is kind "
+            "%r. Other kinds validate and are carried, but nothing solves them "
+            "yet." % (domain.get("kind"),))
+    dim = len(box[0]) if box else _domain_dimension(domain)
     if not strong.get("equations"):
         raise SymbolicError("strong_form.equations is needed to run a spec")
     ranks = {}
@@ -180,17 +225,22 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
 
     coefficients = _coefficients(strong.get("coefficients") or {}, dim)
     space = Space(dim, ranks, coefficients)
-    try:
-        lower, upper, time = Parser(Space(dim, {}, coefficients)).domain(strong["domain"])
-    except NotationError as exc:
-        raise SymbolicError("strong_form.domain: %s" % exc) from exc
+    if box is not None:
+        lower, upper = box
+        interval = domain.get("time")
+        time = tuple(interval) if interval else None
+    else:
+        try:
+            lower, upper, time = Parser(Space(dim, {}, coefficients)).domain(domain)
+        except NotationError as exc:
+            raise SymbolicError("strong_form.domain: %s" % exc) from exc
 
     residuals: List[sympy.Expr] = []
     for text in strong["equations"]:
         residuals.extend(parse_equation(text, space))
     adr = adr_form(residuals, space, hamiltonian_gradients=tuple(hamiltonian_gradients))
 
-    regions = {r["name"]: r["geometry"] for r in strong.get("boundary_regions", [])}
+    regions = {r["name"]: r["where"] for r in strong.get("boundary_regions", [])}
     dirichlet = []
     periodic = []
     for bc in strong.get("boundary_conditions") or []:
@@ -249,7 +299,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     unknowns = {name: ([name] if rank == 0 else ["%s_%d" % (name, i) for i in range(dim)])
                 for name, rank in ranks.items()}
     out = {"adr": adr, "unknowns": unknowns,
-           "geometry": {"lower": lower, "upper": upper},
+           "domain": {"lower": lower, "upper": upper},
            "dirichlet": dirichlet, "periodic": periodic, "initial": initial, "exact": exact,
            # The time interval the problem is posed on; None for a steady
            # problem. A time derivative in a model used steadily (Couette

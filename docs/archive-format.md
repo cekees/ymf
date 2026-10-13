@@ -60,7 +60,7 @@ outputs:
       solve: {by: {ymf: ..., proteus_git: ..., numpy: ..., platform: ...}, created: ...}
     storage: poisson_2365d177bb1f.h5        # or: inline
     verification: {l2_errors: {u: 0.0105...}}
-    approximation: {TimeCollections: [...]} # the solver's domain tree
+    approximation: {time_collections: [...]} # the solver's domain tree
     reproduced: [{created: ..., by: {...}}] # each rerun that matched, bitwise
 ```
 
@@ -149,7 +149,7 @@ A solver's document has three top-level keys:
 ```yaml
 ymf_archive_version: 1        # refused on read if it isn't the version this ymf knows
 domain:                       # the mesh/time/field tree -- see below
-  TimeCollections: [...]
+  time_collections: [...]
 extra:                        # optional: anything with no XDMF equivalent
   Problem: {...}              #   typically the problem spec that produced the run
   solution_paths: {...}
@@ -168,31 +168,31 @@ Here is one time step of `heat.ymf` from
 ```yaml
 ymf_archive_version: 1
 domain:
-  TimeCollections:
-  - Name: Mesh Spatial_Domain
-    Data:
-    - Time: 0.0
-      Topology:
-        Type: Triangle
-        NumberOfElements: 512
-        DataItem: {Format: HDF, DataType: Int, Precision: 4,
-                   Dimensions: [512, 3], Data: 'heat.h5:/elements'}
-      Geometry:
-        Type: XYZ
-        DataItem: {Format: HDF, DataType: Float, Precision: 8,
-                   Dimensions: [289, 3], Data: 'heat.h5:/nodes'}
-      Attributes:
-      - Name: T
-        AttributeType: Scalar
-        Center: Node
-        DataItem: {Format: HDF, DataType: Float, Precision: 8,
-                   Dimensions: [289], Data: 'heat.h5:/T_t0'}
-      - Name: q
-        AttributeType: Vector
-        Center: Node
-        DataItem: {Format: HDF, DataType: Float, Precision: 8,
-                   Dimensions: [289, 3], Data: 'heat.h5:/q_t0'}
-    - Time: 10.0
+  time_collections:
+  - name: Mesh Spatial_Domain
+    data:
+    - time: 0.0
+      topology:
+        type: Triangle
+        number_of_elements: 512
+        data_item: {format: HDF, data_type: Int, precision: 4,
+                   dimensions: [512, 3], data: 'heat.h5:/elements'}
+      geometry:
+        type: XYZ
+        data_item: {format: HDF, data_type: Float, precision: 8,
+                   dimensions: [289, 3], data: 'heat.h5:/nodes'}
+      attributes:
+      - name: T
+        attribute_type: Scalar
+        center: Node
+        data_item: {format: HDF, data_type: Float, precision: 8,
+                   dimensions: [289], data: 'heat.h5:/T_t0'}
+      - name: q
+        attribute_type: Vector
+        center: Node
+        data_item: {format: HDF, data_type: Float, precision: 8,
+                   dimensions: [289, 3], data: 'heat.h5:/q_t0'}
+    - time: 10.0
       ...
 extra:
   Problem:
@@ -206,24 +206,33 @@ only to keep the listing short.)
 ## The domain model
 
 A domain is plain dicts and lists — no classes — so it costs nothing to
-build, gathers across MPI natively, and serializes directly. The names
-follow XDMF on purpose, so the conversion is one-to-one.
+build, gathers across MPI natively, and serializes directly.
+
+The structure follows XDMF, so the conversion is a direct mapping, but the
+*names* are YMF's own: keys are `lower_case_with_underscores` like
+everything else in the format, and `ymf2xmf` supplies the capitalization
+XDMF wants. (The correspondence was never one-to-one anyway —
+`time_collections`, `spatial_collection` and `attributes` as a list are
+YMF's, with no XDMF element behind them.) Values that name a type —
+`Triangle`, `Node`, `Scalar`, `Float`, `XYZ` — keep their capitals, which
+is both the naming rule and what XDMF needs. An archive written with the
+old capitalized keys still reads: they are folded on load.
 
 ```text
 domain
-└── TimeCollections: [collection, ...]       one per finite-element space
-    └── collection: {Name, Data: [step, ...]}
+└── time_collections: [collection, ...]       one per finite-element space
+    └── collection: {name, data: [step, ...]}
         └── step: one instant, in one of two forms
-            ├── uniform:  {Time, Topology, Geometry, Attributes}
-            └── spatial:  {Time, SpatialCollection: [grid, ...]}   one grid per subdomain
-                          grid = {Name?, Topology, Geometry, Attributes}
+            ├── uniform:  {time, topology, geometry, attributes}
+            └── spatial:  {time, spatial_collection: [grid, ...]}   one grid per subdomain
+                          grid = {name?, topology, geometry, attributes}
 
-Topology   {Type, NumberOfElements, NodesPerElement?, DataItem}
-Geometry   {Type, DataItem}
-Attribute  {Name, AttributeType, Center, DataItem}
-DataItem   {Format: HDF, DataType, Precision, Dimensions, Data: "file.h5:/dataset"}
-         | {Format: XML, DataType, Precision, Dimensions, Include: "sidecar.txt"}
-         | {Format: XML, DataType, Precision, Dimensions, Values: [1.0, 2.5, ...]}
+topology   {type, number_of_elements, nodes_per_element?, data_item}
+geometry   {type, data_item}
+attribute  {name, attribute_type, center, data_item}
+data_item  {format: HDF, data_type, precision, dimensions, data: "file.h5:/dataset"}
+         | {format: XML, data_type, precision, dimensions, include: "sidecar.txt"}
+         | {format: XML, data_type, precision, dimensions, values: [1.0, 2.5, ...]}
 ```
 
 **Why a list of time collections.** A solver writes one collection per
@@ -238,12 +247,12 @@ is rejected when the archive is written:
 
 | Field | Legal values |
 |---|---|
-| `Topology.Type` | `Polyvertex Polyline Polygon Triangle Quadrilateral Tetrahedron Pyramid Wedge Hexahedron`, the quadratic `Edge_3 Tri_6 Triangle_6 Quad_8 Quadrilateral_8 Tet_10 Tetrahedron_10 Pyramid_13 Wedge_15 Hex_20 Hexahedron_20`, `Mixed`, and the structured `2DSMesh 2DRectMesh 2DCoRectMesh 3DSMesh 3DRectMesh 3DCoRectMesh` |
-| `Geometry.Type` | `XYZ XY X_Y_Z X_Y VXVYVZ ORIGIN_DXDYDZ ORIGIN_DXDY` |
-| `AttributeType` | `Scalar Vector Tensor Tensor6 Matrix GlobalID` |
-| `Center` | `Node Cell Face Edge Grid` |
-| `DataType` | `Float Int UInt Char UChar` |
-| `Format` | `HDF XML Binary` |
+| `topology.type` | `Polyvertex Polyline Polygon Triangle Quadrilateral Tetrahedron Pyramid Wedge Hexahedron`, the quadratic `Edge_3 Tri_6 Triangle_6 Quad_8 Quadrilateral_8 Tet_10 Tetrahedron_10 Pyramid_13 Wedge_15 Hex_20 Hexahedron_20`, `Mixed`, and the structured `2DSMesh 2DRectMesh 2DCoRectMesh 3DSMesh 3DRectMesh 3DCoRectMesh` |
+| `geometry.type` | `XYZ XY X_Y_Z X_Y VXVYVZ ORIGIN_DXDYDZ ORIGIN_DXDY` |
+| `attribute_type` | `Scalar Vector Tensor Tensor6 Matrix GlobalID` |
+| `center` | `Node Cell Face Edge Grid` |
+| `data_type` | `Float Int UInt Char UChar` |
+| `format` | `HDF XML Binary` |
 
 **Defaults.** `canonicalize_domain()` fills every defaultable field
 explicitly, and the file on disk is always canonical. The one default worth
@@ -255,7 +264,7 @@ array.
 
 The constructor helpers build the dicts and apply defaults consistently.
 `data_item_for()` is the one to reach for: it takes the array and derives
-`Dimensions`, `DataType` and `Precision` from it, so the metadata can't
+`dimensions`, `data_type` and `precision` from it, so the metadata can't
 disagree with what's in the file.
 
 ```python
@@ -303,18 +312,18 @@ geom = geometry(data_item([4, 3], values=[0.0, 0.0, 0.0, 1.0, 0.0, 0.0, ...], pr
 ```
 
 ```yaml
-DataItem:
-  Format: XML
-  DataType: Int
-  Precision: 4
-  Dimensions: [2, 3]
-  Values: [0, 1, 3, 0, 3, 2]
+data_item:
+  format: XML
+  data_type: Int
+  precision: 4
+  dimensions: [2, 3]
+  values: [0, 1, 3, 0, 3, 2]
 ```
 
-`Values` is flat, in row-major order, as in XDMF's element text; nested
+`values` is flat, in row-major order, as in XDMF's element text; nested
 lists and arrays are flattened on the way in. The values are coerced to
-the declared `DataType` (a non-integer under `Int` is refused) and their
-count is checked against `Dimensions`. `ymf2xmf` writes them as the
+the declared `data_type` (a non-integer under `Int` is refused) and their
+count is checked against `dimensions`. `ymf2xmf` writes them as the
 DataItem's text, one row per line, with floats written exactly, so a
 `.ymf` → `.xmf` → `.ymf` round trip loses nothing. Inline and referenced
 DataItems can be mixed freely in one archive.
@@ -360,13 +369,13 @@ and centering (viewers key fields by name within point data and within
 cell data, so a duplicate silently hides the first; the same name cell-
 and node-centred is fine).
 `data_item_for()` and `check_dimensions()` compare the declared
-`Dimensions` against the actual array while it is still in hand. A
+`dimensions` against the actual array while it is still in hand. A
 flattened declaration (`[N*k]` for an `(N, k)` array) is accepted; a
 genuine mismatch is not. Errors name the offending field:
 
 ```text
-data_item_for().Dimensions: declared [81] (81 values) but the array has shape [25] (25 values)
-TimeCollections[0].Data[0].Topology.Type: 'Triangel' is not a known XDMF topology type. ...
+data_item_for().dimensions: declared [81] (81 values) but the array has shape [25] (25 values)
+time_collections[0].data[0].topology.type: 'Triangel' is not a known XDMF topology type. ...
 ```
 
 The first of these is a real bug this check found in Proteus: a field

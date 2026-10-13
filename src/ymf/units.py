@@ -177,7 +177,7 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
     are no ``error``-severity issues (warnings don't affect truthiness).
     """
     result = UnitCheckResult()
-    problem = doc.get("Problem") or {}
+    problem = doc.get("model") or {}
     strong_form = problem.get("strong_form") or {}
     unknown_units = _collect_unknown_units(strong_form)
 
@@ -234,8 +234,12 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
     # error; copies that agree are a warning, since that agreement is what
     # has to be maintained by hand.
     coefficient_values = _coefficient_values(problem)
+    coefficient_units = _coefficient_units(problem)
+    scales = problem.get("characteristic_scales") or {}
+    paired = set()
+
     for scale, names in _SCALE_COEFFICIENT_NAMES.items():
-        spec = (problem.get("characteristic_scales") or {}).get(scale)
+        spec = scales.get(scale)
         if not isinstance(spec, dict) or spec.get("value") is None:
             continue
         coefficient = next((n for n in names if n in coefficient_values), None)
@@ -244,12 +248,56 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
         stated, actual = spec["value"], coefficient_values[coefficient]
         agree = math.isclose(stated, actual, rel_tol=1e-12)
         agreement = "agrees with" if agree else "differs from"
+        paired.add((scale, coefficient))
         result.issues.append(UnitIssue(
             "warning" if agree else "error", f"characteristic_scales[{scale}]",
             f"value {stated:g} {agreement} coefficients[{coefficient}] = {actual:g}; "
             f"state it once with {{derived: true, formula: \"{coefficient}\"}}"))
 
+    # The pairings above are the conventional names. A coefficient under any
+    # other name -- nu, eta, a diffusivity -- was invisible to them, so the
+    # same value written twice went unreported for want of being called the
+    # expected thing.
+    #
+    # Matching on the value instead needs something to tell a duplicate from
+    # a coincidence: in a non-dimensionalized problem half the quantities
+    # are 1.0. Dimension is that something. Equal numbers of the same kind
+    # are one value written twice; equal numbers of different kinds (a
+    # density of 1.0 kg/m3 and a viscosity of 1.0 Pa*s) are a coincidence,
+    # and saying so would be noise. Where either side states no units there
+    # is no way to tell, so nothing is said.
+    for scale, spec in scales.items():
+        if not isinstance(spec, dict) or spec.get("value") is None:
+            continue
+        scale_units = spec.get("units")
+        if not scale_units:
+            continue
+        for name, value in coefficient_values.items():
+            if (scale, name) in paired:
+                continue
+            if not math.isclose(spec["value"], value, rel_tol=1e-12):
+                continue
+            name_units = coefficient_units.get(name)
+            if not name_units or not units_compatible(scale_units, name_units):
+                continue
+            paired.add((scale, name))
+            result.issues.append(UnitIssue(
+                "warning", f"characteristic_scales[{scale}]",
+                f"value {spec['value']:g} equals coefficients[{name}], and both "
+                f"are {dimensionality(scale_units)}; state it once with "
+                f"{{derived: true, formula: \"{name}\"}}"))
+
     return result
+
+
+def _coefficient_units(problem: Dict[str, Any]) -> Dict[str, str]:
+    """The units each coefficient states, for the ones that state any."""
+    strong_form = problem.get("strong_form") or {}
+    units: Dict[str, str] = {}
+    for name, entry in (strong_form.get("coefficients") or {}).items():
+        if isinstance(entry, dict) and entry.get("units"):
+            units[name] = entry["units"]
+    return units
 
 
 #: Characteristic scales whose physical quantity is conventionally also a
@@ -384,13 +432,29 @@ def _as_number(value: Any) -> Optional[float]:
 def _coefficient_values(problem: Dict[str, Any]) -> Dict[str, float]:
     """The numeric ``strong_form.coefficients``, as ``{name: value}``.
 
-    A coefficient is a bare number or a ``{value: ..., units: ...}`` map;
-    formula-valued ones (``"π²"``, ``{formula: "(G, 0)"}``) are left out.
+    A coefficient written as an expression is a number too, once evaluated:
+    ``Q: "π²"`` is 9.8696, and ``λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"`` is a
+    number as soon as ρ and μ are known. Those go through
+    :func:`ymf.symbolic.problem.coefficient_numbers`, the same resolver
+    ``adr_problem`` uses, so a dimensionless number built on such a
+    coefficient gets the value the solver would get rather than quietly
+    going missing.
+
+    ``sympy`` comes with the ``frontend`` extra. Without it -- a bare
+    ``ymf[units]`` install -- only the coefficients that are already numbers
+    are returned, and expression-valued ones are left out as before.
     """
     strong_form = problem.get("strong_form") or {}
+    spec = strong_form.get("coefficients") or {}
+    try:
+        from ymf.symbolic.problem import coefficient_numbers
+    except ImportError:            # no sympy: numbers only, as before
+        pass
+    else:
+        return coefficient_numbers(spec)
     values: Dict[str, float] = {}
-    for name, spec in (strong_form.get("coefficients") or {}).items():
-        value = _as_number(spec.get("value") if isinstance(spec, dict) else spec)
+    for name, entry in spec.items():
+        value = _as_number(entry.get("value") if isinstance(entry, dict) else entry)
         if value is not None:
             values[name] = value
     return values
@@ -462,7 +526,7 @@ def non_dimensionalize(doc: Dict[str, Any]) -> Dict[str, Any]:
     PDE parser and is explicitly deferred (v0.2 delta doc §7: "automatic
     non-dimensionalization pipeline").
     """
-    problem = doc.get("Problem") or {}
+    problem = doc.get("model") or {}
     scales = characteristic_scale_values(problem)
     numbers = compute_dimensionless_numbers(problem)
 

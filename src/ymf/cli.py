@@ -124,23 +124,23 @@ def _is_archive(source: Path) -> bool:
 def _describe(domain) -> List[str]:
     """A short summary of what an archive holds, for --verbose."""
     lines = []
-    for collection in domain.get("TimeCollections", []):
-        steps = collection["Data"]
-        times = [step["Time"] for step in steps]
+    for collection in domain.get("time_collections", []):
+        steps = collection["data"]
+        times = [step["time"] for step in steps]
         span = ("no steps" if not times
                 else "1 step at t=%g" % times[0] if len(times) == 1
                 else "%d steps, t=%g..%g" % (len(times), times[0], times[-1]))
         detail = ""
         if steps:
             first = steps[0]
-            if "SpatialCollection" in first:
-                detail = ", %d subdomains" % len(first["SpatialCollection"])
-                first = first["SpatialCollection"][0]
-            fields = [a["Name"] for a in first.get("Attributes", [])]
-            detail += ", %s topology" % first["Topology"]["Type"]
+            if "spatial_collection" in first:
+                detail = ", %d subdomains" % len(first["spatial_collection"])
+                first = first["spatial_collection"][0]
+            fields = [a["name"] for a in first.get("attributes", [])]
+            detail += ", %s topology" % first["topology"]["type"]
             if fields:
                 detail += ", fields: %s" % ", ".join(fields)
-        lines.append("  %s: %s%s" % (collection["Name"], span, detail))
+        lines.append("  %s: %s%s" % (collection["name"], span, detail))
     return lines
 
 

@@ -9,7 +9,7 @@
 
 extends: navier_stokes_model.ymf
 
-Problem:
+model:
   name: "Planar Couette flow, Re = 10"
   physical_model:
     provenance: human_specified
@@ -29,15 +29,15 @@ Problem:
     domain: "Ω = [0, 4] × [0, H]"
     boundary_regions:
       - name: "bottom"
-        geometry: "y = 0"
+        where: "y = 0"
       - name: "top"
-        geometry: "y = H"
+        where: "y = H"
       - name: "ends"
-        geometry: "x = 0 or x = 4"
+        where: "x = 0 or x = 4"
       # A single point fixes the pressure's constant: the corner, with its
       # periodic copy.
       - name: "pressure_datum"
-        geometry: "x = 0 and y = 0 or x = 4 and y = 0"
+        where: "x = 0 and y = 0 or x = 4 and y = 0"
     boundary_conditions:
       - region: "ends"
         variable: v
@@ -98,7 +98,6 @@ solution_paths:
   discretizations:
     - name: "taylor_hood"
       provenance: human_specified
-      from_weak_form: "galerkin_periodic"
       finite_element:
         velocity: {family: CG, order: 2}
         pressure: {family: CG, order: 1}
@@ -114,7 +113,7 @@ vvuq:
     method: "exact_comparison"
     reference:
       type: "analytical"
-      branch_ref: "couette_exact"
+      analytical: "couette_exact"
     expected: >-
       The exact velocity is linear and the exact pressure constant, so both
       lie in the Taylor-Hood spaces. The discrete solution should equal the

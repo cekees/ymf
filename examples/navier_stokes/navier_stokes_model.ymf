@@ -18,7 +18,7 @@
 
 kind: model
 
-Problem:
+model:
   physical_model:
     provenance: human_specified
     processes: [incompressible_flow]

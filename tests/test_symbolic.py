@@ -133,7 +133,7 @@ def test_parse_errors_name_the_text():
 
 def test_the_poisson_example_becomes_a_runnable_problem():
     problem = adr_problem(load_ymf(EXAMPLES / "poisson.ymf"))
-    assert problem["geometry"] == {"lower": [0.0, 0.0], "upper": [1.0, 1.0]}
+    assert problem["domain"] == {"lower": [0.0, 0.0], "upper": [1.0, 1.0]}
     assert problem["dirichlet"] == [{"component": "u", "region": "all_boundaries",
                                      "where": None, "value": "0.0"}]
     assert problem["exact"] == {"u": "(1/2)*numpy.sin(numpy.pi*x)*numpy.sin(numpy.pi*y)"}

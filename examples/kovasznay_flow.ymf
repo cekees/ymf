@@ -13,7 +13,7 @@
 # switched on. Reynolds number 40, from the characteristic scales below.
 # ============================================================
 
-Problem:
+model:
   name: "Kovasznay flow, Re = 40"
   physical_model:
     provenance: llm_derived
@@ -51,7 +51,7 @@ Problem:
     domain: "Ω = [-0.5, 1.0] × [-0.5, 1.5]"
     boundary_regions:
       - name: "outer"
-        geometry: "∂Ω"
+        where: "∂Ω"
     # Dirichlet data from the exact solution (Kovasznay 1948): the velocity
     # all round. Nothing fixes the pressure's constant, so the problem
     # determines p only up to one: the solver keeps the constant in the
@@ -158,7 +158,7 @@ vvuq:
     method: "exact_comparison"
     reference:
       type: "analytical"
-      branch_ref: "kovasznay_exact"
+      analytical: "kovasznay_exact"
     branches: ["taylor_hood", "equal_order_p1"]
     expected_rates:  # a priori L2 rates on smooth solutions
       taylor_hood: {error_L2_velocity: 3, error_L2_pressure: 2}

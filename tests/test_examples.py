@@ -7,6 +7,9 @@ from pathlib import Path
 
 import pytest
 
+# the example scripts walk the unit checks, so they need the units extra
+pytest.importorskip("pint")
+
 from ymf.schema import load_ymf
 
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
@@ -25,7 +28,7 @@ def run(script, *args, env=None):
 def test_every_example_spec_validates(spec):
     doc = load_ymf(spec)
     # a model is not a problem yet, so only problems carry a name
-    assert doc.get("kind") == "model" or doc["Problem"]["name"]
+    assert doc.get("kind") == "model" or doc["model"]["name"]
 
 
 def test_validate_spec_walks_every_example_and_shows_the_unit_error():
@@ -33,7 +36,8 @@ def test_validate_spec_walks_every_example_and_shows_the_unit_error():
     for spec in SPECS:
         assert spec.name in out
     assert "composed from: navier_stokes_model.ymf <- plane_poiseuille.ymf <- plane_poiseuille_re100.ymf" in out
-    assert "override Problem.strong_form.coefficients.μ.value: '1.0' -> '0.01' (plane_poiseuille_re100.ymf)" in out
+    # unquoted: a typed coefficient prints as the number it is
+    assert "override model.strong_form.coefficients.μ.value: 1.0 -> 0.01 (plane_poiseuille_re100.ymf)" in out
     assert "schema: INVALID" not in out
     assert "dimensionless numbers: {'Re': 40.0}" in out
     assert "incompatible with 'T''s declared units 'K'" in out

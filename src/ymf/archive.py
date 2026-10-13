@@ -53,14 +53,14 @@ The domain model
 A *domain* is a plain dict -- no classes, no schema objects, so it costs
 nothing to build, gathers across MPI natively, and serializes directly::
 
-    {"TimeCollections": [{"Name": str, "Data": [step, ...]}, ...]}
+    {"time_collections": [{"name": str, "data": [step, ...]}, ...]}
 
 There is a *list* of time collections, not one, because a solver writes one
 per finite-element space: a real Proteus archive commonly holds both
 ``Mesh Spatial_Domain`` (the linear base mesh) and ``Mesh_c0p2_Lagrange``
 (the quadratic space, on the same elements with more nodes). 195 of the 814
 archives surveyed when this model was designed had two. A single-collection
-document may be written as ``{"TimeCollection": {...}}`` for convenience;
+document may be written as ``{"time_collection": {...}}`` for convenience;
 :func:`canonicalize_domain` normalizes it to the list form, which is the
 only form written to disk.
 
@@ -69,24 +69,24 @@ Each ``step`` is one instant in time and takes exactly one of two forms:
 *uniform* -- a single grid, which is what a serial run or a globally
 synchronized parallel write produces::
 
-    {"Time": float, "Topology": T, "Geometry": G, "Attributes": [A, ...]}
+    {"time": float, "topology": T, "geometry": G, "attributes": [A, ...]}
 
 *spatial* -- a collection of grids, one per MPI rank, which is what a
 subdomain-per-rank write produces::
 
-    {"Time": float, "SpatialCollection": [grid, ...]}
+    {"time": float, "spatial_collection": [grid, ...]}
 
 and the pieces are::
 
-    grid = {"Name": str?, "Topology": T, "Geometry": G, "Attributes": [A, ...]}
-    T    = {"Type": str, "NumberOfElements": int,
-            "NodesPerElement": int?, "DataItem": D}
-    G    = {"Type": str, "DataItem": D}
-    A    = {"Name": str, "AttributeType": str, "Center": str, "DataItem": D}
-    D    = {"Format": str, "DataType": str, "Precision": int,
-            "Dimensions": [int, ...], "Data": str}      # Format="HDF"
-         | {"Format": "XML", ..., "Include": str}       # text sidecar file
-         | {"Format": "XML", ..., "Values": [num, ...]} # inline, row-major
+    grid = {"name": str?, "topology": T, "geometry": G, "attributes": [A, ...]}
+    T    = {"type": str, "number_of_elements": int,
+            "nodes_per_element": int?, "data_item": D}
+    G    = {"type": str, "data_item": D}
+    A    = {"name": str, "attribute_type": str, "center": str, "data_item": D}
+    D    = {"format": str, "data_type": str, "precision": int,
+            "dimensions": [int, ...], "data": str}      # Format="HDF"
+         | {"format": "XML", ..., "include": str}       # text sidecar file
+         | {"format": "XML", ..., "values": [num, ...]} # inline, row-major
 
 Inline ``Values`` make an archive self-contained -- no HDF5 file, no
 sidecar -- which suits small problems and solvers that avoid an HDF5
@@ -105,6 +105,7 @@ ParaView and VisIt read natively. Nothing in this module knows about XML.
 
 from __future__ import annotations
 
+import re
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -142,6 +143,7 @@ __all__ = [
     "add_uniform_step",
     "add_spatial_step",
     "canonicalize_domain",
+    "fold_archive_keys",
     "validate_domain",
     "check_dimensions",
     "write_ymf",
@@ -315,18 +317,18 @@ def data_item(
     if fmt is None:
         fmt = "HDF" if data is not None else "XML"
     item: Dict[str, Any] = {
-        "Format": fmt,
-        "DataType": data_type,
-        "Precision": int(precision),
-        "Dimensions": _FlowList(int(d) for d in dimensions),
+        "format": fmt,
+        "data_type": data_type,
+        "precision": int(precision),
+        "dimensions": _FlowList(int(d) for d in dimensions),
     }
     if data is not None:
-        item["Data"] = str(data)
+        item["data"] = str(data)
     elif include is not None:
-        item["Include"] = str(include)
+        item["include"] = str(include)
     else:
-        item["Values"] = _inline_values(values, data_type, "data_item()")
-        check_dimensions(item, [len(item["Values"])], where="data_item()")
+        item["values"] = _inline_values(values, data_type, "data_item()")
+        check_dimensions(item, [len(item["values"])], where="data_item()")
     return item
 
 
@@ -362,11 +364,11 @@ def _inline_values(values: Any, data_type: str, where: str) -> "_FlowList":
     for i, v in enumerate(_flatten(values)):
         if isinstance(v, bool) or not isinstance(v, (int, float)):
             raise YmfArchiveError(
-                f"{where}.Values[{i}]: {v!r} is not a number")
+                f"{where}.values[{i}]: {v!r} is not a number")
         if integral:
             if v != int(v):
                 raise YmfArchiveError(
-                    f"{where}.Values[{i}]: {v!r} is not an integer, but the "
+                    f"{where}.values[{i}]: {v!r} is not an integer, but the "
                     f"DataType is {data_type}")
             v = int(v)
         else:
@@ -464,10 +466,10 @@ def attribute(
     malformed field is not representable.
     """
     return {
-        "Name": str(name),
-        "AttributeType": attribute_type,
-        "Center": center,
-        "DataItem": item,
+        "name": str(name),
+        "attribute_type": attribute_type,
+        "center": center,
+        "data_item": item,
     }
 
 
@@ -484,18 +486,18 @@ def topology(
     it -- ``Polyvertex`` and ``Polyline`` -- and is omitted otherwise.
     """
     topo: Dict[str, Any] = {
-        "Type": topology_type,
-        "NumberOfElements": int(n_elements),
-        "DataItem": item,
+        "type": topology_type,
+        "number_of_elements": int(n_elements),
+        "data_item": item,
     }
     if nodes_per_element is not None:
-        topo["NodesPerElement"] = int(nodes_per_element)
+        topo["nodes_per_element"] = int(nodes_per_element)
     return topo
 
 
 def geometry(item: Dict[str, Any], *, geometry_type: str = "XYZ") -> Dict[str, Any]:
     """Describe a grid's node coordinates."""
-    return {"Type": geometry_type, "DataItem": item}
+    return {"type": geometry_type, "data_item": item}
 
 
 def grid(
@@ -506,10 +508,10 @@ def grid(
     name: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Assemble one uniform grid: connectivity, coordinates, and fields."""
-    g: Dict[str, Any] = {"Topology": topo, "Geometry": geom}
+    g: Dict[str, Any] = {"topology": topo, "geometry": geom}
     if name is not None:
-        g["Name"] = str(name)
-    g["Attributes"] = list(attributes) if attributes is not None else []
+        g["name"] = str(name)
+    g["attributes"] = list(attributes) if attributes is not None else []
     return g
 
 
@@ -519,7 +521,7 @@ def new_domain(name: str = _DEFAULT_TIME_COLLECTION_NAME) -> Dict[str, Any]:
     Add further collections with :func:`add_collection` -- one per
     finite-element space that needs its own mesh.
     """
-    return {"TimeCollections": [{"Name": str(name), "Data": []}]}
+    return {"time_collections": [{"name": str(name), "data": []}]}
 
 
 def add_collection(domain: Dict[str, Any], name: str) -> Dict[str, Any]:
@@ -530,20 +532,20 @@ def add_collection(domain: Dict[str, Any], name: str) -> Dict[str, Any]:
     grid, and a viewer needs to see them as separate meshes over the same
     elements.
     """
-    collections = domain.setdefault("TimeCollections", [])
-    if any(c.get("Name") == name for c in collections):
+    collections = domain.setdefault("time_collections", [])
+    if any(c.get("name") == name for c in collections):
         raise YmfArchiveError(
             f"domain already has a time collection named {name!r}; collection "
             "names are how a reader tells the meshes apart, so they must be unique"
         )
-    collection: Dict[str, Any] = {"Name": str(name), "Data": []}
+    collection: Dict[str, Any] = {"name": str(name), "data": []}
     collections.append(collection)
     return collection
 
 
 def _resolve_collection(domain: Dict[str, Any], collection: Any) -> Dict[str, Any]:
     """Find a collection by index or by name, with a legible failure."""
-    collections = domain.get("TimeCollections")
+    collections = domain.get("time_collections")
     if not collections:
         raise YmfArchiveError(
             "domain has no time collections; build it with new_domain()"
@@ -557,9 +559,9 @@ def _resolve_collection(domain: Dict[str, Any], collection: Any) -> Dict[str, An
                 f"{collection}"
             ) from None
     for c in collections:
-        if c.get("Name") == collection:
+        if c.get("name") == collection:
             return c
-    names = [c.get("Name") for c in collections]
+    names = [c.get("name") for c in collections]
     raise YmfArchiveError(
         f"domain has no time collection named {collection!r}; it has {names}"
     )
@@ -580,9 +582,9 @@ def add_uniform_step(
     by name; it defaults to the first, which is the only one in a
     single-mesh archive.
     """
-    step: Dict[str, Any] = {"Time": float(time), "Topology": topo, "Geometry": geom}
-    step["Attributes"] = list(attributes) if attributes is not None else []
-    _resolve_collection(domain, collection)["Data"].append(step)
+    step: Dict[str, Any] = {"time": float(time), "topology": topo, "geometry": geom}
+    step["attributes"] = list(attributes) if attributes is not None else []
+    _resolve_collection(domain, collection)["data"].append(step)
     return step
 
 
@@ -594,8 +596,8 @@ def add_spatial_step(
     collection: Any = 0,
 ) -> Dict[str, Any]:
     """Append a timestep holding one grid per subdomain. Returns the new step."""
-    step = {"Time": float(time), "SpatialCollection": list(grids)}
-    _resolve_collection(domain, collection)["Data"].append(step)
+    step = {"time": float(time), "spatial_collection": list(grids)}
+    _resolve_collection(domain, collection)["data"].append(step)
     return step
 
 
@@ -614,89 +616,89 @@ def _canonicalize_data_item(item: Dict[str, Any], where: str) -> Dict[str, Any]:
     canonicalized first. This is the single place that decides what those
     defaults are.
     """
-    if "Dimensions" not in item:
-        raise YmfArchiveError(f"{where}: DataItem has no 'Dimensions'")
-    present = [k for k in ("Data", "Include", "Values") if k in item]
+    if "dimensions" not in item:
+        raise YmfArchiveError(f"{where}: data_item has no 'dimensions'")
+    present = [k for k in ("data", "include", "values") if k in item]
     if len(present) != 1:
         raise YmfArchiveError(
-            f"{where}: DataItem needs exactly one of 'Data' (HDF5 reference), "
-            f"'Include' (text sidecar path) or 'Values' (inline values); got "
+            f"{where}: data_item needs exactly one of 'data' (HDF5 reference), "
+            f"'include' (text sidecar path) or 'values' (inline values); got "
             f"{' and '.join(present) if present else 'none'}"
         )
-    has_data = present == ["Data"]
-    fmt = item.get("Format", "HDF" if has_data else "XML")
+    has_data = present == ["data"]
+    fmt = item.get("format", "HDF" if has_data else "XML")
     canonical: Dict[str, Any] = {
-        "Format": fmt,
-        "DataType": item.get("DataType", "Float"),
-        "Precision": int(item.get("Precision", _DEFAULT_PRECISION)),
-        "Dimensions": _FlowList(int(d) for d in item["Dimensions"]),
+        "format": fmt,
+        "data_type": item.get("data_type", "Float"),
+        "precision": int(item.get("precision", _DEFAULT_PRECISION)),
+        "dimensions": _FlowList(int(d) for d in item["dimensions"]),
     }
     if has_data:
-        canonical["Data"] = str(item["Data"])
-    elif "Include" in item:
-        canonical["Include"] = str(item["Include"])
+        canonical["data"] = str(item["data"])
+    elif "include" in item:
+        canonical["include"] = str(item["include"])
     else:
-        canonical["Values"] = _inline_values(
-            item["Values"], canonical["DataType"], where)
+        canonical["values"] = _inline_values(
+            item["values"], canonical["data_type"], where)
     return canonical
 
 
 def _canonicalize_attribute(attr: Dict[str, Any], where: str) -> Dict[str, Any]:
-    for key in ("Name", "DataItem"):
+    for key in ("name", "data_item"):
         if key not in attr:
             raise YmfArchiveError(f"{where}: Attribute has no {key!r}")
     return {
-        "Name": str(attr["Name"]),
-        "AttributeType": attr.get("AttributeType", "Scalar"),
-        "Center": attr.get("Center", "Node"),
-        "DataItem": _canonicalize_data_item(attr["DataItem"], f"{where}.DataItem"),
+        "name": str(attr["name"]),
+        "attribute_type": attr.get("attribute_type", "Scalar"),
+        "center": attr.get("center", "Node"),
+        "data_item": _canonicalize_data_item(attr["data_item"], f"{where}.data_item"),
     }
 
 
 def _canonicalize_topology(topo: Dict[str, Any], where: str) -> Dict[str, Any]:
-    for key in ("Type", "NumberOfElements", "DataItem"):
+    for key in ("type", "number_of_elements", "data_item"):
         if key not in topo:
             raise YmfArchiveError(f"{where}: Topology has no {key!r}")
     canonical: Dict[str, Any] = {
-        "Type": topo["Type"],
-        "NumberOfElements": int(topo["NumberOfElements"]),
-        "DataItem": _canonicalize_data_item(topo["DataItem"], f"{where}.DataItem"),
+        "type": topo["type"],
+        "number_of_elements": int(topo["number_of_elements"]),
+        "data_item": _canonicalize_data_item(topo["data_item"], f"{where}.data_item"),
     }
     # NodesPerElement is genuinely optional rather than defaultable: there is
     # no correct value to invent for a Tetrahedron, so an absent key stays
     # absent and round-trips as absent.
-    if "NodesPerElement" in topo:
-        canonical["NodesPerElement"] = int(topo["NodesPerElement"])
+    if "nodes_per_element" in topo:
+        canonical["nodes_per_element"] = int(topo["nodes_per_element"])
     return canonical
 
 
 def _canonicalize_geometry(geom: Dict[str, Any], where: str) -> Dict[str, Any]:
-    if "DataItem" not in geom:
-        raise YmfArchiveError(f"{where}: Geometry has no 'DataItem'")
+    if "data_item" not in geom:
+        raise YmfArchiveError(f"{where}: geometry has no 'data_item'")
     return {
-        "Type": geom.get("Type", "XYZ"),
-        "DataItem": _canonicalize_data_item(geom["DataItem"], f"{where}.DataItem"),
+        "type": geom.get("type", "XYZ"),
+        "data_item": _canonicalize_data_item(geom["data_item"], f"{where}.data_item"),
     }
 
 
 def _canonicalize_grid(g: Dict[str, Any], where: str) -> Dict[str, Any]:
     canonical: Dict[str, Any] = {}
-    if "Name" in g:
-        canonical["Name"] = str(g["Name"])
-    canonical["Topology"] = _canonicalize_topology(g["Topology"], f"{where}.Topology")
-    canonical["Geometry"] = _canonicalize_geometry(g["Geometry"], f"{where}.Geometry")
-    canonical["Attributes"] = [
-        _canonicalize_attribute(a, f"{where}.Attributes[{i}]")
-        for i, a in enumerate(g.get("Attributes", []))
+    if "name" in g:
+        canonical["name"] = str(g["name"])
+    canonical["topology"] = _canonicalize_topology(g["topology"], f"{where}.topology")
+    canonical["geometry"] = _canonicalize_geometry(g["geometry"], f"{where}.geometry")
+    canonical["attributes"] = [
+        _canonicalize_attribute(a, f"{where}.attributes[{i}]")
+        for i, a in enumerate(g.get("attributes", []))
     ]
     return canonical
 
 
 def _canonicalize_step(step: Dict[str, Any], where: str) -> Dict[str, Any]:
-    if "Time" not in step:
+    if "time" not in step:
         raise YmfArchiveError(f"{where}: step has no 'Time'")
-    is_spatial = "SpatialCollection" in step
-    is_uniform = "Topology" in step or "Geometry" in step
+    is_spatial = "spatial_collection" in step
+    is_uniform = "topology" in step or "geometry" in step
     if is_spatial and is_uniform:
         raise YmfArchiveError(
             f"{where}: step has both 'SpatialCollection' and inline "
@@ -708,23 +710,65 @@ def _canonicalize_step(step: Dict[str, Any], where: str) -> Dict[str, Any]:
             f"{where}: step has neither 'SpatialCollection' nor "
             "'Topology'/'Geometry'"
         )
-    canonical: Dict[str, Any] = {"Time": float(step["Time"])}
+    canonical: Dict[str, Any] = {"time": float(step["time"])}
     if is_spatial:
-        canonical["SpatialCollection"] = [
-            _canonicalize_grid(g, f"{where}.SpatialCollection[{i}]")
-            for i, g in enumerate(step["SpatialCollection"])
+        canonical["spatial_collection"] = [
+            _canonicalize_grid(g, f"{where}.spatial_collection[{i}]")
+            for i, g in enumerate(step["spatial_collection"])
         ]
     else:
-        for key in ("Topology", "Geometry"):
+        for key in ("topology", "geometry"):
             if key not in step:
                 raise YmfArchiveError(f"{where}: uniform step has no {key!r}")
-        canonical["Topology"] = _canonicalize_topology(step["Topology"], f"{where}.Topology")
-        canonical["Geometry"] = _canonicalize_geometry(step["Geometry"], f"{where}.Geometry")
-        canonical["Attributes"] = [
-            _canonicalize_attribute(a, f"{where}.Attributes[{i}]")
-            for i, a in enumerate(step.get("Attributes", []))
+        canonical["topology"] = _canonicalize_topology(step["topology"], f"{where}.topology")
+        canonical["geometry"] = _canonicalize_geometry(step["geometry"], f"{where}.geometry")
+        canonical["attributes"] = [
+            _canonicalize_attribute(a, f"{where}.attributes[{i}]")
+            for i, a in enumerate(step.get("attributes", []))
         ]
     return canonical
+
+
+#: Capitalized spellings accepted on read and folded to the canonical ones.
+#:
+#: The archive's vocabulary came from XDMF, which capitalizes everything --
+#: elements (``Topology``, ``DataItem``) and their attributes
+#: (``NumberOfElements``, ``Precision``) alike -- and YMF followed by analogy,
+#: including for keys XDMF does not have (``TimeCollections``,
+#: ``SpatialCollection``, ``Attributes`` as a list). Keys are
+#: ``lower_case_with_underscores`` now; see "Naming" in
+#: docs/problem-specification.md.
+#:
+#: Values are not folded. ``Triangle``, ``Node``, ``Scalar``, ``Float``,
+#: ``XYZ`` name types, so they stay as they are -- which is also what XDMF
+#: needs when ymf2xmf writes them back out.
+_ARCHIVE_KEY_ALIASES = {
+    "TimeCollections": "time_collections", "TimeCollection": "time_collection",
+    "SpatialCollection": "spatial_collection",
+    "NumberOfElements": "number_of_elements",
+    "NodesPerElement": "nodes_per_element",
+    "AttributeType": "attribute_type", "DataItem": "data_item",
+    "DataType": "data_type", "Dimensions": "dimensions",
+    "Attributes": "attributes", "Precision": "precision",
+    "Topology": "topology", "Geometry": "geometry", "Include": "include",
+    "Center": "center", "Format": "format", "Values": "values",
+    "Name": "name", "Data": "data", "Time": "time", "Type": "type",
+}
+
+
+def fold_archive_keys(obj: Any) -> Any:
+    """Rename any capitalized archive key to its canonical spelling.
+
+    Applied on read, so an archive written before the naming rule -- or by a
+    writer not yet updated -- still loads. A document that already uses the
+    canonical spelling passes through unchanged.
+    """
+    if isinstance(obj, dict):
+        return {_ARCHIVE_KEY_ALIASES.get(k, k): fold_archive_keys(v)
+                for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [fold_archive_keys(v) for v in obj]
+    return obj
 
 
 def canonicalize_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
@@ -745,9 +789,10 @@ def canonicalize_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
     field is required, and ``Topology.NodesPerElement`` is optional-absent
     rather than defaulted.
     """
-    collections = domain.get("TimeCollections")
+    domain = fold_archive_keys(domain)
+    collections = domain.get("time_collections")
     if collections is None:
-        single = domain.get("TimeCollection")
+        single = domain.get("time_collection")
         if single is None:
             return {}
         # Singular form is input sugar; the canonical output is always the list.
@@ -755,24 +800,24 @@ def canonicalize_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
     result_collections = []
     seen: Dict[str, int] = {}
     for ci, collection in enumerate(collections):
-        name = collection.get("Name", _DEFAULT_TIME_COLLECTION_NAME)
+        name = collection.get("name", _DEFAULT_TIME_COLLECTION_NAME)
         if name in seen:
             raise YmfArchiveError(
-                f"TimeCollections[{ci}].Name: duplicate collection name {name!r} "
+                f"time_collections[{ci}].name: duplicate collection name {name!r} "
                 f"(also at TimeCollections[{seen[name]}]); names are how a reader "
                 "tells the meshes apart, so they must be unique"
             )
         seen[name] = ci
         result_collections.append(
             {
-                "Name": name,
-                "Data": [
-                    _canonicalize_step(step, f"TimeCollections[{ci}].Data[{i}]")
-                    for i, step in enumerate(collection.get("Data", []))
+                "name": name,
+                "data": [
+                    _canonicalize_step(step, f"time_collections[{ci}].data[{i}]")
+                    for i, step in enumerate(collection.get("data", []))
                 ],
             }
         )
-    return {"TimeCollections": result_collections}
+    return {"time_collections": result_collections}
 
 
 # ---------------------------------------------------------------------------
@@ -781,75 +826,75 @@ def canonicalize_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _validate_data_item(item: Dict[str, Any], where: str) -> None:
-    fmt = item["Format"]
+    fmt = item["format"]
     if fmt not in DATA_ITEM_FORMATS:
         raise YmfArchiveError(
-            f"{where}.Format: {fmt!r} is not one of {sorted(DATA_ITEM_FORMATS)}"
+            f"{where}.format: {fmt!r} is not one of {sorted(DATA_ITEM_FORMATS)}"
         )
-    if item["DataType"] not in DATA_TYPES:
+    if item["data_type"] not in DATA_TYPES:
         raise YmfArchiveError(
-            f"{where}.DataType: {item['DataType']!r} is not one of {sorted(DATA_TYPES)}"
+            f"{where}.data_type: {item['data_type']!r} is not one of {sorted(DATA_TYPES)}"
         )
-    if item["Precision"] <= 0:
-        raise YmfArchiveError(f"{where}.Precision: must be positive, got {item['Precision']}")
-    dims = item["Dimensions"]
+    if item["precision"] <= 0:
+        raise YmfArchiveError(f"{where}.precision: must be positive, got {item['precision']}")
+    dims = item["dimensions"]
     if not dims:
-        raise YmfArchiveError(f"{where}.Dimensions: must not be empty")
+        raise YmfArchiveError(f"{where}.dimensions: must not be empty")
     if any(d < 0 for d in dims):
-        raise YmfArchiveError(f"{where}.Dimensions: must be non-negative, got {dims}")
-    if fmt == "XML" and "Include" not in item and "Values" not in item:
-        raise YmfArchiveError(f"{where}: Format='XML' requires 'Include' or 'Values'")
-    if "Values" in item:
+        raise YmfArchiveError(f"{where}.dimensions: must be non-negative, got {dims}")
+    if fmt == "XML" and "include" not in item and "values" not in item:
+        raise YmfArchiveError(f"{where}: format='XML' requires 'include' or 'values'")
+    if "values" in item:
         if fmt != "XML":
             raise YmfArchiveError(
-                f"{where}: inline 'Values' need Format='XML', not {fmt!r}")
-        check_dimensions(item, [len(item["Values"])], where=where)
-    if fmt == "HDF" and "Data" not in item:
-        raise YmfArchiveError(f"{where}: Format='HDF' requires 'Data'")
+                f"{where}: inline 'values' need format='XML', not {fmt!r}")
+        check_dimensions(item, [len(item["values"])], where=where)
+    if fmt == "HDF" and "data" not in item:
+        raise YmfArchiveError(f"{where}: format='HDF' requires 'data'")
 
 
 def _validate_grid_like(g: Dict[str, Any], where: str) -> None:
-    topo = g["Topology"]
-    if topo["Type"] not in KNOWN_TOPOLOGY_TYPES:
+    topo = g["topology"]
+    if topo["type"] not in KNOWN_TOPOLOGY_TYPES:
         raise YmfArchiveError(
-            f"{where}.Topology.Type: {topo['Type']!r} is not a known XDMF "
+            f"{where}.topology.Type: {topo['type']!r} is not a known XDMF "
             f"topology type. Known types: {sorted(KNOWN_TOPOLOGY_TYPES)}"
         )
-    _validate_data_item(topo["DataItem"], f"{where}.Topology.DataItem")
+    _validate_data_item(topo["data_item"], f"{where}.topology.data_item")
 
-    geom = g["Geometry"]
-    if geom["Type"] not in GEOMETRY_TYPES:
+    geom = g["geometry"]
+    if geom["type"] not in GEOMETRY_TYPES:
         raise YmfArchiveError(
-            f"{where}.Geometry.Type: {geom['Type']!r} is not one of {sorted(GEOMETRY_TYPES)}"
+            f"{where}.geometry.Type: {geom['type']!r} is not one of {sorted(GEOMETRY_TYPES)}"
         )
-    _validate_data_item(geom["DataItem"], f"{where}.Geometry.DataItem")
+    _validate_data_item(geom["data_item"], f"{where}.geometry.data_item")
 
     seen: Dict[Tuple[str, str], int] = {}
-    for i, attr in enumerate(g["Attributes"]):
-        at = f"{where}.Attributes[{i}]"
-        if attr["AttributeType"] not in ATTRIBUTE_TYPES:
+    for i, attr in enumerate(g["attributes"]):
+        at = f"{where}.attributes[{i}]"
+        if attr["attribute_type"] not in ATTRIBUTE_TYPES:
             raise YmfArchiveError(
-                f"{at}.AttributeType: {attr['AttributeType']!r} is not one of "
+                f"{at}.attribute_type: {attr['attribute_type']!r} is not one of "
                 f"{sorted(ATTRIBUTE_TYPES)}"
             )
-        if attr["Center"] not in CENTERINGS:
+        if attr["center"] not in CENTERINGS:
             raise YmfArchiveError(
-                f"{at}.Center: {attr['Center']!r} is not one of {sorted(CENTERINGS)}"
+                f"{at}.center: {attr['center']!r} is not one of {sorted(CENTERINGS)}"
             )
         # Viewers keep fields on different entities apart (point data and
         # cell data are separate namespaces in VTK), so the same name may
         # appear once per centering -- exporters commonly write T both
         # cell- and node-centred. Twice on the same entity is a duplicate.
-        key = (attr["Name"], attr["Center"])
+        key = (attr["name"], attr["center"])
         if key in seen:
             raise YmfArchiveError(
-                f"{at}.Name: duplicate {attr['Center']}-centred attribute name "
-                f"{attr['Name']!r} (also at {where}.Attributes[{seen[key]}]); "
+                f"{at}.name: duplicate {attr['center']}-centred attribute name "
+                f"{attr['name']!r} (also at {where}.attributes[{seen[key]}]); "
                 "viewers key fields by name, so duplicates silently shadow "
                 "each other"
             )
         seen[key] = i
-        _validate_data_item(attr["DataItem"], f"{at}.DataItem")
+        _validate_data_item(attr["data_item"], f"{at}.data_item")
 
 
 def validate_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
@@ -865,20 +910,20 @@ def validate_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
     Raises :class:`YmfArchiveError` naming the offending path.
     """
     canonical = canonicalize_domain(domain)
-    for ci, collection in enumerate(canonical.get("TimeCollections", [])):
-        for i, step in enumerate(collection["Data"]):
-            where = f"TimeCollections[{ci}].Data[{i}]"
-            if "SpatialCollection" in step:
-                if not step["SpatialCollection"]:
-                    raise YmfArchiveError(f"{where}.SpatialCollection: must not be empty")
-                for j, g in enumerate(step["SpatialCollection"]):
-                    _validate_grid_like(g, f"{where}.SpatialCollection[{j}]")
+    for ci, collection in enumerate(canonical.get("time_collections", [])):
+        for i, step in enumerate(collection["data"]):
+            where = f"time_collections[{ci}].data[{i}]"
+            if "spatial_collection" in step:
+                if not step["spatial_collection"]:
+                    raise YmfArchiveError(f"{where}.spatial_collection: must not be empty")
+                for j, g in enumerate(step["spatial_collection"]):
+                    _validate_grid_like(g, f"{where}.spatial_collection[{j}]")
             else:
                 _validate_grid_like(step, where)
     return canonical
 
 
-def check_dimensions(item: Dict[str, Any], shape: Sequence[int], where: str = "DataItem") -> None:
+def check_dimensions(item: Dict[str, Any], shape: Sequence[int], where: str = "data_item") -> None:
     """Assert a DataItem's declared ``Dimensions`` match an array's shape.
 
     The cheapest high-value check at the boundary: a mismatch here is the
@@ -890,7 +935,7 @@ def check_dimensions(item: Dict[str, Any], shape: Sequence[int], where: str = "D
     declaring ``[N*k]`` for an ``(N, k)`` array is accepted -- that is a
     normal and intentional thing to do for XDMF connectivity arrays.
     """
-    declared = [int(d) for d in item["Dimensions"]]
+    declared = [int(d) for d in item["dimensions"]]
     actual = [int(s) for s in shape]
     if declared == actual:
         return
@@ -901,7 +946,7 @@ def check_dimensions(item: Dict[str, Any], shape: Sequence[int], where: str = "D
         n_actual *= s
     if n_declared != n_actual:
         raise YmfArchiveError(
-            f"{where}.Dimensions: declared {declared} ({n_declared} values) but "
+            f"{where}.dimensions: declared {declared} ({n_declared} values) but "
             f"the array has shape {actual} ({n_actual} values)"
         )
 
@@ -960,8 +1005,35 @@ def _dump(obj: Any) -> str:
     )
 
 
+# PyYAML implements YAML 1.1, whose float grammar wants a decimal point and
+# a signed exponent. So "1.0e-10" is a number while "1e-10", "1E-10",
+# "1e+10", "-1e-10" and "1.5e3" all come back as *strings*. strictyaml,
+# which reads a spec as written, accepts every one of them as a number.
+#
+# That left the same file meaning two different things depending on which
+# reader saw it: a spec validated as a file had a numeric tolerance, and the
+# same spec carried inside an archive had a string. Nothing warned; the
+# value simply stopped being a number somewhere downstream.
+#
+# This resolver adds the exponent forms YAML 1.2 and JSON accept. It is
+# registered on a subclass, so pyyaml's own SafeLoader -- which other code
+# in the same process may be using -- is left exactly as it was.
+_YAML12_FLOAT = re.compile(
+    r"^[-+]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)[eE][-+]?[0-9]+$"
+)
+
+
+class _SpecLoader(_YamlLoader):  # noqa: D401 - a loader, not a function
+    """``_YamlLoader`` that also reads YAML 1.2 scientific notation."""
+
+
+_SpecLoader.add_implicit_resolver(
+    "tag:yaml.org,2002:float", _YAML12_FLOAT, list("-+.0123456789")
+)
+
+
 def _load(text: str) -> Any:
-    return yaml.load(text, Loader=_YamlLoader)
+    return yaml.load(text, Loader=_SpecLoader)
 
 
 def write_ymf(
@@ -1023,13 +1095,13 @@ def load_array(item: Dict[str, Any], base_dir: str | Path = "."):
     imported here, so the archive core still needs neither.
     """
     import numpy
-    if "Values" in item:
-        dtype = "f%d" % item["Precision"] if item["DataType"] == "Float" else (
-            "u%d" if item["DataType"] in ("UInt", "UChar") else "i%d") % item["Precision"]
-        return numpy.array(item["Values"], dtype=dtype).reshape(item["Dimensions"])
-    if item.get("Format") == "HDF" and "Data" in item:
+    if "values" in item:
+        dtype = "f%d" % item["precision"] if item["data_type"] == "Float" else (
+            "u%d" if item["data_type"] in ("UInt", "UChar") else "i%d") % item["precision"]
+        return numpy.array(item["values"], dtype=dtype).reshape(item["dimensions"])
+    if item.get("format") == "HDF" and "data" in item:
         import h5py
-        filename, dataset = str(item["Data"]).rsplit(":", 1)
+        filename, dataset = str(item["data"]).rsplit(":", 1)
         with h5py.File(Path(base_dir) / filename, "r") as f:
             return f[dataset][()]
     raise YmfArchiveError("load_array: no inline Values or HDF5 reference in %r" % (item,))
@@ -1037,14 +1109,14 @@ def load_array(item: Dict[str, Any], base_dir: str | Path = "."):
 
 def _data_items(domain: Dict[str, Any]):
     """Every DataItem dict of a canonical domain, with a readable path."""
-    for collection in domain.get("TimeCollections", []):
-        for i, step in enumerate(collection["Data"]):
-            for j, g in enumerate(step.get("SpatialCollection", [step])):
-                where = "%s/%d%s" % (collection["Name"], i, "" if "Topology" in step else "/%d" % j)
-                yield where + "/Topology", g["Topology"]
-                yield where + "/Geometry", g["Geometry"]
-                for a in g["Attributes"]:
-                    yield "%s/%s/%s" % (where, a.get("Center", "Node"), a["Name"]), a
+    for collection in domain.get("time_collections", []):
+        for i, step in enumerate(collection["data"]):
+            for j, g in enumerate(step.get("spatial_collection", [step])):
+                where = "%s/%d%s" % (collection["name"], i, "" if "topology" in step else "/%d" % j)
+                yield where + "/Topology", g["topology"]
+                yield where + "/Geometry", g["geometry"]
+                for a in g["attributes"]:
+                    yield "%s/%s/%s" % (where, a.get("center", "Node"), a["name"]), a
 
 
 def inline_domain(domain: Dict[str, Any], base_dir: str | Path = ".") -> Dict[str, Any]:
@@ -1056,11 +1128,11 @@ def inline_domain(domain: Dict[str, Any], base_dir: str | Path = ".") -> Dict[st
     import copy
     out = copy.deepcopy(canonicalize_domain(domain))
     for _, owner in _data_items(out):
-        item = owner["DataItem"]
-        if "Values" in item:
+        item = owner["data_item"]
+        if "values" in item:
             continue
         array = load_array(item, base_dir)
-        owner["DataItem"] = data_item_for(array, inline=True, dimensions=item["Dimensions"])
+        owner["data_item"] = data_item_for(array, inline=True, dimensions=item["dimensions"])
     return validate_domain(out)
 
 
@@ -1078,18 +1150,18 @@ def rebase_domain(domain: Dict[str, Any], from_dir: str | Path,
     if Path(from_dir).resolve() == Path(to_dir).resolve():
         return out
     for _, owner in _data_items(out):
-        item = owner["DataItem"]
-        if item.get("Format") == "HDF" and "Data" in item:
-            filename, dataset = str(item["Data"]).rsplit(":", 1)
+        item = owner["data_item"]
+        if item.get("format") == "HDF" and "data" in item:
+            filename, dataset = str(item["data"]).rsplit(":", 1)
             moved = os.path.relpath(Path(from_dir).resolve() / filename,
                                     Path(to_dir).resolve())
-            item["Data"] = "%s:%s" % (Path(moved).as_posix(), dataset)
+            item["data"] = "%s:%s" % (Path(moved).as_posix(), dataset)
     return out
 
 
 def domain_arrays(domain: Dict[str, Any], base_dir: str | Path = "."):
     """{path: array} for every DataItem, however each is stored."""
-    return {where: load_array(owner["DataItem"], base_dir)
+    return {where: load_array(owner["data_item"], base_dir)
             for where, owner in _data_items(canonicalize_domain(domain))}
 
 

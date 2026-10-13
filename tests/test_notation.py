@@ -124,7 +124,7 @@ def test_function_style_left_hand_side():
 @pytest.mark.parametrize("text, message", [
     ("2 kapa", r"unknown name 'kapa'"),
     ("∇·(κ∇Q)", r"unknown name 'Q'"),
-    ("sin πx", r"sin needs \(arguments\)"),
+    ("sin πx", r"sin needs its argument in parentheses"),
     ("(x, y) * (x, y)", r"cannot multiply two vectors"),
     ("x +", r"expected a number, a name or '\(' at position 3"),
     ("x @ y", r"unexpected character '@'"),
@@ -132,3 +132,44 @@ def test_function_style_left_hand_side():
 def test_errors_name_the_problem(text, message):
     with pytest.raises(SymbolicError, match=message):
         expr(text, κ=1)
+
+
+# --- errors show the fix, not only the fault ----------------------------------------
+#
+# Phase 4 of the semantics campaign. Three of the notation's limits are
+# legal-looking mistakes -- a function applied without parentheses, a
+# subscript, and a multi-letter name nobody declared. Each message now names
+# the rule and shows what to write instead, because knowing that "Re" is
+# unknown does not tell you whether to declare it or to spell it R·e.
+
+
+@pytest.mark.parametrize("text, fix", [
+    # a function needs its argument bracketed
+    ("sin πx", r'write "sin\(x\)", not "sin x"'),
+    ("exp κt", r'write "exp\(x\)", not "exp x"'),
+    # the notation has no subscripts, and the fix is to spell the index in
+    ("p₀ + 1", r"is a subscript.*write 'p0' and declare it"),
+    ("v₁₂", r"write 'v12'"),
+    # a multi-letter run is a product only when every letter is a name
+    ("Re", r"declare it as a coefficient or an unknown"),
+    ("Re", r"not read as the product R·e because 'R', 'e' are not names"),
+])
+def test_an_error_says_what_to_write_instead(text, fix):
+    with pytest.raises(SymbolicError, match=fix):
+        expr(text, κ=1)
+
+
+def test_a_single_unknown_letter_is_not_told_about_products(text=None):
+    """There is no product reading of one letter, so do not offer one."""
+    with pytest.raises(SymbolicError, match=r"unknown name 'q'") as caught:
+        expr("q + 1", κ=1)
+    assert "product" not in str(caught.value)
+
+
+@pytest.mark.parametrize("text", ["πx", "κ²", "sin(πx)", "2π²κt"])
+def test_what_the_notation_does_have_still_parses(text):
+    """The superscripts are powers and implicit multiplication is notation.
+
+    Reporting subscripts separately must not disturb either.
+    """
+    expr(text, κ=1)

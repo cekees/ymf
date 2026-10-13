@@ -46,25 +46,25 @@ def load_array(data_item, base_dir):
     ``rsplit`` keeps a colon inside the path (a Windows drive letter) from
     being mistaken for the separator.
     """
-    if "Values" in data_item:
-        return np.array(data_item["Values"]).reshape(data_item["Dimensions"])
-    if data_item["Format"] != "HDF":
+    if "values" in data_item:
+        return np.array(data_item["values"]).reshape(data_item["dimensions"])
+    if data_item["format"] != "HDF":
         raise NotImplementedError("this example follows HDF references and inline values")
     import h5py  # only needed for archives that reference HDF5
 
-    filename, dataset = data_item["Data"].rsplit(":", 1)
+    filename, dataset = data_item["data"].rsplit(":", 1)
     with h5py.File(base_dir / filename, "r") as h5:
         return h5[dataset][()]
 
 
 def grids_of(step):
     """A uniform step is one grid; a spatial step is several."""
-    return step["SpatialCollection"] if "SpatialCollection" in step else [step]
+    return step["spatial_collection"] if "spatial_collection" in step else [step]
 
 
 def field(grid, name):
-    for attr in grid["Attributes"]:
-        if attr["Name"] == name:
+    for attr in grid["attributes"]:
+        if attr["name"] == name:
             return attr
     raise KeyError("no attribute %r in this grid" % (name,))
 
@@ -76,24 +76,24 @@ def main(argv=None) -> int:
     base_dir = args.archive.parent
 
     domain, extra = read_ymf(args.archive)
-    problem = extra["Problem"]
+    problem = extra["model"]
     kappa_spec = float(problem["strong_form"]["coefficients"]["κ"]["value"])
     t_wall = problem["strong_form"]["boundary_conditions"][0]["value"]
     print("problem: %s" % problem["name"])
     print("kappa in the spec: %g %s"
           % (kappa_spec, problem["strong_form"]["coefficients"]["κ"]["units"]))
 
-    collection = domain["TimeCollections"][0]
+    collection = domain["time_collections"][0]
     times, peaks = [], []
     print("\n  time   subdomains   max T [K]")
-    for step in collection["Data"]:
+    for step in collection["data"]:
         grids = grids_of(step)
         # The peak over the whole domain is the peak over its subdomains.
-        peak = max(load_array(field(g, "T")["DataItem"], base_dir).max()
+        peak = max(load_array(field(g, "T")["data_item"], base_dir).max()
                    for g in grids)
-        times.append(step["Time"])
+        times.append(step["time"])
         peaks.append(peak)
-        print("  %5.1f   %10d   %9.4f" % (step["Time"], len(grids), peak))
+        print("  %5.1f   %10d   %9.4f" % (step["time"], len(grids), peak))
 
     # ln(T_max - T_wall) = ln(A) - 2 pi^2 kappa t, so the slope gives kappa.
     slope = np.polyfit(times, np.log(np.array(peaks) - t_wall), 1)[0]
