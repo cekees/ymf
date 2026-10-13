@@ -62,6 +62,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import strictyaml
 import yaml
 
+from ymf.archive import is_archive_text
 from ymf.domain import validate_domain_block
 from ymf.references import apply_defaults, resolve
 from ymf.schema import _ALLOW_FLOW_STYLE, PARTIAL_YMF_SCHEMA, YMF_SCHEMA
@@ -358,9 +359,10 @@ def _dump(data: Any, **kwargs: Any) -> str:
     return yaml.dump(data, Dumper=_NoAliasDumper, **kwargs)
 
 
-def _is_archive_text(text: str) -> bool:
-    import re
-    return re.search(r"^(ymf|outputs):", text, re.M) is not None
+#: Moved to ymf.archive, so a core-only install can ask which loader a file
+#: needs without importing this module and, with it, strictyaml. Kept as a
+#: name here for callers that already import it from compose.
+_is_archive_text = is_archive_text
 
 
 #: Spellings accepted on input and folded to the canonical one as the file is

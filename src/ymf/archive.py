@@ -147,6 +147,7 @@ __all__ = [
     "validate_domain",
     "check_dimensions",
     "write_ymf",
+    "is_archive_text",
     "read_document",
     "write_document",
     "check_version",
@@ -1198,6 +1199,25 @@ def check_version(document: Dict[str, Any], where: str = "document") -> None:
         raise YmfArchiveError(
             "%s was written by ymf %s, newer than this ymf %s; upgrade ymf to read it"
             % (where, document["ymf"], package_version()))
+
+
+def is_archive_text(text: str) -> bool:
+    """True if this YMF text is an archive rather than a bare specification.
+
+    An archive carries the ``ymf:`` version it was written by and its
+    ``outputs:``; a specification carries neither, so the top-level keys
+    are enough to tell them apart.
+
+    Deliberately a test on the *text*, and deliberately here in the core.
+    Which loader to use is the one decision that has to be made before any
+    loader runs -- an archive holds arrays and must go to the fast pyyaml
+    path, a specification to the validating one -- so asking cannot be
+    allowed to require the validating stack. It lived in ymf.compose until
+    2026-10-13, which meant a core-only install could not ask the question
+    at all: proteus's ymf_run imported it and died on "No module named
+    'strictyaml'" (cekees/proteus#46).
+    """
+    return re.search(r"^(ymf|outputs):", text, re.M) is not None
 
 
 def read_document(path: str | Path) -> Dict[str, Any]:
