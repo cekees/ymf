@@ -242,11 +242,24 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
 
     regions = {r["name"]: r["where"] for r in strong.get("boundary_regions", [])}
     dirichlet = []
+    neumann = []
     periodic = []
     for bc in strong.get("boundary_conditions") or []:
-        if bc["type"] not in ("dirichlet", "periodic"):
-            raise SymbolicError("boundary condition on %s: only dirichlet and periodic "
-                                "conditions are runnable so far, not %s" % (bc["region"], bc["type"]))
+        if bc["type"] == "robin":
+            # alpha u + beta q.n = g needs the solution's trace in the flux,
+            # and a Proteus flux boundary condition is a function of (x, t)
+            # alone. Nothing in Proteus implements Robin today, so saying so
+            # is better than emitting something that quietly solves a
+            # different problem.
+            raise SymbolicError(
+                "boundary condition on %s: a robin condition needs the "
+                "solution's trace in the boundary flux, which Proteus has no "
+                "numerical flux for. Give dirichlet or neumann."
+                % (bc["region"],))
+        if bc["type"] not in ("dirichlet", "neumann", "periodic"):
+            raise SymbolicError("boundary condition on %s: dirichlet, neumann and "
+                                "periodic conditions are runnable so far, not %s"
+                                % (bc["region"], bc["type"]))
         name = bc["variable"]
         if name not in ranks:
             raise SymbolicError("boundary condition on %s: %s is not an unknown"
@@ -267,11 +280,12 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                 value = sympy.Matrix([value] * dim)
         else:
             raise SymbolicError("boundary condition on %s: give value or formula" % bc["region"])
+        entries = dirichlet if bc["type"] == "dirichlet" else neumann
         for component, code in _components(value, name, ranks[name], space,
                                            "boundary condition on %s" % bc["region"]).items():
-            dirichlet.append({"component": component, "region": bc["region"],
-                              "where": _where(where, space),
-                              "value": code})
+            entries.append({"component": component, "region": bc["region"],
+                            "where": _where(where, space),
+                            "value": code})
 
     initial = {}
     for ic in strong.get("initial_conditions") or []:
@@ -300,7 +314,13 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                 for name, rank in ranks.items()}
     out = {"adr": adr, "unknowns": unknowns,
            "domain": {"lower": lower, "upper": upper},
-           "dirichlet": dirichlet, "periodic": periodic, "initial": initial, "exact": exact,
+           # A neumann entry's value is the OUTWARD diffusive flux q.n with
+           # q = -a grad u, which is the sign Proteus's
+           # diffusiveFluxBoundaryConditions wants (see
+           # test/poisson_2d/poisson_het_2d_p.py, which checks it against an
+           # exact solution).
+           "dirichlet": dirichlet, "neumann": neumann,
+           "periodic": periodic, "initial": initial, "exact": exact,
            # The time interval the problem is posed on; None for a steady
            # problem. A time derivative in a model used steadily (Couette
            # from the Navier-Stokes model) is dropped by a steady solve.

@@ -717,11 +717,22 @@ nobody has to rediscover them:
   different numbers from the solver reading the same file. A bare
   `ymf[units]` install still works, and still sees only the coefficients
   that are already numbers.
-- **Only Dirichlet and periodic conditions run**, and only on a box.
-  Neumann, Robin and `hydrograph` validate but `adr_problem` refuses them.
-  A domain of any kind now validates and is carried — see
-  [The domain](#the-domain) — but only `kind: box` is solved, and
-  `adr_problem` says which kind it was given rather than failing obscurely.
+- **Dirichlet, Neumann and periodic conditions run**, and only on a box.
+  A `neumann` condition gives the **outward** diffusive flux `q·n` with
+  `q = -a∇u`, which is the sign Proteus's
+  `diffusiveFluxBoundaryConditions` wants; where no condition claims a
+  face, the natural condition applies, which for a diffusion term is zero
+  flux. A Neumann-only problem is detected as determined up to a constant,
+  like any other with no Dirichlet condition.
+- *(Open.)* **`robin` and `hydrograph` still refuse.** Robin,
+  `αu + β q·n = g`, needs the solution's trace inside the boundary flux,
+  and a Proteus flux boundary condition is a function of `(x, t)` alone —
+  the word "robin" appears nowhere in Proteus, so this is a missing
+  numerical flux rather than missing wiring. `adr_problem` says so instead
+  of emitting something that quietly solves a different problem.
+- **Only `kind: box` is solved.** A domain of any kind now validates and is
+  carried — see [The domain](#the-domain) — but `adr_problem` says which
+  kind it was given rather than failing obscurely.
 - **The notation's limits**, each of which now reports the fix as well as
   the fault. Functions need parentheses — `sin πx` says to write `sin(x)`,
   not `sin x`. There are no subscripts — `p₀` says to write `p0` and declare

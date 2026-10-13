@@ -140,6 +140,39 @@ def test_the_poisson_example_becomes_a_runnable_problem():
     assert problem["time"] is None
 
 
+def _poisson_with(bc):
+    """The Poisson example with its one boundary condition replaced."""
+    doc = load_ymf(EXAMPLES / "poisson.ymf")
+    doc["model"]["strong_form"]["boundary_conditions"] = [bc]
+    return doc
+
+
+def test_a_neumann_condition_becomes_an_outward_flux():
+    """Its value is q.n with q = -a grad u, which is the sign Proteus wants."""
+    problem = adr_problem(_poisson_with(
+        {"region": "all_boundaries", "variable": "u", "type": "neumann",
+         "formula": "-2*x"}))
+    assert problem["dirichlet"] == []
+    assert problem["neumann"] == [{"component": "u", "region": "all_boundaries",
+                                   "where": None, "value": "-2*x"}]
+
+
+def test_a_neumann_only_poisson_is_determined_up_to_a_constant():
+    """No Dirichlet condition fixes u anywhere, so the constant is free."""
+    problem = adr_problem(_poisson_with(
+        {"region": "all_boundaries", "variable": "u", "type": "neumann",
+         "value": 0.0}))
+    assert problem.get("up_to_constant") == ["u"]
+
+
+def test_a_robin_condition_says_why_it_cannot_run():
+    """Proteus has no Robin numerical flux -- 'robin' appears nowhere in it."""
+    with pytest.raises(SymbolicError, match="trace"):
+        adr_problem(_poisson_with(
+            {"region": "all_boundaries", "variable": "u", "type": "robin",
+             "value": 0.0}))
+
+
 def test_the_heat_example_is_transient_with_an_initial_condition():
     problem = adr_problem(load_ymf(EXAMPLES / "heat_equation.ymf"))
     # the time interval comes from the domain, "t ∈ (0, 50]"
