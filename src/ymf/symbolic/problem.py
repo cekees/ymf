@@ -139,6 +139,27 @@ def _components(value, name: str, rank: int, space: Space, where: str) -> Dict[s
     return {"%s_%d" % (name, i): to_code(value[i]) for i in range(space.dim)}
 
 
+def _robin_part(bc, key, space):
+    """alpha or beta of alpha u + beta (q.n) = g, as code."""
+    text = bc.get(key)
+    if text is None:
+        raise SymbolicError(
+            "robin condition on %s: give alpha and beta, the coefficients of "
+            "u and of the outward flux in alpha u + beta (q.n) = g"
+            % (bc["region"],))
+    return to_code(parse_expression(str(text), space))
+
+
+def _robin_rhs(bc, space):
+    """g, from formula or value like any other right-hand side."""
+    if bc.get("formula") is not None:
+        return to_code(parse_expression(bc["formula"], space))
+    if bc.get("value") is not None:
+        return to_code(_number(bc["value"]))
+    raise SymbolicError(
+        "robin condition on %s: give g as value or formula" % (bc["region"],))
+
+
 def _series(bc, name, rank):
     """A hydrograph's ``[[t, value], ...]``, checked.
 
@@ -277,23 +298,14 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     regions = {r["name"]: r["where"] for r in strong.get("boundary_regions", [])}
     dirichlet = []
     neumann = []
+    robin = []
     periodic = []
     for bc in strong.get("boundary_conditions") or []:
-        if bc["type"] == "robin":
-            # alpha u + beta q.n = g needs the solution's trace in the flux,
-            # and a Proteus flux boundary condition is a function of (x, t)
-            # alone. Nothing in Proteus implements Robin today, so saying so
-            # is better than emitting something that quietly solves a
-            # different problem.
-            raise SymbolicError(
-                "boundary condition on %s: a robin condition needs the "
-                "solution's trace in the boundary flux, which Proteus has no "
-                "numerical flux for. Give dirichlet or neumann."
-                % (bc["region"],))
-        if bc["type"] not in ("dirichlet", "neumann", "periodic", "hydrograph"):
-            raise SymbolicError("boundary condition on %s: dirichlet, neumann, "
-                                "hydrograph and periodic conditions are runnable "
-                                "so far, not %s" % (bc["region"], bc["type"]))
+        if bc["type"] not in ("dirichlet", "neumann", "periodic", "hydrograph",
+                              "robin"):
+            raise SymbolicError("boundary condition on %s: %s is not a kind of "
+                                "boundary condition that runs"
+                                % (bc["region"], bc["type"]))
         name = bc["variable"]
         if name not in ranks:
             raise SymbolicError("boundary condition on %s: %s is not an unknown"
@@ -305,6 +317,18 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
             axes = _periodic_axes(where, lower, upper, space, bc["region"])
             comps = [name] if ranks[name] == 0 else ["%s_%d" % (name, i) for i in range(dim)]
             periodic.extend({"component": c, "region": bc["region"], "axes": axes} for c in comps)
+            continue
+        if bc["type"] == "robin":
+            if ranks[name] != 0:
+                raise SymbolicError(
+                    "robin condition on %s: %s is a vector. alpha u + beta q.n = g "
+                    "is one relation, so give one per component."
+                    % (bc["region"], name))
+            robin.append({"component": name, "region": bc["region"],
+                          "where": _where(where, space),
+                          "alpha": _robin_part(bc, "alpha", space),
+                          "beta": _robin_part(bc, "beta", space),
+                          "g": _robin_rhs(bc, space)})
             continue
         if bc["type"] == "hydrograph":
             neumann.append({"component": name, "region": bc["region"],
@@ -358,7 +382,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
            # diffusiveFluxBoundaryConditions wants (see
            # test/poisson_2d/poisson_het_2d_p.py, which checks it against an
            # exact solution).
-           "dirichlet": dirichlet, "neumann": neumann,
+           "dirichlet": dirichlet, "neumann": neumann, "robin": robin,
            "periodic": periodic, "initial": initial, "exact": exact,
            # The time interval the problem is posed on; None for a steady
            # problem. A time derivative in a model used steadily (Couette

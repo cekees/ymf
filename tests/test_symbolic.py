@@ -195,12 +195,29 @@ def test_a_hydrograph_needs_its_series():
              "value": -2.0}))
 
 
-def test_a_robin_condition_says_why_it_cannot_run():
-    """Proteus has no Robin numerical flux -- 'robin' appears nowhere in it."""
-    with pytest.raises(SymbolicError, match="trace"):
+def test_a_robin_condition_becomes_its_three_parts():
+    """alpha u + beta (q.n) = g, with g given like any right-hand side."""
+    problem = adr_problem(_poisson_with(
+        {"region": "all_boundaries", "variable": "u", "type": "robin",
+         "alpha": "1.0", "beta": "2.0", "formula": "y**2 - 1"}))
+    assert problem["robin"] == [{"component": "u", "region": "all_boundaries",
+                                 "where": None, "alpha": "1.0", "beta": "2.0",
+                                 "g": "y**2 - 1"}]
+    assert problem["dirichlet"] == [] and problem["neumann"] == []
+
+
+def test_a_robin_condition_needs_both_coefficients():
+    with pytest.raises(SymbolicError, match="give alpha and beta"):
         adr_problem(_poisson_with(
             {"region": "all_boundaries", "variable": "u", "type": "robin",
-             "value": 0.0}))
+             "alpha": "1.0", "value": 0.0}))
+
+
+def test_a_robin_condition_needs_its_right_hand_side():
+    with pytest.raises(SymbolicError, match="give g"):
+        adr_problem(_poisson_with(
+            {"region": "all_boundaries", "variable": "u", "type": "robin",
+             "alpha": "1.0", "beta": "1.0"}))
 
 
 def test_the_heat_example_is_transient_with_an_initial_condition():
