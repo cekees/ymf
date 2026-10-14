@@ -717,19 +717,29 @@ nobody has to rediscover them:
   different numbers from the solver reading the same file. A bare
   `ymf[units]` install still works, and still sees only the coefficients
   that are already numbers.
-- **Dirichlet, Neumann and periodic conditions run**, and only on a box.
+- **Dirichlet, Neumann, hydrograph and periodic conditions run**, and
+  only on a box.
   A `neumann` condition gives the **outward** diffusive flux `q·n` with
   `q = -a∇u`, which is the sign Proteus's
   `diffusiveFluxBoundaryConditions` wants; where no condition claims a
   face, the natural condition applies, which for a diffusion term is zero
   flux. A Neumann-only problem is detected as determined up to a constant,
   like any other with no Dirichlet condition.
-- *(Open.)* **`robin` and `hydrograph` still refuse.** Robin,
-  `αu + β q·n = g`, needs the solution's trace inside the boundary flux,
-  and a Proteus flux boundary condition is a function of `(x, t)` alone —
-  the word "robin" appears nowhere in Proteus, so this is a missing
-  numerical flux rather than missing wiring. `adr_problem` says so instead
-  of emitting something that quietly solves a different problem.
+- **A `hydrograph` is the same flux, tabulated.** A measured or design
+  discharge cannot be written as a formula, so it is given as
+  `series: [[t, value], ...]` with `t` ascending. Between samples it is
+  interpolated linearly; outside the range the first and last values are
+  held, because extrapolating a discharge past its record is not something
+  to do quietly. It joins the same list a `neumann` condition does,
+  carrying `series` where that carries `value`. A hydrograph is one number
+  per time, so it is refused on a vector unknown — give a `neumann`
+  condition per component.
+- *(Open.)* **`robin` still refuses.** `αu + β q·n = g` needs the
+  solution's trace inside the boundary flux, and a Proteus flux boundary
+  condition is a function of `(x, t)` alone — the word "robin" appears
+  nowhere in Proteus, so this is a missing numerical flux rather than
+  missing wiring. `adr_problem` says so instead of emitting something that
+  quietly solves a different problem.
 - **Only `kind: box` is solved.** A domain of any kind now validates and is
   carried — see [The domain](#the-domain) — but `adr_problem` says which
   kind it was given rather than failing obscurely.

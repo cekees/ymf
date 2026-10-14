@@ -139,6 +139,40 @@ def _components(value, name: str, rank: int, space: Space, where: str) -> Dict[s
     return {"%s_%d" % (name, i): to_code(value[i]) for i in range(space.dim)}
 
 
+def _series(bc, name, rank):
+    """A hydrograph's ``[[t, value], ...]``, checked.
+
+    A hydrograph is tabulated: a measured or design discharge cannot be
+    written as a formula, which is the one thing the rest of a spec prefers.
+    What it gives is the same quantity a ``neumann`` condition gives -- the
+    outward flux -- so it joins the same list, carrying ``series`` where a
+    neumann entry carries ``value``.
+    """
+    if rank != 0:
+        raise SymbolicError(
+            "hydrograph on %s: %s is a vector, and a hydrograph is one "
+            "number per time. Give a neumann condition per component."
+            % (bc["region"], name))
+    series = bc.get("series")
+    if not series:
+        raise SymbolicError(
+            "hydrograph on %s: give series, [[t, value], ...]. A value or a "
+            "formula is a neumann condition." % (bc["region"],))
+    if any(len(point) != 2 for point in series):
+        raise SymbolicError(
+            "hydrograph on %s: each sample is [t, value]" % (bc["region"],))
+    times = [float(t) for t, _ in series]
+    if len(times) < 2:
+        raise SymbolicError(
+            "hydrograph on %s: one sample is a constant, not a hydrograph; "
+            "give a neumann condition with value instead" % (bc["region"],))
+    if any(b <= a for a, b in zip(times, times[1:])):
+        raise SymbolicError(
+            "hydrograph on %s: times must increase, got %s"
+            % (bc["region"], ", ".join(repr(t) for t in times)))
+    return [[float(t), float(v)] for t, v in series]
+
+
 def _where(text: str, space: Space) -> Optional[str]:
     """A region's ``where`` predicate -> boolean code using ``tol`` (None: the whole boundary)."""
     from ymf.symbolic.notation import NotationError, Parser
@@ -256,10 +290,10 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                 "solution's trace in the boundary flux, which Proteus has no "
                 "numerical flux for. Give dirichlet or neumann."
                 % (bc["region"],))
-        if bc["type"] not in ("dirichlet", "neumann", "periodic"):
-            raise SymbolicError("boundary condition on %s: dirichlet, neumann and "
-                                "periodic conditions are runnable so far, not %s"
-                                % (bc["region"], bc["type"]))
+        if bc["type"] not in ("dirichlet", "neumann", "periodic", "hydrograph"):
+            raise SymbolicError("boundary condition on %s: dirichlet, neumann, "
+                                "hydrograph and periodic conditions are runnable "
+                                "so far, not %s" % (bc["region"], bc["type"]))
         name = bc["variable"]
         if name not in ranks:
             raise SymbolicError("boundary condition on %s: %s is not an unknown"
@@ -271,6 +305,11 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
             axes = _periodic_axes(where, lower, upper, space, bc["region"])
             comps = [name] if ranks[name] == 0 else ["%s_%d" % (name, i) for i in range(dim)]
             periodic.extend({"component": c, "region": bc["region"], "axes": axes} for c in comps)
+            continue
+        if bc["type"] == "hydrograph":
+            neumann.append({"component": name, "region": bc["region"],
+                            "where": _where(where, space),
+                            "series": _series(bc, name, ranks[name])})
             continue
         if bc.get("formula") is not None:
             value = parse_expression(bc["formula"], space)
