@@ -717,8 +717,8 @@ nobody has to rediscover them:
   different numbers from the solver reading the same file. A bare
   `ymf[units]` install still works, and still sees only the coefficients
   that are already numbers.
-- **Dirichlet, Neumann, hydrograph and periodic conditions run**, and
-  only on a box.
+- **Dirichlet, Neumann, Robin, hydrograph and periodic conditions run**,
+  and only on a box.
   A `neumann` condition gives the **outward** diffusive flux `q·n` with
   `q = -a∇u`, which is the sign Proteus's
   `diffusiveFluxBoundaryConditions` wants; where no condition claims a
@@ -734,12 +734,19 @@ nobody has to rediscover them:
   carrying `series` where that carries `value`. A hydrograph is one number
   per time, so it is refused on a vector unknown — give a `neumann`
   condition per component.
-- *(Open.)* **`robin` still refuses.** `αu + β q·n = g` needs the
-  solution's trace inside the boundary flux, and a Proteus flux boundary
-  condition is a function of `(x, t)` alone — the word "robin" appears
-  nowhere in Proteus, so this is a missing numerical flux rather than
-  missing wiring. `adr_problem` says so instead of emitting something that
-  quietly solves a different problem.
+- **`robin` runs too**, `αu + β q·n = g`, with `alpha` and `beta` beside
+  the condition and `g` given as `value` or `formula` like any other
+  right-hand side. All three are expressions, so they may vary along the
+  boundary. It is one relation, so a vector unknown wants one condition per
+  component. `beta: 0` is refused — that is a Dirichlet condition, and
+  belongs where it can be imposed strongly.
+
+  This needed a numerical flux written for Proteus
+  (`NumericalFlux.RobinFactory`), not wiring: the flux depends on the
+  solution's trace, and a Proteus flux boundary condition is a function of
+  `(x, t)` alone. That the *dependency set* of a boundary expression is the
+  thing to get right, rather than the list of condition types, is the point
+  taken up in `YMF_TAG_PROPAGATION.md`.
 - **Only `kind: box` is solved.** A domain of any kind now validates and is
   carried — see [The domain](#the-domain) — but `adr_problem` says which
   kind it was given rather than failing obscurely.
