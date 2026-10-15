@@ -110,3 +110,22 @@ def test_an_unknowns_provenance_must_be_a_known_value():
 
     with pytest.raises(strictyaml.YAMLValidationError):
         validate_ymf(_strong_form(per_unknown="        provenance: guessed\n"))
+
+
+@pytest.mark.parametrize("kind", ["model", "problem"])
+def test_a_file_may_be_a_model_or_a_problem(tmp_path, kind):
+    """Both values are accepted, and they are distinct.
+
+    A rename sweep (a66ea1c, "The top-level key is 'model', not 'problem'")
+    rewrote ``Enum(["model", "problem"])`` into ``Enum(["model", "model"])``.
+    `kind: problem` was then rejected, with "when expecting one of: model,
+    model" shown to the user. The enum is the only place the distinction
+    between a file that states the physics and one that poses a well-posed
+    problem is written down, so it is worth a test and not only a comment.
+    """
+    import strictyaml
+    from ymf.schema import PARTIAL_YMF_SCHEMA
+    text = "kind: %s\nextends: base.ymf\n" % kind
+    doc = strictyaml.dirty_load(text, PARTIAL_YMF_SCHEMA, label=kind,
+                                allow_flow_style=True).data
+    assert doc["kind"] == kind

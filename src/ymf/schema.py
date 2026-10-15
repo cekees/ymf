@@ -434,7 +434,7 @@ YMF_SCHEMA = Map(
         # physics but is not yet a well-posed problem; "composition" is
         # written by the loader into a composed document.
         Optional("extends"): Str(),
-        Optional("kind"): Enum(["model", "model"]),
+        Optional("kind"): Enum(["model", "problem"]),
         Optional("composition"): Any(),
         # "remove" lists paths this file drops from what it extends --
         # "Problem.physical_model.assumptions[incompressible]". Composition
