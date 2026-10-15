@@ -161,36 +161,31 @@ def _robin_rhs(bc, space):
 
 
 def _series(bc, name, rank):
-    """A hydrograph's ``[[t, value], ...]``, checked.
+    """``[[t, value], ...]``, checked.
 
-    A hydrograph is tabulated: a measured or design discharge cannot be
-    written as a formula, which is the one thing the rest of a spec prefers.
-    What it gives is the same quantity a ``neumann`` condition gives -- the
-    outward flux -- so it joins the same list, carrying ``series`` where a
-    neumann entry carries ``value``.
+    A value supplied as data rather than written as a formula: a measured or
+    design record is the one thing an expression cannot be. It is a value
+    form, not a kind of condition -- under ``neumann`` it is a discharge
+    hydrograph, under ``dirichlet`` a stage hydrograph or a measured inlet
+    value -- so the entry carries ``series`` where another carries
+    ``value``, and everything downstream treats the two the same way.
     """
+    where = "%s condition on %s" % (bc["type"], bc["region"])
     if rank != 0:
         raise SymbolicError(
-            "hydrograph on %s: %s is a vector, and a hydrograph is one "
-            "number per time. Give a neumann condition per component."
-            % (bc["region"], name))
+            "%s: %s is a vector, and a series is one number per time. Give "
+            "one condition per component." % (where, name))
     series = bc.get("series")
-    if not series:
-        raise SymbolicError(
-            "hydrograph on %s: give series, [[t, value], ...]. A value or a "
-            "formula is a neumann condition." % (bc["region"],))
     if any(len(point) != 2 for point in series):
-        raise SymbolicError(
-            "hydrograph on %s: each sample is [t, value]" % (bc["region"],))
+        raise SymbolicError("%s: each sample is [t, value]" % (where,))
     times = [float(t) for t, _ in series]
     if len(times) < 2:
         raise SymbolicError(
-            "hydrograph on %s: one sample is a constant, not a hydrograph; "
-            "give a neumann condition with value instead" % (bc["region"],))
+            "%s: one sample is a constant; give value instead" % (where,))
     if any(b <= a for a, b in zip(times, times[1:])):
         raise SymbolicError(
-            "hydrograph on %s: times must increase, got %s"
-            % (bc["region"], ", ".join(repr(t) for t in times)))
+            "%s: times must increase, got %s"
+            % (where, ", ".join(repr(t) for t in times)))
     return [[float(t), float(v)] for t, v in series]
 
 
@@ -301,8 +296,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     robin = []
     periodic = []
     for bc in strong.get("boundary_conditions") or []:
-        if bc["type"] not in ("dirichlet", "neumann", "periodic", "hydrograph",
-                              "robin"):
+        if bc["type"] not in ("dirichlet", "neumann", "periodic", "robin"):
             raise SymbolicError("boundary condition on %s: %s is not a kind of "
                                 "boundary condition that runs"
                                 % (bc["region"], bc["type"]))
@@ -330,8 +324,13 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                           "beta": _robin_part(bc, "beta", space),
                           "g": _robin_rhs(bc, space)})
             continue
-        if bc["type"] == "hydrograph":
-            neumann.append({"component": name, "region": bc["region"],
+        entries = dirichlet if bc["type"] == "dirichlet" else neumann
+        if bc.get("series") is not None:
+            # Tabulated rather than written: a discharge hydrograph under
+            # neumann, a stage hydrograph or a measured inlet value under
+            # dirichlet. One number per time, so a vector wants one
+            # condition per component.
+            entries.append({"component": name, "region": bc["region"],
                             "where": _where(where, space),
                             "series": _series(bc, name, ranks[name])})
             continue
@@ -343,7 +342,6 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                 value = sympy.Matrix([value] * dim)
         else:
             raise SymbolicError("boundary condition on %s: give value or formula" % bc["region"])
-        entries = dirichlet if bc["type"] == "dirichlet" else neumann
         for component, code in _components(value, name, ranks[name], space,
                                            "boundary condition on %s" % bc["region"]).items():
             entries.append({"component": component, "region": bc["region"],
