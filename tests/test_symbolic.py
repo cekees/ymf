@@ -165,14 +165,36 @@ def test_a_neumann_only_poisson_is_determined_up_to_a_constant():
     assert problem.get("up_to_constant") == ["u"]
 
 
-def test_a_hydrograph_becomes_a_tabulated_flux():
-    """It gives the same quantity a neumann condition does, as data."""
+def test_a_discharge_hydrograph_is_a_tabulated_neumann():
     problem = adr_problem(_poisson_with(
-        {"region": "all_boundaries", "variable": "u", "type": "hydrograph",
+        {"region": "all_boundaries", "variable": "u", "type": "neumann",
          "series": [[0.0, -2.0], [1.0, -4.0]]}))
     assert problem["neumann"] == [{"component": "u", "region": "all_boundaries",
                                    "where": None,
                                    "series": [[0.0, -2.0], [1.0, -4.0]]}]
+
+
+def test_a_stage_hydrograph_is_a_tabulated_dirichlet():
+    """The case naming "hydrograph" as a type made impossible to write.
+
+    A gauge reading against time is a value, not a flux, so it belongs under
+    dirichlet. Supplying a value by table is orthogonal to the kind of
+    condition it is.
+    """
+    problem = adr_problem(_poisson_with(
+        {"region": "all_boundaries", "variable": "u", "type": "dirichlet",
+         "series": [[0.0, 1.0], [1.0, 2.0]]}))
+    assert problem["dirichlet"] == [{"component": "u", "region": "all_boundaries",
+                                     "where": None,
+                                     "series": [[0.0, 1.0], [1.0, 2.0]]}]
+    assert problem["neumann"] == []
+
+
+def test_hydrograph_is_not_a_condition_type():
+    with pytest.raises(Exception, match="hydrograph"):
+        adr_problem(_poisson_with(
+            {"region": "all_boundaries", "variable": "u", "type": "hydrograph",
+             "series": [[0.0, -2.0], [1.0, -4.0]]}))
 
 
 @pytest.mark.parametrize("series,message", [
@@ -181,18 +203,13 @@ def test_a_hydrograph_becomes_a_tabulated_flux():
     ([[0.0, -2.0], [0.0, -4.0]], "times must increase"),
     ([[0.0, -2.0, 7.0], [1.0, -4.0, 9.0]], "each sample is"),
 ])
-def test_a_malformed_hydrograph_says_what_is_wrong(series, message):
+def test_a_malformed_series_says_what_is_wrong(series, message):
     with pytest.raises(SymbolicError, match=message):
         adr_problem(_poisson_with(
-            {"region": "all_boundaries", "variable": "u", "type": "hydrograph",
+            {"region": "all_boundaries", "variable": "u", "type": "neumann",
              "series": series}))
 
 
-def test_a_hydrograph_needs_its_series():
-    with pytest.raises(SymbolicError, match="give series"):
-        adr_problem(_poisson_with(
-            {"region": "all_boundaries", "variable": "u", "type": "hydrograph",
-             "value": -2.0}))
 
 
 def test_a_robin_condition_becomes_its_three_parts():

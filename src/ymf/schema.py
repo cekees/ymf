@@ -38,7 +38,13 @@ ProvenanceEnum = Enum(
 
 FEFamilyEnum = Enum(["CG", "DG", "RT", "BDM", "RTF", "N1curl"])
 
-BCTypeEnum = Enum(["dirichlet", "neumann", "robin", "periodic", "hydrograph"])
+# The mathematical kind only. How the value is *supplied* -- a number, a
+# formula, or a table -- is orthogonal, and lives in value/formula/series
+# below. "hydrograph" used to be listed here, which tangled the two: a
+# discharge hydrograph is a tabulated neumann condition, and a stage
+# hydrograph a tabulated dirichlet one, which naming it as a type made
+# impossible to write.
+BCTypeEnum = Enum(["dirichlet", "neumann", "robin", "periodic"])
 
 ICTypeEnum = Enum(["constant", "function", "data_source"])
 
@@ -208,11 +214,16 @@ BoundaryConditionDef = Map(
         # A value that varies along the boundary or in time: an expression
         # in x, y, z, t and the coefficients; "(a, b)" for a vector variable.
         Optional("formula"): Str(),
-        # A hydrograph: the condition as tabulated data rather than a
-        # formula, which is what a measured or design discharge is. Pairs of
-        # [t, value], t ascending. Between samples it is interpolated
-        # linearly; outside the range the end value is held, which is what
-        # a hydrograph means by its first and last samples.
+        # The value as tabulated data rather than a formula -- a measured or
+        # design record, which is the one thing that cannot be written as an
+        # expression. Pairs of [t, value], t ascending. Linear between
+        # samples; outside the range the end value is held, because
+        # extrapolating a record past its end is not something to do
+        # quietly.
+        #
+        # Available to any type: with neumann this is a discharge
+        # hydrograph, with dirichlet a stage hydrograph or a measured inlet
+        # temperature.
         Optional("series"): Seq(Seq(Float())),
         # A robin condition, alpha*u + beta*(q.n) = g: alpha and beta here,
         # g in value or formula like any other right-hand side. Expressions,
