@@ -208,6 +208,17 @@ BoundaryConditionDef = Map(
         # A value that varies along the boundary or in time: an expression
         # in x, y, z, t and the coefficients; "(a, b)" for a vector variable.
         Optional("formula"): Str(),
+        # A hydrograph: the condition as tabulated data rather than a
+        # formula, which is what a measured or design discharge is. Pairs of
+        # [t, value], t ascending. Between samples it is interpolated
+        # linearly; outside the range the end value is held, which is what
+        # a hydrograph means by its first and last samples.
+        Optional("series"): Seq(Seq(Float())),
+        # A robin condition, alpha*u + beta*(q.n) = g: alpha and beta here,
+        # g in value or formula like any other right-hand side. Expressions,
+        # so they may vary along the boundary.
+        Optional("alpha"): Str(),
+        Optional("beta"): Str(),
         Optional("units"): Str(),
         Optional("source"): Str(),
         Optional("source_url"): Str(),

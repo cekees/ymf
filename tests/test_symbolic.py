@@ -140,6 +140,86 @@ def test_the_poisson_example_becomes_a_runnable_problem():
     assert problem["time"] is None
 
 
+def _poisson_with(bc):
+    """The Poisson example with its one boundary condition replaced."""
+    doc = load_ymf(EXAMPLES / "poisson.ymf")
+    doc["model"]["strong_form"]["boundary_conditions"] = [bc]
+    return doc
+
+
+def test_a_neumann_condition_becomes_an_outward_flux():
+    """Its value is q.n with q = -a grad u, which is the sign Proteus wants."""
+    problem = adr_problem(_poisson_with(
+        {"region": "all_boundaries", "variable": "u", "type": "neumann",
+         "formula": "-2*x"}))
+    assert problem["dirichlet"] == []
+    assert problem["neumann"] == [{"component": "u", "region": "all_boundaries",
+                                   "where": None, "value": "-2*x"}]
+
+
+def test_a_neumann_only_poisson_is_determined_up_to_a_constant():
+    """No Dirichlet condition fixes u anywhere, so the constant is free."""
+    problem = adr_problem(_poisson_with(
+        {"region": "all_boundaries", "variable": "u", "type": "neumann",
+         "value": 0.0}))
+    assert problem.get("up_to_constant") == ["u"]
+
+
+def test_a_hydrograph_becomes_a_tabulated_flux():
+    """It gives the same quantity a neumann condition does, as data."""
+    problem = adr_problem(_poisson_with(
+        {"region": "all_boundaries", "variable": "u", "type": "hydrograph",
+         "series": [[0.0, -2.0], [1.0, -4.0]]}))
+    assert problem["neumann"] == [{"component": "u", "region": "all_boundaries",
+                                   "where": None,
+                                   "series": [[0.0, -2.0], [1.0, -4.0]]}]
+
+
+@pytest.mark.parametrize("series,message", [
+    ([[0.0, -2.0]], "one sample is a constant"),
+    ([[1.0, -2.0], [0.0, -4.0]], "times must increase"),
+    ([[0.0, -2.0], [0.0, -4.0]], "times must increase"),
+    ([[0.0, -2.0, 7.0], [1.0, -4.0, 9.0]], "each sample is"),
+])
+def test_a_malformed_hydrograph_says_what_is_wrong(series, message):
+    with pytest.raises(SymbolicError, match=message):
+        adr_problem(_poisson_with(
+            {"region": "all_boundaries", "variable": "u", "type": "hydrograph",
+             "series": series}))
+
+
+def test_a_hydrograph_needs_its_series():
+    with pytest.raises(SymbolicError, match="give series"):
+        adr_problem(_poisson_with(
+            {"region": "all_boundaries", "variable": "u", "type": "hydrograph",
+             "value": -2.0}))
+
+
+def test_a_robin_condition_becomes_its_three_parts():
+    """alpha u + beta (q.n) = g, with g given like any right-hand side."""
+    problem = adr_problem(_poisson_with(
+        {"region": "all_boundaries", "variable": "u", "type": "robin",
+         "alpha": "1.0", "beta": "2.0", "formula": "y**2 - 1"}))
+    assert problem["robin"] == [{"component": "u", "region": "all_boundaries",
+                                 "where": None, "alpha": "1.0", "beta": "2.0",
+                                 "g": "y**2 - 1"}]
+    assert problem["dirichlet"] == [] and problem["neumann"] == []
+
+
+def test_a_robin_condition_needs_both_coefficients():
+    with pytest.raises(SymbolicError, match="give alpha and beta"):
+        adr_problem(_poisson_with(
+            {"region": "all_boundaries", "variable": "u", "type": "robin",
+             "alpha": "1.0", "value": 0.0}))
+
+
+def test_a_robin_condition_needs_its_right_hand_side():
+    with pytest.raises(SymbolicError, match="give g"):
+        adr_problem(_poisson_with(
+            {"region": "all_boundaries", "variable": "u", "type": "robin",
+             "alpha": "1.0", "beta": "1.0"}))
+
+
 def test_the_heat_example_is_transient_with_an_initial_condition():
     problem = adr_problem(load_ymf(EXAMPLES / "heat_equation.ymf"))
     # the time interval comes from the domain, "t ∈ (0, 50]"
