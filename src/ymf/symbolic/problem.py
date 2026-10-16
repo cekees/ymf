@@ -258,11 +258,21 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     strong = problem["strong_form"]
     domain = strong["domain"]
     box = box_bounds(domain)
+    region = None
     if box is None and not isinstance(domain, str):
-        raise SymbolicError(
-            "strong_form.domain: adr_problem can run a box; this one is kind "
-            "%r. Other kinds validate and are carried, but nothing solves them "
-            "yet." % (domain.get("kind"),))
+        if domain.get("kind") != "piecewise_linear":
+            raise SymbolicError(
+                "strong_form.domain: adr_problem can run a box or a "
+                "piecewise_linear region; this one is kind %r. Other kinds "
+                "validate and are carried, but nothing solves them yet."
+                % (domain.get("kind"),))
+        # A boundary representation: the solver meshes it (its
+        # discretization gives mesh.h). The bounding box stands in for the
+        # box where one is needed: the boundary tolerance's scale.
+        from ymf.closure import plain
+        region = plain(domain)
+        vertices = [[float(c) for c in v] for v in region["vertices"]]
+        box = [[min(c) for c in zip(*vertices)], [max(c) for c in zip(*vertices)]]
     dim = len(box[0]) if box else _domain_dimension(domain)
     if not strong.get("equations"):
         raise SymbolicError("strong_form.equations is needed to run a spec")
@@ -308,6 +318,10 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
             raise SymbolicError("boundary condition: no boundary region named %r" % bc["region"])
         where = regions[bc["region"]]
         if bc["type"] == "periodic":
+            if region is not None:
+                raise SymbolicError(
+                    "periodic condition on %s: periodic faces are a box's; "
+                    "this domain is piecewise_linear" % (bc["region"],))
             axes = _periodic_axes(where, lower, upper, space, bc["region"])
             comps = [name] if ranks[name] == 0 else ["%s_%d" % (name, i) for i in range(dim)]
             periodic.extend({"component": c, "region": bc["region"], "axes": axes} for c in comps)
@@ -374,7 +388,8 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     unknowns = {name: ([name] if rank == 0 else ["%s_%d" % (name, i) for i in range(dim)])
                 for name, rank in ranks.items()}
     out = {"adr": adr, "unknowns": unknowns,
-           "domain": {"lower": lower, "upper": upper},
+           "domain": dict({"lower": lower, "upper": upper},
+                          **({"region": region} if region else {})),
            # A neumann entry's value is the OUTWARD diffusive flux q.n with
            # q = -a grad u, which is the sign Proteus's
            # diffusiveFluxBoundaryConditions wants (see

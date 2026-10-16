@@ -294,3 +294,27 @@ def test_tuples_are_vectors_inside_expressions():
     space = Space(2, {"u": 0})
     value = parse_expression("u**2*(1, 0) + (x, 2*y)", space)
     assert list(value) == [sympy.Symbol("u", real=True)**2 + space.x[0], 2 * space.x[1]]
+
+
+L_SHAPE = {"kind": "piecewise_linear", "dimension": 2,
+           "vertices": [[0.0, 0.0], [2.0, 0.0], [2.0, 1.0], [1.0, 1.0],
+                        [1.0, 2.0], [0.0, 2.0]],
+           "segments": [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]]}
+
+
+def test_a_piecewise_linear_region_is_carried_with_its_bounding_box():
+    doc = load_ymf(EXAMPLES / "poisson.ymf")
+    doc["model"]["strong_form"]["domain"] = L_SHAPE
+    problem = adr_problem(doc)
+    assert problem["domain"]["lower"] == [0.0, 0.0]
+    assert problem["domain"]["upper"] == [2.0, 2.0]
+    assert problem["domain"]["region"] == L_SHAPE
+    assert problem["dirichlet"][0]["where"] is None      # the whole boundary
+    yaml.safe_dump(problem)                               # still plain data
+
+
+def test_periodic_faces_need_a_box():
+    doc = _poisson_with({"region": "all_boundaries", "variable": "u", "type": "periodic"})
+    doc["model"]["strong_form"]["domain"] = L_SHAPE
+    with pytest.raises(SymbolicError, match="periodic faces are a box's"):
+        adr_problem(doc)

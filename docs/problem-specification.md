@@ -120,7 +120,11 @@ may be omitted when the document has only one — see
 (`newton | broyden | line_search`), `tolerance` and `max_iterations`.
 `mesh: {cells, levels}` gives the meshes: cells along each side of the
 domain's box, and levels of uniform refinement (the solution is on the
-finest). Either may be a list, a study with one output per combination.
+finest). A region that is not a box (`kind: piecewise_linear`) gives
+`mesh: {h, levels}` instead: `h` is the element size of an unstructured
+mesh, the h of convergence rates, and the solver turns it into its
+mesh generator's own constraint. A mesh gives `cells` or `h`, never both.
+Any of them may be a list, a study with one output per combination.
 `discretization` is a free-form block for anything else, such as the time
 integrator in `heat_equation.ymf`; its `dt` may be a list too.
 

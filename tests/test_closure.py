@@ -164,3 +164,23 @@ def test_inherited_outputs_still_point_at_their_files(tmp_path):
     _, kept, _ = closure.load(child)
     step = kept[key]["approximation"]["time_collections"][0]["data"][0]
     assert step["geometry"]["data_item"]["data"] == "base/poisson_x.h5:/nodes"
+
+
+def test_h_is_the_mesh_size_of_an_unstructured_mesh():
+    entry = {"name": "P1", "mesh": {"h": [0.1, 0.05], "levels": 2}}
+    assert closure.realizations(entry) == [{"h": 0.1, "levels": 2},
+                                           {"h": 0.05, "levels": 2}]
+    assert closure.realize(entry, {"h": 0.05, "levels": 2})["mesh"] == {
+        "h": 0.05, "levels": 2}
+
+
+def test_a_mesh_gives_cells_or_h_not_both():
+    with pytest.raises(ValueError, match="both cells and h"):
+        closure.realizations({"name": "P1", "mesh": {"cells": 4, "h": 0.1}})
+
+
+def test_keys_name_h_in_place_of_cells(tmp_path):
+    spec, _, _ = closure.load(spec_with_mesh(tmp_path, "      mesh: {h: [0.25, 0.125]}\n"))
+    keys = [k for k, _, _ in closure.planned_outputs(spec)]
+    assert [k.rsplit("/", 1)[0] for k in keys] == ["P1_linear/h=0.25",
+                                                    "P1_linear/h=0.125"]
