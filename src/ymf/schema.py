@@ -28,6 +28,8 @@ from strictyaml import (
     Str,
 )
 
+from ymf.state import STATES
+
 # ---------------------------------------------------------------------------
 # Shared enums (unchanged from v0.1)
 # ---------------------------------------------------------------------------
@@ -441,11 +443,12 @@ YMF_SCHEMA = Map(
         Optional("archive"): Any(),
         Optional("xdmf"): Any(),
         # File-level keys, see ymf.compose. "extends" names the document
-        # this one builds on; "kind: model" marks a file that states the
-        # physics but is not yet a well-posed problem; "composition" is
-        # written by the loader into a composed document.
+        # this one builds on; "ymf_state" says how far the document has got
+        # (abstract, well-posed, discretized, closed: see ymf.state), and is
+        # checked against its content; "composition" is written by the
+        # loader into a composed document.
         Optional("extends"): Str(),
-        Optional("kind"): Enum(["model", "model"]),
+        Optional("ymf_state"): Enum(list(STATES)),
         Optional("composition"): Any(),
         # "remove" lists paths this file drops from what it extends --
         # "Problem.physical_model.assumptions[incompressible]". Composition
@@ -494,8 +497,8 @@ def load_ymf(path: str | Path) -> AnyType:
     """Load and validate a YMF YAML file, returning a plain Python object.
 
     A file with ``extends`` is composed with the documents it builds on, and
-    a ``kind: model`` file is validated as a partial document; see
-    :mod:`ymf.compose`. Raises ``strictyaml.YAMLValidationError`` on schema
+    a ``ymf_state: abstract`` file is validated as a partial document; see
+    :mod:`ymf.compose` and :mod:`ymf.state`. Raises ``strictyaml.YAMLValidationError`` on schema
     violations, naming the file that holds the error.
     """
     from ymf.compose import load_composed  # ymf.compose imports this module

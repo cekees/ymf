@@ -169,17 +169,20 @@ def _base_key(key: str) -> str:
     return key.split("~", 1)[0]
 
 
-def load(path: str | Path) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, str]]:
+def load(path: str | Path, check_state: bool = True
+         ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, str]]:
     """Load a spec or archive: ``(spec, outputs, dropped)``.
 
     ``spec`` is the composed, validated input. ``outputs`` are those -- the
     file's own and any inherited through ``extends`` -- whose key, recomputed
     against the composed input, is still theirs. ``dropped`` maps every other
     key to why: an inherited output whose input the overrides changed belongs
-    to the old archive, not to this one.
+    to the old archive, not to this one. ``check_state`` is
+    :func:`ymf.compose.load_composed`'s: False for a runner that brings an
+    over-claiming archive up to date.
     """
     from ymf.compose import load_composed
-    spec = load_composed(path)
+    spec = load_composed(path, check_state=check_state)
     outputs, dropped = partition(spec, spec.pop("outputs", None) or {})
     return spec, outputs, dropped
 
@@ -229,9 +232,14 @@ def archive_stem(path: str | Path) -> str:
 
 
 def write(path: str | Path, spec: Dict[str, Any], outputs: Dict[str, Any]) -> None:
-    """Write an archive: ``ymf:``, the realized spec, then ``outputs``."""
+    """Write an archive: ``ymf:``, its ``ymf_state``, the realized spec, then
+    ``outputs``. The state is the one the archive reaches (see ymf.state),
+    whatever its input declared."""
+    from ymf.state import reached
     document = dict(plain(spec))
     document.pop("outputs", None)
+    document.pop("ymf_state", None)
     if outputs:
         document["outputs"] = outputs
-    write_document(path, document)
+    state, _ = reached(document)
+    write_document(path, dict({"ymf_state": state}, **document))

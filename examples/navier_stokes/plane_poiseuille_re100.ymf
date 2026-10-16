@@ -1,5 +1,5 @@
 # ============================================================
-# YMF problem: plane Poiseuille flow at Re = 100
+# YMF spec: plane Poiseuille flow at Re = 100
 #
 # A parameter variant. It extends plane_poiseuille.ymf and changes only
 # the viscosity and the driving gradient, keeping the centreline speed

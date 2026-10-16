@@ -4,23 +4,25 @@ A document may name another document it builds on::
 
     extends: navier_stokes_model.ymf     # relative to this file
 
-The usual shape is a **model** file that states the physics and the
-equations but is not yet a well-posed problem (no domain, boundary
-conditions or coefficient values), marked ``kind: model``, and several
-**problem** files that each extend it into a complete problem. Chains are
-allowed: a problem can extend another problem to vary a parameter.
+The usual shape is an **abstract** file that states the physics and the
+equations but is not yet well-posed (no domain, boundary conditions or
+coefficient values), marked ``ymf_state: abstract``, and several files
+that each extend it into a well-posed spec. Chains are allowed: a spec can
+extend another spec to vary a parameter. (See ymf.state for the states a
+document passes through.)
 
 Validation
 ----------
 Every file in a chain is validated on its own as it is read, so an error is
 reported against the file and line that holds it:
 
-- a ``kind: model`` file against :data:`ymf.schema.PARTIAL_YMF_SCHEMA`,
-  in which any section or field may be missing but whatever is present
-  must be well formed;
-- every other file against the partial schema too (a problem file holds
-  only what it adds), and the composed result against the full
-  :data:`ymf.schema.YMF_SCHEMA`.
+- an ``ymf_state: abstract`` file against
+  :data:`ymf.schema.PARTIAL_YMF_SCHEMA`, in which any section or field may
+  be missing but whatever is present must be well formed;
+- every other file against the partial schema too (a file that extends
+  another holds only what it adds), and the composed result against the
+  full :data:`ymf.schema.YMF_SCHEMA`;
+- a declared ``ymf_state`` against what the composed result reaches.
 
 Merge rules
 -----------
@@ -46,10 +48,11 @@ and it is recorded rather than refused. The composed document gets a
           now: 0.01
           set_by: plane_poiseuille_re100.ymf
 
-``extends`` and ``kind`` describe a file, not the problem, and are not
-merged: the composed document is self-contained. A composed *model* is
-returned with ``kind: model``, so that whoever receives it can tell it is
-not a problem yet.
+``extends`` and ``ymf_state`` describe a file, not what it specifies, and
+are not merged: the composed document is self-contained, and carries the
+state its top file declared. A composed *abstract* document is returned
+with ``ymf_state: abstract``, so that whoever receives it can tell it is
+not well-posed yet.
 """
 
 from __future__ import annotations
@@ -66,11 +69,24 @@ from ymf.archive import is_archive_text
 from ymf.domain import validate_domain_block
 from ymf.references import apply_defaults, resolve
 from ymf.schema import _ALLOW_FLOW_STYLE, PARTIAL_YMF_SCHEMA, YMF_SCHEMA
+from ymf.state import check as check_state_of
 
 __all__ = ["YmfCompositionError", "load_composed"]
 
 #: Keys that describe a file rather than the problem; never merged.
-_FILE_KEYS = ("extends", "kind", "composition", "remove")
+_FILE_KEYS = ("extends", "ymf_state", "composition", "remove")
+
+_OLD_KIND = re.compile(r"^kind\s*:", re.MULTILINE)
+
+
+def _refuse_old_kind(text: str, path: Path) -> None:
+    """``kind: model | problem`` is now ``ymf_state``; say so, rather than
+    let the schema report an unknown key."""
+    if _OLD_KIND.search(text):
+        raise YmfCompositionError(
+            "%s: the file-level 'kind' is now 'ymf_state': write "
+            "'ymf_state: abstract' for 'kind: model', and drop 'kind: problem' "
+            "(or write 'ymf_state: well-posed'). See ymf.state." % (path,))
 #: Keys that identify an entry in a list of mappings, in order of preference.
 _IDENTITY_KEYS = ("label", "name")
 
@@ -397,6 +413,7 @@ def _read(path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     specification part is validated. Its outputs come back separately.
     """
     text = _read_text(path)
+    _refuse_old_kind(text, path)
     if not _is_archive_text(text):
         return strictyaml.dirty_load(text, PARTIAL_YMF_SCHEMA, label=str(path),
                                      allow_flow_style=_ALLOW_FLOW_STYLE).data, None
@@ -461,12 +478,15 @@ def _check_document(doc: Dict[str, Any]) -> None:
         validate_domain_block(strong["domain"], "model.strong_form.domain")
 
 
-def load_composed(path: str | Path) -> Dict[str, Any]:
+def load_composed(path: str | Path, check_state: bool = True) -> Dict[str, Any]:
     """Load a YMF document, following ``extends``, and validate the result.
 
-    A file marked ``kind: model`` is returned validated against the partial
-    schema only, since a model is not a complete problem. Anything else must
-    compose into a document that passes the full schema. An archive's
+    A file marked ``ymf_state: abstract`` is returned validated against the
+    partial schema only, since it is not well-posed yet. Anything else must
+    compose into a document that passes the full schema, and reach the
+    ``ymf_state`` its top file declares (unless ``check_state`` is False: a
+    runner that brings an archive up to date loads one that over-claims,
+    and writes the state it reaches). An archive's
     ``outputs`` (its own, and any it inherits through ``extends``) are
     attached to the result unvalidated; ymf.closure decides which of them
     still belong to the composed input.
@@ -477,8 +497,8 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
     text = _read_text(path)
     archive = _is_archive_text(text)
     data, _ = _read(path)
-    kind = data.get("kind", "problem")
-    if "extends" not in data and kind == "problem" and not archive:
+    declared = data.get("ymf_state")
+    if "extends" not in data and declared != "abstract" and not archive:
         # A self-contained problem: validate the text itself, so errors
         # cite its own lines exactly as they appear in the file.
         document = strictyaml.dirty_load(
@@ -490,6 +510,8 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
             # came to hold a reference its author did not write
             document["composition"] = {"defaults": filled}
         _check_document(document)
+        if check_state and declared:
+            check_state_of(declared, document, str(path))
         return document
     (merged, sources, overrides, removals, defaults, provenance, outputs,
      record) = _compose(path, ())
@@ -515,9 +537,9 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
             composition["defaults"] = defaults
     if composition:
         merged["composition"] = composition
-    if kind == "model":
-        # Kept, so that whoever receives this knows it is not a problem yet.
-        merged["kind"] = "model"
+    if declared == "abstract":
+        # Kept, so that whoever receives this knows it is not well-posed yet.
+        merged["ymf_state"] = "abstract"
         _check_document(merged)
         return merged
     # The composed document has no file of its own, so it is written out as
@@ -543,4 +565,8 @@ def load_composed(path: str | Path) -> Dict[str, Any]:
     if outputs:
         data["outputs"] = outputs
     _check_document(data)
+    if declared:
+        data["ymf_state"] = declared
+        if check_state:
+            check_state_of(declared, data, label)
     return data

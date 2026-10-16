@@ -23,7 +23,7 @@ strictyaml = pytest.importorskip("strictyaml")
 
 def spec(weak_forms, discretizations, analytical="", vvuq="", extra=""):
     return """\
-kind: model
+ymf_state: abstract
 model:
   name: "p"
   strong_form:
@@ -133,7 +133,7 @@ def test_a_file_unambiguous_when_written_stays_bound(tmp_path):
     """
     write(tmp_path, spec(weak_form("first"), discretization("d")), "model.ymf")
     variant = write(tmp_path, """\
-kind: model
+ymf_state: abstract
 extends: model.ymf
 model:
   weak_forms:%s
@@ -150,7 +150,7 @@ def test_removing_the_weak_form_a_binding_points_at_is_caught(tmp_path):
     """Defaulting fills in; resolution checks. remove: can orphan a binding."""
     write(tmp_path, spec(weak_form("only"), discretization("d")), "model.ymf")
     variant = write(tmp_path, """\
-kind: model
+ymf_state: abstract
 extends: model.ymf
 remove:
   - "model.weak_forms[only]"

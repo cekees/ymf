@@ -1,11 +1,11 @@
 # ============================================================
 # YMF model: incompressible Navier-Stokes
 #
-# A model, not a problem. It fixes the physics, the equations and the
-# unknowns, and declares which coefficients the equations need and in what
-# units, but gives no domain, no boundary or initial conditions and no
-# coefficient values. Each problem file in this directory extends it into
-# a complete, well-posed problem:
+# Abstract: the model alone, not yet well-posed. It fixes the physics, the
+# equations and the unknowns, and declares which coefficients the equations
+# need and in what units, but gives no domain, no boundary or initial
+# conditions and no coefficient values. Each spec in this directory extends
+# it into a well-posed one:
 #
 #   navier_stokes_model.ymf
 #   ├── planar_couette.ymf          shear-driven flow between plates
@@ -16,7 +16,7 @@
 # written once and reviewed once.
 # ============================================================
 
-kind: model
+ymf_state: abstract
 
 model:
   physical_model:
@@ -45,7 +45,7 @@ model:
       - "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f  in Ω"
       - "∇·v = 0  in Ω"
     # The coefficients the equations use, with units and no values: a
-    # problem supplies the values.
+    # spec supplies the values.
     coefficients:
       ρ: {units: kg/m3}
       μ: {units: Pa*s}

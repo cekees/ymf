@@ -1,5 +1,5 @@
 # ============================================================
-# YMF problem: plane Poiseuille flow, Re = 1
+# YMF spec: plane Poiseuille flow, Re = 1
 #
 # Extends the Navier-Stokes model. Both plates are fixed and the flow is
 # driven by a uniform pressure gradient G, applied as the body force
@@ -21,7 +21,7 @@ model:
     assumptions: [steady, fully_developed]
 
   # Derived from the coefficients rather than restated, so that each
-  # physical value lives in one place: a problem that changes μ or G
+  # physical value lives in one place: a spec that changes μ or G
   # changes these scales, and Re, with it.
   characteristic_scales:
     length: {derived: true, formula: "H", units: m}

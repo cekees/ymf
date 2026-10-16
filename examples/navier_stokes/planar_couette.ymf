@@ -1,5 +1,5 @@
 # ============================================================
-# YMF problem: planar Couette flow, Re = 10
+# YMF spec: planar Couette flow, Re = 10
 #
 # Extends the Navier-Stokes model with a domain, boundary conditions,
 # coefficient values, an exact solution, a weak form and a discretization.
@@ -58,7 +58,7 @@ model:
         type: dirichlet
         value: 0.0
     # Values for the coefficients the model declared (units come from the
-    # model), and the two this problem adds.
+    # model), and the two this spec adds.
     coefficients:
       ρ: {value: 1.0}
       μ: {value: 0.1}

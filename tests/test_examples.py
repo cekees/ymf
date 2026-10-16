@@ -28,7 +28,7 @@ def run(script, *args, env=None):
 def test_every_example_spec_validates(spec):
     doc = load_ymf(spec)
     # a model is not a problem yet, so only problems carry a name
-    assert doc.get("kind") == "model" or doc["model"]["name"]
+    assert doc.get("ymf_state") == "abstract" or doc["model"]["name"]
 
 
 def test_validate_spec_walks_every_example_and_shows_the_unit_error():

@@ -23,7 +23,7 @@ strictyaml = pytest.importorskip("strictyaml")
 
 
 MODEL = """\
-kind: model
+ymf_state: abstract
 model:
   name: "flow"
   physical_model:
@@ -59,7 +59,7 @@ model:
 def write(tmp_path, variant_body):
     (tmp_path / "model.ymf").write_text(MODEL, encoding="utf-8")
     path = tmp_path / "variant.ymf"
-    path.write_text("kind: model\nextends: model.ymf\n" + variant_body,
+    path.write_text("ymf_state: abstract\nextends: model.ymf\n" + variant_body,
                     encoding="utf-8")
     return path
 
