@@ -135,11 +135,14 @@ DiscretizationEntry = Map(
         Optional("proteus_modules"): Map({"physics": Str(), "numerics": Str()}),
         # --- v0.2 additions ---
         Optional("bmi_interface"): Bool(),
-        # The mesh a run uses: cells along each side of the domain's box
-        # (the coarsest mesh) and levels of uniform refinement. A list is
-        # a study: each value is one realization (see ymf.closure).
+        # The mesh a run uses: cells along each side of the domain's box,
+        # or h, the element size of an unstructured mesh of any other
+        # region (one of the two), and levels of uniform refinement of that
+        # coarsest mesh. A list is a study: each value is one realization
+        # (see ymf.closure).
         Optional("mesh"): Map({
-            "cells": Int() | Seq(Int()),
+            Optional("cells"): Int() | Seq(Int()),
+            Optional("h"): Float() | Seq(Float()),
             Optional("levels"): Int() | Seq(Int()),
         }),
         Optional("roughness_source"): Map(

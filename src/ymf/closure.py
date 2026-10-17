@@ -21,7 +21,7 @@ realization. Prose is included, so a key is a fingerprint of the input text
 as well as of its numbers. Anything that changes the slice changes the key;
 editing another discretization does not.
 
-A discretization's ``mesh.cells`` and ``mesh.levels`` (and its
+A discretization's ``mesh.cells`` or ``mesh.h``, its ``mesh.levels`` (and its
 ``discretization.dt``) may be lists: a study. Each combination is one
 realization, and one output.
 """
@@ -59,6 +59,7 @@ KEY_DIGITS = 12
 # The studied parameters: (realization name, path in the discretization entry)
 _STUDIED = (
     ("cells", ("mesh", "cells")),
+    ("h", ("mesh", "h")),
     ("levels", ("mesh", "levels")),
     ("dt", ("discretization", "dt")),
 )
@@ -82,10 +83,17 @@ def _set(entry: Dict[str, Any], path: Tuple[str, ...], value: Any) -> None:
 def realizations(discretization: Dict[str, Any]) -> List[Dict[str, Any]]:
     """The realizations a discretization entry asks for, in study order.
 
-    Each is a mapping such as ``{"cells": 8, "levels": 1}`` (and ``"dt"``
-    when the entry steps in time). An entry without ``mesh`` asks for none:
-    the cells must then come from the command line, as an override.
+    Each is a mapping such as ``{"cells": 8, "levels": 1}`` or
+    ``{"h": 0.1, "levels": 1}`` (and ``"dt"`` when the entry steps in time).
+    An entry without ``mesh`` asks for none: the mesh must then come from
+    the command line, as an override. ``cells`` and ``h`` are alternatives;
+    an entry giving both is refused.
     """
+    mesh = _get(discretization, ("mesh",))
+    if isinstance(mesh, dict) and "cells" in mesh and "h" in mesh:
+        raise ValueError("discretization %r: mesh gives both cells and h; "
+                         "cells is for a box, h for any other region"
+                         % (discretization.get("name"),))
     axes = []
     for name, path in _STUDIED:
         value = _get(discretization, path)
@@ -94,7 +102,7 @@ def realizations(discretization: Dict[str, Any]) -> List[Dict[str, Any]]:
                 axes.append((name, [_DEFAULTS[name]]))
             continue
         axes.append((name, list(value) if isinstance(value, (list, tuple)) else [value]))
-    if not any(name == "cells" for name, _ in axes):
+    if not any(name in ("cells", "h") for name, _ in axes):
         return []
     names = [name for name, _ in axes]
     return [dict(zip(names, combo)) for combo in itertools.product(*(v for _, v in axes))]
@@ -147,8 +155,10 @@ def input_digest(doc: Dict[str, Any], discretization: str,
 
 def output_key(doc: Dict[str, Any], discretization: str,
                realization: Dict[str, Any]) -> str:
-    """``<discretization>/cells=N[/levels=L][/dt=T]/<digest prefix>``."""
-    parts = [discretization, "cells=%s" % (realization["cells"],)]
+    """``<discretization>/cells=N[/levels=L][/dt=T]/<digest prefix>``,
+    with ``h=H`` in place of ``cells=N`` for an unstructured mesh."""
+    size = "cells" if "cells" in realization else "h"
+    parts = [discretization, "%s=%s" % (size, realization[size])]
     if realization.get("levels", 1) != 1:
         parts.append("levels=%s" % (realization["levels"],))
     if "dt" in realization:

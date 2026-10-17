@@ -120,7 +120,11 @@ may be omitted when the document has only one — see
 (`newton | broyden | line_search`), `tolerance` and `max_iterations`.
 `mesh: {cells, levels}` gives the meshes: cells along each side of the
 domain's box, and levels of uniform refinement (the solution is on the
-finest). Either may be a list, a study with one output per combination.
+finest). A region that is not a box (`kind: piecewise_linear`) gives
+`mesh: {h, levels}` instead: `h` is the element size of an unstructured
+mesh, the h of convergence rates, and the solver turns it into its
+mesh generator's own constraint. A mesh gives `cells` or `h`, never both.
+Any of them may be a list, a study with one output per combination.
 `discretization` is a free-form block for anything else, such as the time
 integrator in `heat_equation.ymf`; its `dt` may be a list too.
 
@@ -355,8 +359,12 @@ what a domain *is*.
 `<Domain>` holding grids of `topology` and `geometry`. The same region at
 two levels, as with strong and weak forms.
 
-Only `kind: box` can be solved today. The others validate and are carried,
-and `adr_problem` says so rather than failing obscurely.
+`kind: box` and `kind: piecewise_linear` can be solved today: a box is
+meshed by `cells` per side, any other region by `h`, the element size of an
+unstructured mesh (see the discretization's `mesh`). Boundary regions are
+still named by `where` predicates, which hold on any mesh of the region;
+periodic conditions need a box. `discrete` and `file` domains validate and
+are carried, and `adr_problem` says so rather than failing obscurely.
 
 ## Branching: one problem, several solution paths
 
@@ -780,9 +788,10 @@ nobody has to rediscover them:
   `(x, t)` alone. That the *dependency set* of a boundary expression is the
   thing to get right, rather than the list of condition types, is the point
   taken up in `YMF_TAG_PROPAGATION.md`.
-- **Only `kind: box` is solved.** A domain of any kind now validates and is
-  carried — see [The domain](#the-domain) — but `adr_problem` says which
-  kind it was given rather than failing obscurely.
+- **Only `box` and `piecewise_linear` domains are solved.** A domain of any
+  kind validates and is carried — see [The domain](#the-domain) — but
+  `adr_problem` refuses `discrete` and `file`, saying which kind it was
+  given rather than failing obscurely.
 - **The notation's limits**, each of which now reports the fix as well as
   the fault. Functions need parentheses — `sin πx` says to write `sin(x)`,
   not `sin x`. There are no subscripts — `p₀` says to write `p0` and declare
