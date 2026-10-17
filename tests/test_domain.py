@@ -23,7 +23,7 @@ strictyaml = pytest.importorskip("strictyaml")
 
 def spec(domain):
     return """\
-kind: model
+ymf_state: abstract
 model:
   name: "m"
   strong_form:

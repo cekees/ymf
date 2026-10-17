@@ -26,7 +26,7 @@ One model, extended into three problems with `extends`, and one archive extended
 
 | File | Shows |
 |---|---|
-| [navier_stokes_model.ymf](navier_stokes/navier_stokes_model.ymf) | A `kind: model` file: the physics, the equations, the unknowns, and the units of the coefficients, with no domain, conditions or values. Not a problem on its own. |
+| [navier_stokes_model.ymf](navier_stokes/navier_stokes_model.ymf) | A `ymf_state: abstract` file: the physics, the equations, the unknowns, and the units of the coefficients, with no domain, conditions or values. Not well-posed on its own. |
 | [planar_couette.ymf](navier_stokes/planar_couette.ymf) | Extends the model into shear-driven flow between plates: geometry, periodic BCs, coefficient values, the exact (linear) solution, a Galerkin weak form and Taylor–Hood, which should reproduce the exact solution on any grid. |
 | [plane_poiseuille.ymf](navier_stokes/plane_poiseuille.ymf) | Extends the model into pressure-driven flow: the parabolic exact solution, a stabilized weak form and equal-order P1, with a grid-convergence plan. |
 | [plane_poiseuille_re100.ymf](navier_stokes/plane_poiseuille_re100.ymf) | Extends Poiseuille to change the viscosity and the driving gradient only (Re 1 → 100). Loading it records each overridden value in `composition.overrides`. |

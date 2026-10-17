@@ -80,7 +80,11 @@ def test_an_archive_round_trips_and_its_embedded_spec_gives_the_same_keys(tmp_pa
     archive = tmp_path / "poisson.archive.ymf"
     closure.write(archive, spec, outputs)
     document = read_document(archive)
-    assert list(document)[:2] == ["ymf", "model"] and list(document)[-1] == "outputs"
+    assert list(document)[:3] == ["ymf", "ymf_state", "model"]
+    assert list(document)[-1] == "outputs"
+    # every output it plans is there, but P2 gives no mesh, so the
+    # document as a whole is not discretized (see ymf.state)
+    assert document["ymf_state"] == "well-posed"
     again, kept, dropped = closure.load(archive)
     assert set(kept) == set(outputs) and dropped == {}
     assert [k for k, _, _ in closure.planned_outputs(again)] == list(outputs)

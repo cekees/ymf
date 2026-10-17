@@ -13,7 +13,8 @@ rationale, see [ymf-schema.md](ymf-schema.md) (v0.1) and
 - [Writing it once: the notation](#writing-it-once-the-notation)
 - [Running a spec](#running-a-spec)
 - [Branching: one problem, several solution paths](#branching-one-problem-several-solution-paths)
-- [Composing documents: models and problems](#composing-documents-models-and-problems)
+- [Document state](#document-state)
+- [Composing documents](#composing-documents)
 - [Provenance](#provenance)
 - [Units, scales and dimensionless numbers](#units-scales-and-dimensionless-numbers)
 - [Validating a document](#validating-a-document)
@@ -63,12 +64,13 @@ archive: ...                 # optional, free-form: reserved for output configur
 Xdmf: ...                    # optional, free-form: legacy, from the v0.1 draft
 
 extends: model.ymf          # optional: the document this one builds on
-kind: model                  # optional: model | problem (default)
+ymf_state: abstract          # optional: abstract | well-posed | discretized | closed
 composition: ...             # written by the loader into a composed document
 ```
 
-The last three describe the file rather than the problem; see
-[Composing documents](#composing-documents-models-and-problems).
+The last three describe the file rather than what it specifies; see
+[Document state](#document-state) and
+[Composing documents](#composing-documents).
 
 The smallest complete example is
 [`examples/poisson.ymf`](../examples/poisson.ymf). The key blocks:
@@ -430,15 +432,40 @@ Adding a branch adds entries; it never edits existing ones. That is what
 makes a document safe for several contributors, or an LLM and a person, to
 extend.
 
-## Composing documents: models and problems
+## Document state
+
+A YMF document is the record of a progression: from a model, through a
+well-posed specification and its discretizations, to the closure that holds
+what was computed and exactly what it was computed from. `ymf_state` says
+where along that progression a document stands:
+
+| `ymf_state` | the document | checked by |
+|---|---|---|
+| `abstract` | part of a model; it must be extended before it can be solved (equations and unknowns, say, with no domain, conditions or values) | the partial schema only |
+| `well-posed` | a complete `model:` block | the full schema |
+| `discretized` | well-posed, and every discretization gives a mesh (`cells` or `h`), so every output it plans has a key | its planned outputs |
+| `closed` | discretized, and every planned output is present and still keyed to the input that produced it | its outputs' keys |
+
+Each state includes the ones before it. A document may declare its state,
+and the loader checks that its content reaches it; declaring less is
+allowed. Tools that advance a document write the state they reach: a
+runner writing an archive records `closed` when every output it plans is
+there, and `discretized` while some are still owed. An archive whose input
+was edited no longer reaches the `closed` it declares, and loading it says
+so, naming the outputs that are now stale. (A runner bringing it up to
+date loads it anyway, and recomputes.) A document that declares nothing
+must be well-posed, as before.
+
+## Composing documents
 
 Branches can also live in separate files. A document names the one it
 builds on with `extends`, and `load_ymf` merges the two. The common shape
-is a **model** that many **problems** extend:
+is an **abstract** document holding the model, which many well-posed
+specs extend:
 
 ```text
 examples/navier_stokes/
-  navier_stokes_model.ymf          kind: model -- physics, equations, unknowns,
+  navier_stokes_model.ymf          ymf_state: abstract -- physics, equations, unknowns,
   │                                 coefficient units; no domain, conditions or values
   ├── planar_couette.ymf           geometry, BCs, values, exact solution,
   │                                 a Galerkin weak form, Taylor-Hood
@@ -449,14 +476,14 @@ examples/navier_stokes/
 
 For multiphysics, getting the model right (the processes, the coupled
 equations, the unknowns) is often most of the work. Writing it once as a
-model means it is reviewed once, and every well-posed problem built on it
+model means it is reviewed once, and every well-posed spec built on it
 shares it rather than copying it.
 
-A model is marked `kind: model`. It is validated on its own against a
-**partial** schema, in which any section or field may be missing but
-whatever is present must be well formed. A list entry that is present (an
-unknown, a weak form) must still be complete. A problem file holds only
-what it adds:
+An abstract document is marked `ymf_state: abstract`. It is validated on
+its own against a **partial** schema, in which any section or field may be
+missing but whatever is present must be well formed. A list entry that is
+present (an unknown, a weak form) must still be complete. A file that
+extends another holds only what it adds:
 
 ```yaml
 extends: navier_stokes_model.ymf   # relative to this file
@@ -469,7 +496,7 @@ model:
     domain: "Ω = [0, 4] × [0, H]"
     coefficients:
       μ: {value: 0.1}                        # the model gave the units
-      H: {value: 1.0, units: m}              # and this problem adds one
+      H: {value: 1.0, units: m}              # and this spec adds one
   weak_forms: [...]
 solution_paths: {...}
 ```
@@ -481,10 +508,10 @@ merge entry by entry on it, and new entries are appended. Lists of strings
 replaces the parent's value. Every file in a chain is checked against the
 partial schema as it is read, so an error is reported against the file and
 line that holds it. The composed result must then pass the full schema,
-unless the file being loaded is itself a model.
+unless the file being loaded declares `ymf_state: abstract`.
 
-To fill in a coefficient a model declares, use the mapping form
-(`f: {formula: "(G, 0)"}`), which merges with the model's `{units: ...}`. A
+To fill in a coefficient the abstract document declares, use the mapping
+form (`f: {formula: "(G, 0)"}`), which merges with its `{units: ...}`. A
 bare string (`f: "(G, 0)"`) replaces the whole entry, units and all, and is
 recorded as an override.
 
@@ -526,7 +553,7 @@ be pasted into `remove:`.
 This exists because the moves are real ones: incompressible flow solved as
 compressible, inviscid Euler as viscous, or in the other direction an
 unknown field dropped or replaced by an analytical expression. Before, each
-took a new model file.
+took a new abstract file.
 
 Removals are recorded beside the overrides, with what they took:
 
@@ -544,9 +571,11 @@ composing the unremoved thing silently is how a variant ends up stating the
 opposite of what its author wrote.
 
 This makes a parameter variant a three-line file whose changes a reviewer
-can read off directly. `extends` and `kind` describe a file, not the
-problem, and are dropped from a composed problem. The result is a single
-self-contained document, which is what an archive should carry in `extra`.
+can read off directly. `extends` describes a file, not what it specifies,
+and is dropped from a composed document; `ymf_state` is kept as the top
+file declared it, and is not inherited from the files it extends. The
+result is a single self-contained document, which is what an archive
+should carry in `extra`.
 
 ## Provenance
 

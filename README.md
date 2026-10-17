@@ -32,9 +32,11 @@ each stage a structured, reviewable block, and tags each one with its
 edited an LLM's proposal. One document can hold several **branches**
 (competing weak forms and discretizations of the same problem) alongside
 the plan for verifying them against each other. Branches can also be
-separate files: a **model** (the physics and equations, often most of the
-work for multiphysics) is written once and extended, file by file, into
-many well-posed problems.
+separate files: an **abstract** document holding the model (the physics
+and equations, often most of the work for multiphysics) is written once and
+extended, file by file, into many well-posed specs. A document records how
+far it has got -- `ymf_state`: abstract, well-posed, discretized, closed --
+and the loader checks that its content gets that far.
 
 On the output side, solver archives have usually been XDMF XML written by
 hand-built element trees, with no data model behind them and nothing

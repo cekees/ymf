@@ -40,8 +40,8 @@ def describe(path: Path) -> bool:
         print("schema: INVALID\n%s" % (exc,))
         return False
     problem = doc["model"]
-    if doc.get("kind") == "model":
-        print("schema: valid model (not yet a problem: no domain, conditions or values)")
+    if doc.get("ymf_state") == "abstract":
+        print("schema: valid, abstract (not yet well-posed: no domain, conditions or values)")
     else:
         print("schema: valid -- %s" % (problem["name"],))
     composition = doc.get("composition")

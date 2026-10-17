@@ -11,7 +11,7 @@ from ymf.schema import load_ymf
 NAVIER_STOKES = Path(__file__).parent.parent / "examples" / "navier_stokes"
 
 MODEL = """
-kind: model
+ymf_state: abstract
 model:
   physical_model:
     provenance: human_specified
@@ -58,7 +58,7 @@ def write(tmp_path, **files):
 
 def test_the_model_loads_as_a_partial_document():
     doc = load_ymf(NAVIER_STOKES / "navier_stokes_model.ymf")
-    assert doc["kind"] == "model"
+    assert doc["ymf_state"] == "abstract"
     assert "name" not in doc["model"]
     assert "solution_paths" not in doc
     assert "composition" not in doc
@@ -146,7 +146,7 @@ def test_file_level_keys_are_not_merged(tmp_path):
 
 def test_a_model_may_extend_a_model(tmp_path):
     write(tmp_path, model=MODEL, refined="""
-kind: model
+ymf_state: abstract
 extends: model.ymf
 model:
   physical_model:
@@ -155,7 +155,7 @@ model:
 """)
     doc = load_ymf(tmp_path / "refined.ymf")
     assert doc["model"]["physical_model"]["assumptions"] == ["newtonian", "isothermal"]
-    assert doc["kind"] == "model"
+    assert doc["ymf_state"] == "abstract"
     assert doc["composition"]["sources"] == ["model.ymf", "refined.ymf"]
 
 
@@ -169,7 +169,7 @@ def test_an_incomplete_composition_is_rejected_naming_the_chain(tmp_path):
 
 
 def test_a_model_on_its_own_is_not_a_problem(tmp_path):
-    write(tmp_path, model=MODEL.replace("kind: model\n", ""))
+    write(tmp_path, model=MODEL.replace("ymf_state: abstract\n", ""))
     with pytest.raises(strictyaml.YAMLValidationError):
         load_ymf(tmp_path / "model.ymf")
 
@@ -197,7 +197,7 @@ def test_a_missing_parent_is_named(tmp_path):
 
 
 def test_an_extends_cycle_is_rejected(tmp_path):
-    write(tmp_path, a="kind: model\nextends: b.ymf\n", b="kind: model\nextends: a.ymf\n")
+    write(tmp_path, a="ymf_state: abstract\nextends: b.ymf\n", b="ymf_state: abstract\nextends: a.ymf\n")
     with pytest.raises(YmfCompositionError, match="cycle"):
         load_ymf(tmp_path / "a.ymf")
 
@@ -230,7 +230,7 @@ model:
 
 
 BASE = """\
-kind: model
+ymf_state: abstract
 model:
   name: "flow"
   strong_form:

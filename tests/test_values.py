@@ -21,7 +21,7 @@ strictyaml = pytest.importorskip("strictyaml")
 
 
 SPEC = """\
-kind: model
+ymf_state: abstract
 model:
   name: "values"
   strong_form:
