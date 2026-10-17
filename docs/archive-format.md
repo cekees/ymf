@@ -442,8 +442,10 @@ XDMF XML with this model:
 - The HDF5 root carries a metadata format version. Archives from Proteus
   ≤ 1.9, which stored XDMF XML fragments instead, are still read, so hot
   start and post-processing keep working on old output.
-- Proteus currently still writes an `.xmf` beside the `.ymf`. Dropping it
-  in favour of `ymf2xmf` is the remaining step.
+- Proteus writes no `.xmf`: `ymf2xmf run.ymf` derives one for viewers. A
+  hot start takes the collection names and their order from the HDF5 file
+  rather than from an `.xmf`; only a ≤ 1.9 archive, which never recorded
+  the order, still needs the `.xmf` written beside it.
 
 ## Limits
 
