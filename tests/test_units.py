@@ -429,3 +429,147 @@ def test_a_pair_is_reported_once_not_twice():
         {"mu": {"value": 0.025, "units": "Pa*s"}},
         {"viscosity": {"value": 0.025, "units": "Pa*s"}})
     assert len(issues) == 1
+
+
+# ---------------------------------------------------------------------------
+# boundary conditions: the units of g against the type of condition
+# ---------------------------------------------------------------------------
+
+
+def _conduction(bc, unknown_units="K", domain_units="m", k_units="W/(m*K)",
+                h_units="W/(m**2*K)"):
+    """Steady conduction, -div(k grad T) = 0, with one boundary condition.
+
+    The diffusive flux is q = -k grad T, so [q] = [k][T]/[L], W/m2 here.
+    """
+    domain = {"kind": "box", "lower": [0.0, 0.0], "upper": [1.0, 1.0]}
+    if domain_units:
+        domain["units"] = domain_units
+    k = {"value": 2.0}
+    if k_units:
+        k["units"] = k_units
+    h = {"value": 10.0}
+    if h_units:
+        h["units"] = h_units
+    unknown = {"name": "T"}
+    if unknown_units:
+        unknown["units"] = unknown_units
+    return {
+        "model": {"name": "conduction", "strong_form": {
+            "unknowns": [unknown],
+            "equations": ["-∇·(k∇T) = 0  in Ω"],
+            "domain": domain,
+            "boundary_regions": [{"name": "wall", "where": "x = 0"}],
+            "boundary_conditions": [dict({"region": "wall", "variable": "T"}, **bc)],
+            "coefficients": {"k": k, "h": h},
+        }},
+        "solution_paths": {"analytical": [], "discretizations": []},
+    }
+
+
+def _robin(**kw):
+    """h T + k q.n = g: [h][T] = W/m2 and [k][q] = W2/(m3 K) -- not equal, so
+    beta is k/k, or 1, in the consistent form below."""
+    return _conduction(dict({"type": "robin", "alpha": "h", "beta": "1",
+                             "value": 3000.0, "units": "W/m**2"}, **kw.pop("bc", {})), **kw)
+
+
+def _errors(result):
+    return [str(i) for i in result if i.severity == "error"]
+
+
+def test_a_neumann_g_is_a_flux_not_a_value_of_the_unknown():
+    """The check used to compare every condition's units with the unknown's,
+    which is right for dirichlet only: a neumann g in K would have passed
+    and one in W/m2 would have failed."""
+    pytest.importorskip("ymf.symbolic")
+    ok = check(_conduction({"type": "neumann", "value": 5.0, "units": "W/m**2"}))
+    assert ok.ok, _errors(ok)
+    wrong = check(_conduction({"type": "neumann", "value": 5.0, "units": "K"}))
+    assert not wrong.ok
+    assert any("flux q.n of T" in e for e in _errors(wrong))
+
+
+def test_a_dirichlet_g_is_still_a_value_of_the_unknown():
+    assert check(_conduction({"type": "dirichlet", "value": 300.0, "units": "degC"})).ok
+    wrong = check(_conduction({"type": "dirichlet", "value": 300.0, "units": "W/m**2"}))
+    assert any("incompatible" in e for e in _errors(wrong))
+
+
+def test_a_consistent_robin_condition_passes():
+    pytest.importorskip("ymf.symbolic")
+    result = check(_robin())
+    assert result.ok and len(result) == 0, [str(i) for i in result]
+
+
+def test_robin_alpha_against_beta_needs_no_units_for_t_or_g():
+    """[alpha][u] = [beta][q.n] holds or fails whatever u's units are: u is a
+    factor of both sides. Here beta = 1 makes beta q.n W/m2 while alpha T is
+    h's W/(m2 K) times T, so they agree only if T is K -- undecided without
+    T's units. With beta = k/h they agree whatever T is."""
+    pytest.importorskip("ymf.symbolic")
+    bare = dict(unknown_units=None, bc={"units": None})
+    undecided = check(_robin(**bare), missing_units="error")
+    assert not undecided.ok
+    assert all("not checked" in e for e in _errors(undecided))
+    # alpha = h, beta = k (W/(m K)): k q.n is W2/(m3 K), h T is W T/(m2 K)
+    mismatched = check(_robin(unknown_units=None,
+                              bc={"beta": "k", "units": None}), missing_units="error")
+    assert any("alpha u is" in e and "beta q.n is" in e for e in _errors(mismatched))
+    # alpha = h/k (1/m), beta = 1: (1/m) T against q/... -> [T]/m = [k][T]/[L]/[k]
+    consistent = check(_robin(unknown_units=None,
+                              bc={"alpha": "h/k", "beta": "1/k", "units": None}),
+                       missing_units="error")
+    errors = _errors(consistent)
+    # alpha u ~ beta q.n is decided without T; g's relation to them is not
+    assert errors and all("units of T" in e or "units of g" in e for e in errors)
+    assert not any("alpha u is" in e for e in errors)
+
+
+def test_a_robin_g_that_disagrees_is_an_error():
+    pytest.importorskip("ymf.symbolic")
+    result = check(_robin(bc={"units": "K"}))
+    assert any(e.startswith("[error]") and "g is" in e for e in _errors(result))
+
+
+def test_missing_units_are_skipped_by_default():
+    """Most specs declare no units; checking them must say nothing unless asked."""
+    pytest.importorskip("ymf.symbolic")
+    bare = _conduction({"type": "neumann", "value": 1.0}, unknown_units=None,
+                       domain_units=None, k_units=None, h_units=None)
+    assert len(check(bare)) == 0
+    warned = check(bare, missing_units="warn")
+    assert warned.ok and len(warned) == 1
+    assert [i.severity for i in warned] == ["warning"]
+    assert "not checked: nothing declares" in str(warned.issues[0])
+    errored = check(bare, missing_units="error")
+    assert not errored.ok
+
+
+def test_missing_units_names_what_is_undeclared():
+    pytest.importorskip("ymf.symbolic")
+    result = check(_conduction({"type": "neumann", "value": 1.0, "units": "W/m**2"},
+                               k_units=None), missing_units="warn")
+    assert [i.severity for i in result] == ["warning"]
+    assert "the units of k" in result.issues[0].message
+    assert "the units of T" not in result.issues[0].message
+
+
+def test_dirichlet_missing_units_follow_the_option_too():
+    doc = _conduction({"type": "dirichlet", "value": 300.0})   # g has no units
+    assert len(check(doc)) == 0
+    assert [i.severity for i in check(doc, missing_units="warn")] == ["warning"]
+
+
+def test_missing_units_must_be_a_known_policy():
+    with pytest.raises(ValueError, match="missing_units"):
+        check(_conduction({"type": "dirichlet", "value": 300.0}), missing_units="loud")
+
+
+def test_checking_twice_reuses_the_stand_in_units():
+    """Stand-ins are pint units; defining them again on each check would be
+    a redefinition in pint's registry."""
+    pytest.importorskip("ymf.symbolic")
+    doc = _conduction({"type": "neumann", "value": 1.0}, unknown_units=None)
+    first = [str(i) for i in check(doc, missing_units="warn")]
+    assert first == [str(i) for i in check(doc, missing_units="warn")]

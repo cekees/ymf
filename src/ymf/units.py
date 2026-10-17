@@ -42,6 +42,7 @@ __all__ = [
     "dimensionality",
     "units_compatible",
     "check",
+    "MISSING_UNITS",
     "characteristic_scale_values",
     "compute_dimensionless_numbers",
     "non_dimensionalize",
@@ -154,18 +155,26 @@ def _collect_unknown_units(strong_form: Dict[str, Any]) -> Dict[str, str]:
     return units
 
 
-def check(doc: Dict[str, Any]) -> UnitCheckResult:
+def check(doc: Dict[str, Any], missing_units: str = "skip") -> UnitCheckResult:
     """Check dimensional consistency of a parsed YMF document.
 
     Non-intrusive per report §2.1: any unknown, coefficient, boundary
     condition, or initial condition with no ``units`` field is silently
     skipped rather than flagged as an error.
 
+    ``missing_units`` says what a boundary condition that cannot be checked
+    for want of declared units becomes: ``"skip"`` (the default) says
+    nothing, ``"warn"`` and ``"error"`` add an issue of that severity naming
+    what is undeclared.
+
     Checks performed (report §4.4):
 
     - Every declared unit string parses (bad strings -> ``error``).
-    - Each ``boundary_conditions[].units`` is dimensionally compatible with
-      the ``unknowns[].units`` of the variable it references.
+    - Each boundary condition's ``units``, the units of its right-hand side
+      g, agree with its type (see :func:`_check_boundary_conditions`):
+      ``[g] = [u]`` for dirichlet, ``[g] = [q.n]`` for neumann, and
+      ``[alpha][u] = [beta][q.n] = [g]`` for robin, where ``q = -a grad u``
+      is the diffusive flux of the variable's equation.
     - Each ``initial_conditions[].units`` is dimensionally compatible with
       the ``unknowns[].units`` of the field it initializes.
     - A ``density`` or ``viscosity`` scale given as a number while a ``rho``
@@ -176,6 +185,9 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
     Returns a :class:`UnitCheckResult`; ``bool(result)`` is ``True`` iff there
     are no ``error``-severity issues (warnings don't affect truthiness).
     """
+    if missing_units not in MISSING_UNITS:
+        raise ValueError("missing_units must be one of %s, not %r"
+                         % (", ".join(MISSING_UNITS), missing_units))
     result = UnitCheckResult()
     problem = doc.get("model") or {}
     strong_form = problem.get("strong_form") or {}
@@ -208,11 +220,7 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
             except UnitParseError as exc:
                 result.issues.append(UnitIssue("error", location, str(exc)))
 
-    _check_against_unknown(
-        strong_form.get("boundary_conditions") or [],
-        "variable",
-        lambda bc: f"boundary_conditions[region={bc.get('region')!r}, variable={bc.get('variable')!r}]",
-    )
+    _check_boundary_conditions(strong_form, result, missing_units)
     _check_against_unknown(
         strong_form.get("initial_conditions") or [],
         "field",
@@ -288,6 +296,368 @@ def check(doc: Dict[str, Any]) -> UnitCheckResult:
                 f"{{derived: true, formula: \"{name}\"}}"))
 
     return result
+
+
+#: What :func:`check` does with a boundary condition it cannot check for
+#: want of declared units: say nothing, warn, or call it an error.
+MISSING_UNITS = ("skip", "warn", "error")
+
+
+class _Undetermined(Exception):
+    """A dimension that depends on something undeclared, or can't be read."""
+
+    def __init__(self, reasons):
+        super().__init__(", ".join(reasons))
+        self.reasons = list(reasons)
+
+
+class _Inconsistent(Exception):
+    """An expression whose own terms differ in dimension."""
+
+
+#: pint units, each of a base dimension of its own, defined once per process
+#: and handed out to each check as stand-ins
+_STANDIN_UNITS: List[str] = []
+
+
+class _Dimensions:
+    """The dimension of each quantity a spec names.
+
+    Something with declared units has their dimension. Something without
+    them gets a dimension of its own, a stand-in that no real dimension
+    equals. A comparison then decides itself: if the two sides' ratio is
+    dimensionless they agree, whatever the stand-ins were (alpha u against
+    beta q.n needs no units for u, because u cancels); if what is left is
+    made of real dimensions they disagree; and if a stand-in is left, the
+    answer depends on what was not declared.
+
+    Only dimensions are compared, never scale: km and m agree.
+    """
+
+    def __init__(self):
+        self._standins: Dict[str, str] = {}   # pint dimension -> what it stands for
+
+    def standin(self, what: str):
+        for dim, known in self._standins.items():
+            if known == what:
+                return _UREG.Quantity(1, dim[1:-1])
+        index = len(self._standins)
+        if index == len(_STANDIN_UNITS):
+            name = "ymf_undeclared_%d" % index
+            _UREG.define("%s = [%s]" % (name, name))
+            _STANDIN_UNITS.append(name)
+        name = _STANDIN_UNITS[index]
+        self._standins["[%s]" % name] = what
+        return _UREG.Quantity(1, name)
+
+    def of(self, unit_str: Optional[str], what: str):
+        """``unit_str``'s dimension, or a stand-in for ``what``."""
+        if not unit_str:
+            return self.standin(what)
+        # in base units: an offset unit (degC) is otherwise refused in a product
+        return _UREG.Quantity(1, to_pint_unit(unit_str)).to_base_units()
+
+    def undeclared(self, quantity) -> List[str]:
+        return ["nothing declares " + self._standins[d]
+                for d in quantity.dimensionality if d in self._standins]
+
+    def compare(self, a, b):
+        """None if a and b agree; else ("error", text) or ("missing", reasons)."""
+        ratio = (a / b).to_reduced_units()
+        if ratio.dimensionless:
+            return None
+        missing = self.undeclared(ratio)
+        if missing:
+            return ("missing", missing)
+        return ("error", "%s against %s" % (_show(a), _show(b)))
+
+
+def _show(quantity) -> str:
+    """A derived quantity's units for a message, in SI base units ("kg/s³")."""
+    if quantity.dimensionless:
+        return "dimensionless"
+    return format(quantity.to_base_units().units, "~P")
+
+
+def _expression_dimension(expr, names: Dict[str, Any], dims: _Dimensions):
+    """The dimension of a sympy expression, given one for each free symbol."""
+    import sympy
+    from sympy.core.function import AppliedUndef
+    from ymf.symbolic.language import D
+
+    if expr.is_Number:
+        return _UREG.Quantity(1, "dimensionless")
+    if isinstance(expr, sympy.Symbol):
+        if expr.name not in names:
+            raise _Undetermined(["%s is not a coordinate, unknown or "
+                                 "coefficient" % expr.name])
+        return names[expr.name]
+    if isinstance(expr, D):
+        return (_expression_dimension(expr.args[0], names, dims)
+                / names[("x", "y", "z")[int(expr.args[1])]])
+    if expr.is_Mul:
+        out = _UREG.Quantity(1, "dimensionless")
+        for arg in expr.args:
+            out = out * _expression_dimension(arg, names, dims)
+        return out
+    if expr.is_Pow:
+        base, exponent = expr.args
+        if exponent.is_Number:
+            return _expression_dimension(base, names, dims) ** float(exponent)
+        # x**y: both dimensionless, or nothing is known
+        for arg in expr.args:
+            if not _expression_dimension(arg, names, dims).dimensionless:
+                raise _Undetermined(["the dimension of the power %s is not known" % expr])
+        return _UREG.Quantity(1, "dimensionless")
+    if expr.is_Add or isinstance(expr, (sympy.Max, sympy.Min, sympy.Abs)):
+        terms = [_expression_dimension(arg, names, dims) for arg in expr.args]
+        for term in terms[1:]:
+            verdict = dims.compare(term, terms[0])
+            if verdict is None:
+                continue
+            if verdict[0] == "missing":
+                raise _Undetermined(verdict[1])
+            raise _Inconsistent("the terms of %s differ in dimension: %s" % (expr, verdict[1]))
+        return terms[0]
+    if isinstance(expr, AppliedUndef):
+        # a coefficient, k(x, y): see _symbolic_names
+        name = type(expr).__name__
+        if name not in names:
+            raise _Undetermined(["%s is not a coefficient" % name])
+        return names[name]
+    if isinstance(expr, sympy.Function):
+        # sin, exp, log, ...: a dimensionless argument and result
+        return _UREG.Quantity(1, "dimensionless")
+    raise _Undetermined(["ymf.units cannot take the dimension of %s" % expr])
+
+
+def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckResult",
+                               missing_units: str) -> None:
+    """The dimension of each boundary condition's g, against its type.
+
+    ``units`` on a condition is the units of g, its right-hand side.
+
+    - dirichlet, u = g: ``[g] = [u]``.
+    - neumann, q.n = g, where q = -a grad u is the diffusive flux of the
+      variable's own equation: ``[g] = [a][u]/[L]``.
+    - robin, alpha u + beta q.n = g: ``[alpha][u] = [beta][q.n] = [g]``.
+      The first equality holds or fails without units for u or g, since u
+      appears on both sides; it needs only alpha, beta, a and the domain's
+      length.
+
+    Anything undeclared -- the unknown's units, g's, a coefficient's, the
+    domain's -- leaves the comparison it enters undecided, and
+    ``missing_units`` says what that becomes. Neumann and robin need
+    ymf[symbolic] to read alpha, beta and the equations; without it they
+    are undecided too.
+    """
+    bcs = [bc for bc in (strong_form.get("boundary_conditions") or [])
+           if bc.get("type") in ("dirichlet", "neumann", "robin")]
+    if not bcs:
+        return
+    dims = _Dimensions()
+    unknowns = normalize_unknowns(strong_form.get("unknowns") or [])
+    ranks = {u["name"]: int(u.get("rank", 0)) for u in unknowns}
+    unknown_dims = {}
+    for u in unknowns:
+        try:
+            unknown_dims[u["name"]] = dims.of(u.get("units"), "the units of %s" % u["name"])
+        except UnitParseError:
+            unknown_dims[u["name"]] = dims.standin("the units of %s" % u["name"])
+    domain = strong_form.get("domain")
+    domain_units = domain.get("units") if isinstance(domain, dict) else None
+
+    def report(location, verdict):
+        if verdict is None:
+            return
+        kind, detail = verdict
+        if kind == "error":
+            result.issues.append(UnitIssue("error", location, detail))
+        elif missing_units != "skip":
+            reasons = detail if isinstance(detail, list) else [detail]
+            result.issues.append(UnitIssue(
+                "warning" if missing_units == "warn" else "error", location,
+                "not checked: %s" % "; ".join(dict.fromkeys(reasons))))
+
+    flux_cache: Dict[str, Any] = {}
+    for bc in bcs:
+        var, kind = bc.get("variable"), bc["type"]
+        location = f"boundary_conditions[region={bc.get('region')!r}, variable={var!r}]"
+        if var not in unknown_dims:
+            continue
+        try:
+            g = dims.of(bc.get("units"), "the units of g on %s" % bc.get("region"))
+        except UnitParseError as exc:
+            result.issues.append(UnitIssue("error", location, str(exc)))
+            continue
+        u = unknown_dims[var]
+        if kind == "dirichlet":
+            verdict = dims.compare(g, u)
+            if verdict and verdict[0] == "error":
+                declared = _unknown_units(unknowns, var)
+                verdict = ("error",
+                           f"units {bc['units']!r} ({dimensionality(bc['units'])}) incompatible "
+                           f"with {var!r}'s declared units {declared!r} "
+                           f"({dimensionality(declared)})")
+            report(location, verdict)
+            continue
+        try:
+            names, components, space = _symbolic_names(
+                strong_form, dims, unknown_dims, ranks, domain_units, flux_cache)
+            fluxes = [_flux_dimension(strong_form, c, names, dims, space, flux_cache)
+                      for c in components[var]]
+            q = fluxes[0]
+            for other in fluxes[1:]:
+                verdict = dims.compare(other, q)
+                if verdict:
+                    raise (_Undetermined(verdict[1]) if verdict[0] == "missing"
+                           else _Inconsistent("the components of %s's flux differ: %s"
+                                              % (var, verdict[1])))
+            if kind == "neumann":
+                verdict = dims.compare(g, q)
+                if verdict and verdict[0] == "error":
+                    verdict = ("error", "g is %s but the flux q.n of %s is %s"
+                               % (bc["units"], var, _show(q)))
+                report(location, verdict)
+                continue
+            alpha_u = _bc_expression(bc, "alpha", names, dims, space) * u
+            beta_q = _bc_expression(bc, "beta", names, dims, space) * q
+        except _Undetermined as exc:
+            report(location, ("missing", exc.reasons))
+            continue
+        except _Inconsistent as exc:
+            result.issues.append(UnitIssue("error", location, str(exc)))
+            continue
+        # Three quantities, three pairwise relations; two that hold make the
+        # third hold, so it is undecided only while fewer than two are known.
+        relations = [(alpha_u, "alpha u", beta_q, "beta q.n"),
+                     (g, "g", alpha_u, "alpha u"),
+                     (g, "g", beta_q, "beta q.n")]
+        holding, missing, failed = 0, [], None
+        for a, a_text, b, b_text in relations:
+            verdict = dims.compare(a, b)
+            if verdict is None:
+                holding += 1
+            elif verdict[0] == "missing":
+                missing += verdict[1]
+            elif failed is None:
+                show = lambda q, text: bc["units"] if text == "g" else _show(q)
+                failed = "%s is %s but %s is %s" % (a_text, show(a, a_text),
+                                                    b_text, show(b, b_text))
+        if failed:
+            report(location, ("error", failed))
+        elif holding < 2:
+            report(location, ("missing", missing))
+
+
+def _unknown_units(unknowns, name):
+    return next(u.get("units") for u in unknowns if u["name"] == name)
+
+
+def _symbolic_names(strong_form, dims, unknown_dims, ranks, domain_units, cache):
+    """({symbol name: dimension}, {unknown: [component, ...]}) for the
+    expressions of a spec, read with ymf.symbolic."""
+    if "names" in cache:
+        return cache["names"]
+    try:
+        import sympy  # noqa: F401
+        from ymf.symbolic.language import Space
+    except ImportError:
+        raise _Undetermined(["reading the flux q needs ymf[symbolic]"])
+    length = (dims.of(domain_units, "the domain's length units") if domain_units
+              else dims.standin("the domain's length units"))
+    names: Dict[str, Any] = {"x": length, "y": length, "z": length,
+                             "t": dims.standin("the units of t")}
+    coefficients = strong_form.get("coefficients") or {}
+    for name, entry in coefficients.items():
+        declared = entry.get("units") if isinstance(entry, dict) else None
+        try:
+            names[name] = dims.of(declared, "the units of %s" % name)
+        except UnitParseError:
+            names[name] = dims.standin("the units of %s" % name)
+    dim = _space_dimension(strong_form.get("domain"))
+    components = {}
+    for name, rank in ranks.items():
+        if rank == 0:
+            components[name] = [name]
+            names[name] = unknown_dims[name]
+        else:
+            components[name] = ["%s_%d" % (name, i) for i in range(dim)]
+            for c in components[name]:
+                names[c] = unknown_dims[name]
+    # Coefficients stay named, so their units survive the parse: k becomes
+    # k(x, y), whose free symbols are coordinates, which classify accepts
+    # (a plain symbol k would be an undefined name to it).
+    space = Space(dim, ranks)
+    space.coefficients = {n: sympy.Function(n)(*space.x) for n in coefficients}
+    cache["names"] = (names, components, space)
+    return cache["names"]
+
+
+def _space_dimension(domain) -> int:
+    from ymf.domain import box_bounds
+    box = box_bounds(domain)
+    if box is not None:
+        return len(box[0])
+    if isinstance(domain, dict) and domain.get("dimension"):
+        return int(domain["dimension"])
+    if isinstance(domain, str):
+        from ymf.symbolic.problem import _domain_dimension
+        try:
+            return _domain_dimension(domain)
+        except Exception:
+            pass
+    raise _Undetermined(["the domain's dimension is not known"])
+
+
+def _bc_expression(bc, key, names, dims, space):
+    from ymf.symbolic.language import SymbolicError, parse_expression
+    text = bc.get(key)
+    if text is None:
+        raise _Undetermined(["the condition gives no %s" % key])
+    try:
+        expr = parse_expression(str(text), space)
+    except SymbolicError as exc:
+        raise _Undetermined(["%s does not read: %s" % (key, exc)])
+    return _expression_dimension(expr, names, dims)
+
+
+def _flux_dimension(strong_form, component, names, dims, space, cache):
+    """[q] for one component's equation: [a][phi]/[L] over its diffusion terms."""
+    from ymf.symbolic.adr import classify
+    from ymf.symbolic.language import SymbolicError, parse_equation
+    if "equations" not in cache:
+        residuals = []
+        try:
+            for text in strong_form.get("equations") or []:
+                residuals.extend(parse_equation(text, space))
+        except SymbolicError as exc:
+            raise _Undetermined(["the equations do not read: %s" % exc])
+        cache["equations"] = residuals
+    residuals = cache["equations"]
+    comps = space.components
+    if len(residuals) != len(comps) or component not in comps:
+        raise _Undetermined(["no flux q: %d equations for %d unknowns"
+                             % (len(residuals), len(comps))])
+    try:
+        eq = classify(residuals[comps.index(component)], space)
+    except SymbolicError as exc:
+        raise _Undetermined(["no flux q: %s" % exc])
+    terms = []
+    for phi, tensor in eq.diffusion.items():
+        for entry in tensor:
+            if entry != 0:
+                terms.append(_expression_dimension(entry, names, dims) * names[phi] / names["x"])
+    if not terms:
+        raise _Undetermined(["the equation for %s has no diffusive flux" % component])
+    for term in terms[1:]:
+        verdict = dims.compare(term, terms[0])
+        if verdict:
+            if verdict[0] == "missing":
+                raise _Undetermined(verdict[1])
+            raise _Inconsistent("the diffusion terms of the equation for %s differ "
+                                "in dimension: %s" % (component, verdict[1]))
+    return terms[0]
 
 
 def _coefficient_units(problem: Dict[str, Any]) -> Dict[str, str]:

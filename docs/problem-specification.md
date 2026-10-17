@@ -627,11 +627,31 @@ strong form's key `unknown_provenance`. It was renamed because it read as
 
 Units are optional everywhere. A document with none still passes. Where
 they are given, `ymf.check_units(doc)` (pint-backed) checks that every unit
-string parses, and that each boundary and initial condition's units are
-dimensionally compatible with the unknown it constrains:
+string parses, that each initial condition's units are dimensionally
+compatible with the unknown it initializes, and that each boundary
+condition's `units` — the units of its right-hand side `g` — fit its type:
+
+- `dirichlet`, `u = g`: `[g] = [u]`.
+- `neumann`, `q·n = g` with `q = -a∇u` the diffusive flux of the variable's
+  own equation: `[g] = [a][u]/[L]`.
+- `robin`, `αu + β q·n = g`: `[α][u] = [β][q·n] = [g]`. The first equality
+  needs no units for `u` or `g`, since `u` is a factor of both sides; `α`,
+  `β`, `a` and the domain's length decide it.
 
 ```text
 [error] boundary_conditions[region='walls', variable='T']: units 'm' ([length]) incompatible with 'T''s declared units 'K' ([temperature])
+[error] boundary_conditions[region='wall', variable='T']: g is K but the flux q.n of T is kg/s³
+```
+
+Only dimensions are compared, never scale, so `km` and `m` agree. Reading
+`α`, `β` and the flux needs ymf[symbolic]. A condition that cannot be
+checked because something it involves declares no units — the unknown, `g`,
+a coefficient, the domain — is skipped silently by default.
+`check_units(doc, missing_units="warn")` or `"error"` reports it instead,
+naming what is undeclared:
+
+```text
+[warning] boundary_conditions[region='wall', variable='T']: not checked: nothing declares the units of k
 ```
 
 Unit strings accept the common notations (`m2/s`, `m²/s`, `m^2/s`,
@@ -754,6 +774,13 @@ nobody has to rediscover them:
   different numbers from the solver reading the same file. A bare
   `ymf[units]` install still works, and still sees only the coefficients
   that are already numbers.
+- *(Closed.)* A boundary condition's units were compared with its
+  unknown's whatever its type, which is right only for `dirichlet`: a
+  `neumann` flux in W/m² failed and one in K passed. Each type now has its
+  own rule (see [Units](#units-scales-and-dimensionless-numbers)). What is
+  left: `neumann` and `robin` see the diffusive flux only, and `t` has no
+  declared units anywhere, so an `α` or `β` that depends on time is never
+  decided.
 - **Dirichlet, Neumann, Robin and periodic conditions run**, with values
   given as a number, a formula or a table, and only on a box.
   A `neumann` condition gives the **outward** diffusive flux `q·n` with
