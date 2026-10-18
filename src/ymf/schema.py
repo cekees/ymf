@@ -456,6 +456,14 @@ YMF_SCHEMA = Map(
         # loader into a composed document.
         Optional("extends"): Str(),
         Optional("ymf_state"): Enum(list(STATES)),
+        # "generated" says a tool wrote this file, from what, and digests
+        # of what it read and what it wrote: see ymf.generated.
+        Optional("generated"): Map({
+            "by": Str(),
+            "reads": Enum(["model_without_weak_forms", "model_and_analytical"]),
+            "from": Str(),
+            "content": Str(),
+        }),
         Optional("composition"): Any(),
         # "remove" lists paths this file drops from what it extends --
         # "Problem.physical_model.assumptions[incompressible]". Composition
