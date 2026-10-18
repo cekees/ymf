@@ -14,12 +14,19 @@ A spec is the input; an archive is that spec, as realized, followed by its
         transformations: ...
         approximation: {...}          # the XDMF Domain
 
-The key hashes the output's slice of the input, whole: the Problem, the
-analytical solutions it is checked against, the one discretization entry
-(with its studied parameters replaced by the realization's values) and the
+The key hashes the output's slice of the input, whole: the model without
+its weak forms, the one weak form the discretization uses, the analytical
+solutions it is checked against, the one discretization entry (with its
+studied parameters replaced by the realization's values) and the
 realization. Prose is included, so a key is a fingerprint of the input text
 as well as of its numbers. Anything that changes the slice changes the key;
-editing another discretization does not.
+editing another discretization, or another weak form, does not.
+
+Until 2026-10-18 (between releases: no release wrote archives) the slice
+held the whole model block, every weak form included, so adding a weak form
+re-keyed every output. An output keyed that way is recognised by
+:func:`partition`, which re-keys it rather than drop it when its input is
+otherwise unchanged (see :func:`legacy_input_slice`).
 
 A discretization's ``mesh.cells`` or ``mesh.h``, its ``mesh.levels`` (and its
 ``discretization.dt``) may be lists: a study. Each combination is one
@@ -42,7 +49,9 @@ __all__ = [
     "realizations",
     "realize",
     "plain",
+    "used_weak_form",
     "input_slice",
+    "legacy_input_slice",
     "input_digest",
     "output_key",
     "planned_outputs",
@@ -133,9 +142,45 @@ def _discretization(doc: Dict[str, Any], name: str) -> Dict[str, Any]:
     raise KeyError("no discretization named %r" % (name,))
 
 
+def used_weak_form(doc: Dict[str, Any], discretization: Dict[str, Any]
+                   ) -> Optional[Dict[str, Any]]:
+    """The weak form a discretization entry solves, or None if it names none.
+
+    Its ``from_weak_form``; the composer fills that in where the document has
+    one weak form, and this does the same for a document built without it.
+    """
+    weak_forms = list((doc.get("model") or {}).get("weak_forms") or [])
+    label = discretization.get("from_weak_form")
+    if label is None:
+        return weak_forms[0] if len(weak_forms) == 1 else None
+    for weak_form in weak_forms:
+        if str(weak_form.get("label")) == str(label):
+            return weak_form
+    raise KeyError("discretization %r names weak form %r, which the model does not have"
+                   % (discretization.get("name"), label))
+
+
 def input_slice(doc: Dict[str, Any], discretization: str,
                 realization: Dict[str, Any]) -> Dict[str, Any]:
     """The part of the input one output depends on (see the module docstring)."""
+    paths = doc.get("solution_paths") or {}
+    entry = _discretization(doc, discretization)
+    return plain({
+        "model": {k: v for k, v in doc["model"].items() if k != "weak_forms"},
+        "weak_form": used_weak_form(doc, entry),
+        "analytical": paths.get("analytical") or [],
+        "discretization": realize(entry, realization),
+        "realization": realization,
+    })
+
+
+def legacy_input_slice(doc: Dict[str, Any], discretization: str,
+                       realization: Dict[str, Any]) -> Dict[str, Any]:
+    """The slice until 2026-10-18: the whole model block, every weak form in it.
+
+    Kept only to recognise outputs keyed that way, so they can be re-keyed
+    instead of recomputed.
+    """
     paths = doc.get("solution_paths") or {}
     return plain({
         "model": doc["model"],
@@ -145,26 +190,33 @@ def input_slice(doc: Dict[str, Any], discretization: str,
     })
 
 
-def input_digest(doc: Dict[str, Any], discretization: str,
-                 realization: Dict[str, Any]) -> str:
-    """sha256 of the input slice in a canonical JSON form."""
-    text = json.dumps(input_slice(doc, discretization, realization), sort_keys=True,
-                      ensure_ascii=False, separators=(",", ":"))
+def _digest(slice_: Dict[str, Any]) -> str:
+    text = json.dumps(slice_, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def output_key(doc: Dict[str, Any], discretization: str,
-               realization: Dict[str, Any]) -> str:
-    """``<discretization>/cells=N[/levels=L][/dt=T]/<digest prefix>``,
-    with ``h=H`` in place of ``cells=N`` for an unstructured mesh."""
+def input_digest(doc: Dict[str, Any], discretization: str,
+                 realization: Dict[str, Any]) -> str:
+    """sha256 of the input slice in a canonical JSON form."""
+    return _digest(input_slice(doc, discretization, realization))
+
+
+def _key(discretization: str, realization: Dict[str, Any], digest: str) -> str:
     size = "cells" if "cells" in realization else "h"
     parts = [discretization, "%s=%s" % (size, realization[size])]
     if realization.get("levels", 1) != 1:
         parts.append("levels=%s" % (realization["levels"],))
     if "dt" in realization:
         parts.append("dt=%s" % (realization["dt"],))
-    parts.append(input_digest(doc, discretization, realization)[:KEY_DIGITS])
+    parts.append(digest[:KEY_DIGITS])
     return "/".join(parts)
+
+
+def output_key(doc: Dict[str, Any], discretization: str,
+               realization: Dict[str, Any]) -> str:
+    """``<discretization>/cells=N[/levels=L][/dt=T]/<digest prefix>``,
+    with ``h=H`` in place of ``cells=N`` for an unstructured mesh."""
+    return _key(discretization, realization, input_digest(doc, discretization, realization))
 
 
 def planned_outputs(doc: Dict[str, Any]) -> Iterator[Tuple[str, str, Dict[str, Any]]]:
@@ -202,6 +254,12 @@ def partition(spec: Dict[str, Any], outputs: Dict[str, Any]
     """Split ``outputs`` into those ``spec`` still produces, and the rest.
 
     Returns ``(kept, dropped)``; ``dropped`` maps each other key to why.
+
+    An output keyed by the slice used until 2026-10-18 (:func:`legacy_input_slice`)
+    whose input is otherwise unchanged is kept under its current key, with
+    ``input.sha256`` brought up to date and ``input.rekeyed_from`` naming
+    the key it had. Its files are not renamed: an output records its own
+    (``storage``), and only new outputs are named by their key.
     """
     kept, dropped = {}, {}
     for key, output in outputs.items():
@@ -218,6 +276,12 @@ def partition(spec: Dict[str, Any], outputs: Dict[str, Any]
             continue
         if current == base:
             kept[key] = output
+        elif _key(name, realization, _digest(legacy_input_slice(spec, name, realization))) == base:
+            output = copy.deepcopy(output)
+            output["input"] = dict(output.get("input") or {},
+                                   sha256=input_digest(spec, name, realization),
+                                   rekeyed_from=key)
+            kept[current + key[len(base):]] = output
         else:
             dropped[key] = "its input changed (it would now be %s)" % (current,)
     return kept, dropped
