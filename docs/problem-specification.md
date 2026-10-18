@@ -252,6 +252,15 @@ That is why the Navier-Stokes model writes its advection as `∇·(ρ v⊗v)`,
 which equals ρ(v·∇)v when ∇·v = 0. The convective form is refused, with
 the reason.
 
+**Written back.** `ymf.symbolic.to_notation` is the inverse: it writes a
+sympy expression in this notation so that parsing it gives back exactly the
+same expression. That is how a tool records what it derived -- the weak
+form `pro weak` will solve, say -- in the same terms the spec uses. Two
+details make the round trip exact. A numeral is an IEEE double, as the
+solver computes with, however many digits it has. And the components of a
+vector unknown are names too (`v_0`, `v_1`), because what works on them,
+the scalarized form a solver reads, has to be writable.
+
 ## Running a spec
 
 `ymf.symbolic.adr_problem(doc)` turns a validated, possibly composed, spec
