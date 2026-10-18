@@ -69,10 +69,23 @@ The top level holds nothing that is not the spec, apart from `ymf` and
 `extends` can name it.
 
 **Keys.** An output's key hashes its slice of the input, whole: the
-`Problem`, the analytical solutions, the one discretization entry it ran
-and its realization. Prose counts, so the key fingerprints the text as well
-as the numbers. Changing anything in the slice changes the key. Changing
-another discretization, or the `vvuq` plan, does not.
+`model` without its weak forms, the one weak form the discretization uses
+(`from_weak_form`), the analytical solutions, the one discretization entry
+it ran and its realization. Prose counts, so the key fingerprints the text
+as well as the numbers. Changing anything in the slice changes the key.
+Changing another discretization, another weak form, or the `vvuq` plan,
+does not, so adding a formulation leaves existing outputs current.
+
+*Migrating keys from before 2026-10-18.* Until then the slice held the
+whole `model` block, every weak form included, so adding a weak form made
+every output stale. No release wrote those keys. An archive that has them
+needs no rerun: loading it recognises each output keyed the old way whose
+input is otherwise unchanged and keeps it under its new key, with
+`input.sha256` updated and `input.rekeyed_from` naming the old key. The
+next write (any `ymf_run` of the archive) records the new keys. The
+output's files keep their names, since an output records its own
+(`storage`). An output whose input did change is still dropped, as it
+would have been.
 
 **Studies.** A discretization's `mesh: {cells: [4, 8, 16], levels: 1}`
 (and its `discretization.dt`) may be a list. Each combination is one

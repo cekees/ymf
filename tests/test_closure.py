@@ -184,3 +184,71 @@ def test_keys_name_h_in_place_of_cells(tmp_path):
     keys = [k for k, _, _ in closure.planned_outputs(spec)]
     assert [k.rsplit("/", 1)[0] for k in keys] == ["P1_linear/h=0.25",
                                                     "P1_linear/h=0.125"]
+
+
+# --- the weak form in the key ---------------------------------------------------
+
+
+def _p1(spec):
+    (realization, *_) = closure.realizations(
+        next(d for d in spec["solution_paths"]["discretizations"] if d["name"] == "P1_linear"))
+    return realization
+
+
+def test_a_key_ignores_weak_forms_its_discretization_does_not_use(tmp_path):
+    import copy
+    spec, _, _ = closure.load(spec_with_mesh(tmp_path))
+    realization = _p1(spec)
+    before = closure.output_key(spec, "P1_linear", realization)
+    used = spec["model"]["weak_forms"][0]
+    assert closure.used_weak_form(
+        spec, spec["solution_paths"]["discretizations"][0]) == used
+    more = copy.deepcopy(spec)
+    other = dict(copy.deepcopy(used), label="another", bilinear="a(u,v) = ∫Ω u v dx")
+    more["model"]["weak_forms"].append(other)
+    for entry in more["solution_paths"]["discretizations"]:
+        entry["from_weak_form"] = used["label"]
+    assert closure.output_key(more, "P1_linear", realization) == before
+    # ...but the one it uses is part of it
+    more["model"]["weak_forms"][0]["bilinear"] = "a(u,v) = 2 ∫Ω ∇u·∇v dx"
+    assert closure.output_key(more, "P1_linear", realization) != before
+
+
+def test_a_weak_form_that_is_not_there_is_named():
+    doc = {"model": {"weak_forms": [{"label": "a"}]}}
+    with pytest.raises(KeyError, match="names weak form 'b'"):
+        closure.used_weak_form(doc, {"name": "P1", "from_weak_form": "b"})
+    assert closure.used_weak_form({"model": {}}, {"name": "P1"}) is None
+
+
+def _legacy_key(spec, name, realization):
+    return closure._key(name, realization,
+                        closure._digest(closure.legacy_input_slice(spec, name, realization)))
+
+
+def test_an_output_keyed_by_the_old_slice_is_rekeyed_not_dropped(tmp_path):
+    spec, _, _ = closure.load(spec_with_mesh(tmp_path))
+    realization = _p1(spec)
+    old = _legacy_key(spec, "P1_linear", realization)
+    new = closure.output_key(spec, "P1_linear", realization)
+    assert old != new
+    output = dict(fake_output(realization), input={"sha256": "0" * 64}, storage="inline")
+    kept, dropped = closure.partition(spec, {old: output, old + "~2": output})
+    assert dropped == {}
+    assert set(kept) == {new, new + "~2"}
+    assert kept[new]["input"] == {
+        "sha256": closure.input_digest(spec, "P1_linear", realization),
+        "rekeyed_from": old}
+    assert kept[new]["storage"] == "inline"           # its files keep their names
+    assert output["input"] == {"sha256": "0" * 64}    # the caller's copy is untouched
+
+
+def test_an_old_key_whose_input_changed_is_still_dropped(tmp_path):
+    import copy
+    spec, _, _ = closure.load(spec_with_mesh(tmp_path))
+    realization = _p1(spec)
+    old = _legacy_key(spec, "P1_linear", realization)
+    edited = copy.deepcopy(spec)
+    edited["model"]["strong_form"]["equation_formulation"] += " (edited)"
+    kept, dropped = closure.partition(edited, {old: fake_output(realization)})
+    assert kept == {} and "its input changed" in dropped[old]
