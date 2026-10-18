@@ -48,8 +48,8 @@ and it is recorded rather than refused. The composed document gets a
           now: 0.01
           set_by: plane_poiseuille_re100.ymf
 
-``extends`` and ``ymf_state`` describe a file, not what it specifies, and
-are not merged: the composed document is self-contained, and carries the
+``extends``, ``ymf_state`` and ``generated`` describe a file, not what it
+specifies, and are not merged: the composed document is self-contained, and carries the
 state its top file declared. A composed *abstract* document is returned
 with ``ymf_state: abstract``, so that whoever receives it can tell it is
 not well-posed yet.
@@ -74,7 +74,7 @@ from ymf.state import check as check_state_of
 __all__ = ["YmfCompositionError", "load_composed"]
 
 #: Keys that describe a file rather than the problem; never merged.
-_FILE_KEYS = ("extends", "ymf_state", "composition", "remove")
+_FILE_KEYS = ("extends", "ymf_state", "composition", "remove", "generated")
 
 _OLD_KIND = re.compile(r"^kind\s*:", re.MULTILINE)
 
@@ -498,6 +498,7 @@ def load_composed(path: str | Path, check_state: bool = True) -> Dict[str, Any]:
     archive = _is_archive_text(text)
     data, _ = _read(path)
     declared = data.get("ymf_state")
+    data_generated = data.get("generated")
     if "extends" not in data and declared != "abstract" and not archive:
         # A self-contained problem: validate the text itself, so errors
         # cite its own lines exactly as they appear in the file.
@@ -540,6 +541,8 @@ def load_composed(path: str | Path, check_state: bool = True) -> Dict[str, Any]:
     if declared == "abstract":
         # Kept, so that whoever receives this knows it is not well-posed yet.
         merged["ymf_state"] = "abstract"
+        if data_generated is not None:
+            merged["generated"] = data_generated
         _check_document(merged)
         return merged
     # The composed document has no file of its own, so it is written out as
@@ -569,4 +572,7 @@ def load_composed(path: str | Path, check_state: bool = True) -> Dict[str, Any]:
         data["ymf_state"] = declared
         if check_state:
             check_state_of(declared, data, label)
+    if data_generated is not None:
+        # the top file's own record, carried; never a parent's (ymf.generated)
+        data["generated"] = data_generated
     return data

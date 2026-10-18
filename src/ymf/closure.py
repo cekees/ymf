@@ -249,6 +249,7 @@ def write(path: str | Path, spec: Dict[str, Any], outputs: Dict[str, Any]) -> No
     document = dict(plain(spec))
     document.pop("outputs", None)
     document.pop("ymf_state", None)
+    document.pop("generated", None)     # it describes the input file, not this one
     if outputs:
         document["outputs"] = outputs
     state, _ = reached(document)

@@ -472,6 +472,32 @@ so, naming the outputs that are now stale. (A runner bringing it up to
 date loads it anyway, and recomputes.) A document that declares nothing
 must be well-posed, as before.
 
+## Generated documents
+
+A tool that advances a document -- `pro weak` adding weak forms, `pro disc`
+adding discretizations -- writes a new file that `extends` its input, so
+each step can be reviewed as one file, and records that it did:
+
+```yaml
+extends: poisson.ymf
+generated:
+  by: pro weak (proteus 2.0.0.dev0, ymf 0.2.1.dev)
+  reads: model_without_weak_forms   # or model_and_analytical
+  from: 9c41e0a2b7d3                # what it read, hashed
+  content: 51f0c2aa19e8             # what it wrote, hashed
+model:
+  weak_forms: [...]
+```
+
+`ymf.generated.check` answers two questions from that record. **Stale**:
+the part of the input the step read (`reads`) has changed since, so the
+step should run again; an edit to a part it did not read does not count.
+**Edited**: someone changed what the step wrote. An edited file is
+legitimate -- it is the editor's now -- but a tool must not overwrite it.
+`ymf.generated.write` writes such a file. Like `extends` and `ymf_state`,
+`generated` describes a file: it is not inherited, and an archive of a
+generated file does not carry it.
+
 ## Composing documents
 
 Branches can also live in separate files. A document names the one it
