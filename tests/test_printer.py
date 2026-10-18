@@ -67,22 +67,28 @@ def _space_of(doc):
     return Space(dim, ranks, _coefficients(strong.get("coefficients") or {}, dim))
 
 
-SPECS = sorted(p for p in EXAMPLES.rglob("*.ymf")
-               if "ymf_state: abstract" not in p.read_text(encoding="utf-8"))
+def _loadable(path):
+    """Not abstract, and not extending an archive that only a run writes.
+
+    Decided here rather than skipped at run time: CI treats any skip but
+    the libyaml one as a broken install.
+    """
+    import re
+    text = path.read_text(encoding="utf-8")
+    if "ymf_state: abstract" in text:
+        return False
+    parent = re.search(r"^extends:\s*(\S+)", text, re.MULTILINE)
+    return parent is None or (path.parent / parent.group(1)).exists()
+
+
+SPECS = sorted(p for p in EXAMPLES.rglob("*.ymf") if _loadable(p))
 
 
 @pytest.mark.parametrize("path", SPECS, ids=lambda p: p.name)
 def test_every_example_spec_round_trips(path):
-    from ymf.compose import YmfCompositionError
-    try:
-        doc = load_composed(path)
-    except YmfCompositionError as exc:
-        if "does not exist" in str(exc):
-            pytest.skip("extends an archive a run writes: %s" % (exc,))
-        raise
+    doc = load_composed(path)
     strong = doc["model"]["strong_form"]
-    if not strong.get("equations"):
-        pytest.skip("no equations in notation")
+    assert strong.get("equations"), "an example spec with no equations"
     space = _space_of(doc)
     count = 0
     for text in strong["equations"]:
