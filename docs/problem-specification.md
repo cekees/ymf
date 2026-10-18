@@ -116,8 +116,16 @@ may be omitted when the document has only one — see
 `fields`, or `velocity` and `pressure` for mixed problems, each as
 `{family: CG|DG|RT|BDM|RTF|N1curl, order: n}`. The `solver` block takes
 `type` (`linear | nonlinear | time_marching | saddle_point`),
-`linear_solver` (`petsc | mumps | umfpack | superlu`), `nonlinear_solver`
-(`newton | broyden | line_search`), `tolerance` and `max_iterations`.
+`linear_solver` (`petsc | mumps | umfpack | superlu`), `petsc_options`,
+`nonlinear_solver` (`newton | broyden | line_search`), `tolerance` and
+`max_iterations`. `petsc_options` are PETSc options without the leading
+dash, as strings (`{ksp_type: cg, pc_type: gamg, ksp_rtol: "1e-10"}`; an
+option that takes no value is given `""`), for a `linear_solver` of
+`petsc` or `mumps`. Proteus honours `linear_solver`: `superlu` is its own
+serial LU, `mumps` a direct solve through PETSc, and `petsc` a PETSc
+Krylov solve set by `petsc_options` (PETSc's defaults without them);
+`umfpack` is refused, as it has no Proteus solver. Omitted, Proteus picks
+its serial LU, or MUMPS when the operator has a null space.
 `mesh: {cells, levels}` gives the meshes: cells along each side of the
 domain's box, and levels of uniform refinement (the solution is on the
 finest). A region that is not a box (`kind: piecewise_linear`) gives

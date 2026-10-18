@@ -110,3 +110,38 @@ def test_an_unknowns_provenance_must_be_a_known_value():
 
     with pytest.raises(strictyaml.YAMLValidationError):
         validate_ymf(_strong_form(per_unknown="        provenance: guessed\n"))
+
+
+def _with_solver(solver_block):
+    text = (EXAMPLES_DIR / "poisson.ymf").read_text(encoding="utf-8")
+    old = """      solver:
+        type: linear
+        linear_solver: petsc
+        tolerance: 1.0e-12
+"""
+    assert text.count(old) == 2
+    return text.replace(old, solver_block, 1)
+
+
+def test_petsc_options_are_strings_without_the_dash():
+    from ymf.schema import validate_ymf
+
+    doc = validate_ymf(_with_solver("""      solver:
+        type: linear
+        linear_solver: petsc
+        petsc_options: {ksp_type: cg, pc_type: gamg, ksp_rtol: "1e-10", ksp_view: ""}
+"""))
+    options = doc["solution_paths"]["discretizations"][0]["solver"]["petsc_options"]
+    assert options == {"ksp_type": "cg", "pc_type": "gamg",
+                       "ksp_rtol": "1e-10", "ksp_view": ""}
+
+
+def test_petsc_options_must_be_a_mapping():
+    from ymf.schema import validate_ymf
+
+    with pytest.raises(strictyaml.YAMLValidationError):
+        validate_ymf(_with_solver("""      solver:
+        type: linear
+        linear_solver: petsc
+        petsc_options: [ksp_type, cg]
+"""))
