@@ -24,7 +24,7 @@ consumer supplies (a length tolerance for testing points on a boundary).
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import sympy
 
@@ -32,7 +32,7 @@ from ymf.domain import box_bounds
 from ymf.symbolic.adr import adr_form, to_code
 from ymf.symbolic.language import Space, SymbolicError, parse_equation, parse_expression
 
-__all__ = ["adr_problem"]
+__all__ = ["adr_problem", "strong_form_equations"]
 
 
 def _number(value):
@@ -247,13 +247,11 @@ def _periodic_axes(where, lower, upper, space: Space, region: str) -> List[int]:
     return axes
 
 
-def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]:
-    """Build the plain-data ADR problem for a validated (composed) spec.
+def _posed(doc: Dict[str, Any]):
+    """What adr_problem and strong_form_equations share.
 
-    ``hamiltonian_gradients``: see :func:`ymf.symbolic.adr.classify`.
+    Returns ``(strong, box, region, ranks, coefficients, space, residuals)``.
     """
-    from ymf.symbolic.notation import NotationError, Parser
-
     problem = doc["model"]
     strong = problem["strong_form"]
     domain = strong["domain"]
@@ -282,9 +280,36 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
             ranks[u] = 0
         else:
             ranks[u["name"]] = int(u.get("rank", 0))
-
     coefficients = _coefficients(strong.get("coefficients") or {}, dim)
     space = Space(dim, ranks, coefficients)
+    residuals: List[sympy.Expr] = []
+    for text in strong["equations"]:
+        residuals.extend(parse_equation(text, space))
+    return strong, box, region, ranks, coefficients, space, residuals
+
+
+def strong_form_equations(doc: Dict[str, Any]) -> Tuple[Space, List[sympy.Expr]]:
+    """The Space a spec's strong form is written in, and its scalar residuals.
+
+    Still in sympy, one residual per scalar component, as adr_problem
+    classifies them (ymf.symbolic.adr.classify). For a tool that renders the
+    problem rather than solving it -- writing its weak form in the notation
+    (ymf.symbolic.to_notation), say.
+    """
+    _, _, _, _, _, space, residuals = _posed(doc)
+    return space, residuals
+
+
+def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]:
+    """Build the plain-data ADR problem for a validated (composed) spec.
+
+    ``hamiltonian_gradients``: see :func:`ymf.symbolic.adr.classify`.
+    """
+    from ymf.symbolic.notation import NotationError, Parser
+
+    strong, box, region, ranks, coefficients, space, residuals = _posed(doc)
+    domain = strong["domain"]
+    dim = space.dim
     if box is not None:
         lower, upper = box
         interval = domain.get("time")
@@ -295,9 +320,6 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
         except NotationError as exc:
             raise SymbolicError("strong_form.domain: %s" % exc) from exc
 
-    residuals: List[sympy.Expr] = []
-    for text in strong["equations"]:
-        residuals.extend(parse_equation(text, space))
     adr = adr_form(residuals, space, hamiltonian_gradients=tuple(hamiltonian_gradients))
 
     regions = {r["name"]: r["where"] for r in strong.get("boundary_regions", [])}

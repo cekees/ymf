@@ -17,8 +17,9 @@ parser, not a translation to Python, so the grammar is exactly what is
 written here and anything outside it is an error that says where.
 
 Expressions
-    numbers ``2``, ``1.5``, ``1.0e-3``; names (coefficients, unknowns, the
-    coordinates x y z, time t, π); ``+ - * / ^ **`` and the superscripts
+    numbers ``2``, ``1.5``, ``1.0e-3``; names (coefficients, unknowns and
+    the components of a vector unknown, ``v_0 v_1``, the coordinates x y z,
+    time t, π); ``+ - * / ^ **`` and the superscripts
     ``² ³ ⁴``; implicit multiplication (``2π²κt``, ``κ ΔT``, ``sin(πx)``);
     ``·`` (a dot product of vectors, a product otherwise) and ``⊗``
     (outer product, binding tighter than ``·`` and ``*``); tuples
@@ -142,6 +143,10 @@ class Parser:
         for axis, n in enumerate("xyz"[:space.dim]):
             self.names[n] = space.x[axis]
         self.names.update(space.coefficients)
+        # the components of a vector unknown (v_0, v_1, ...), so that what
+        # works on them -- the scalarized ADR form -- can be written back
+        # (ymf.symbolic.printer); the vector itself is still just "v"
+        self.names.update(zip(space.components, space.component_symbols))
         self.names.update(space._fields)
         self.names.update(locals_ or {})
         self.functions = dict(_FUNCTIONS)
@@ -253,7 +258,13 @@ class Parser:
         tok = self._take()
         kind, value = tok[0], tok[1]
         if kind == "NUM":
-            return sympy.Integer(value) if re.fullmatch(r"\d+", value) else sympy.Float(value)
+            # A numeral is an IEEE double, as the solver computes with: at
+            # 53 bits whatever its length. sympy would otherwise widen the
+            # precision to the digits written, so the 17 digits that pin a
+            # double exactly (ymf.symbolic.printer) would read back as a
+            # different, wider number.
+            return (sympy.Integer(value) if re.fullmatch(r"\d+", value)
+                    else sympy.Float(value, precision=53))
         if kind == "NAME":
             return self._name(tok)
         if value == "(":
