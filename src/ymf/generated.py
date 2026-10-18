@@ -103,22 +103,33 @@ def record(by: str, reads: str, parent: Dict[str, Any],
 
 
 def write(path: str | Path, extends: str, by: str, reads: str,
-          parent: Dict[str, Any], content: Dict[str, Any]) -> Dict[str, str]:
+          parent: Dict[str, Any], content: Dict[str, Any],
+          state: Optional[str] = None) -> Dict[str, str]:
     """Write a generated file: ``extends``, its ``generated`` record, its content.
 
     ``parent`` is the composed document the step read (``extends`` names
     its file, relative to ``path``). ``content`` is what the step adds, as
     plain data; it is checked against the partial schema by reading the
     file back, and ``content`` in the record is the digest of what was read
-    back, so a later :func:`check` compares like with like. Returns the
-    record.
+    back, so a later :func:`check` compares like with like. ``state``, when
+    given, is written as the file's ``ymf_state``: the state the step says
+    the composed document reaches (``pro disc`` writes ``discretized``),
+    which the loader then checks. Like ``extends``, it is not content.
+    Returns the record.
     """
     from ymf.compose import _dump, _read
     path = Path(path)
     own = content_of(copy.deepcopy(_plain(content)))
 
+    if state is not None:
+        from ymf.state import STATES
+        if state not in STATES:
+            raise ValueError("ymf_state %r is not one of %s" % (state, ", ".join(STATES)))
+
     def text(generated: Optional[Dict[str, str]]) -> str:
         head = {"extends": extends}
+        if state is not None:
+            head["ymf_state"] = state
         if generated is not None:
             head["generated"] = generated
         return _dump(dict(head, **own), allow_unicode=True, sort_keys=False,

@@ -94,3 +94,29 @@ def test_what_a_step_reads_is_named_and_checked(tmp_path):
                     "model:\n  name: \"x\"\n", encoding="utf-8")
     with pytest.raises(ValueError, match="extends nothing"):
         generated.check(lone)
+
+
+def test_a_step_can_declare_the_state_it_reaches(tmp_path):
+    from ymf.state import YmfStateError
+    spec = tmp_path / "poisson.ymf"
+    spec.write_text((EXAMPLES / "poisson.ymf").read_text(encoding="utf-8"), encoding="utf-8")
+    parent = load_composed(spec)
+    weak = copy.deepcopy(parent["model"]["weak_forms"][0])
+    weak.update(label="galerkin_generated", provenance="proteus_derived")
+    content = {"model": {"weak_forms": [weak]}}
+    plain = generated.write(tmp_path / "plain.ymf", "poisson.ymf", BY,
+                            "model_without_weak_forms", parent, content)
+    path = tmp_path / "declared.ymf"
+    record = generated.write(path, "poisson.ymf", BY, "model_without_weak_forms",
+                             parent, content, state="discretized")
+    assert record["content"] == plain["content"]      # the state is not content
+    assert path.read_text(encoding="utf-8").splitlines()[1] == "ymf_state: discretized"
+    assert generated.check(path).current
+    assert load_composed(path)["ymf_state"] == "discretized"   # and the loader checked it
+    generated.write(path, "poisson.ymf", BY, "model_without_weak_forms", parent, content,
+                    state="closed")
+    with pytest.raises(YmfStateError):
+        load_composed(path)                            # declared, but not reached
+    with pytest.raises(ValueError, match="not one of"):
+        generated.write(path, "poisson.ymf", BY, "model_without_weak_forms", parent,
+                        content, state="finished")
