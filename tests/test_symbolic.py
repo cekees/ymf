@@ -318,3 +318,16 @@ def test_periodic_faces_need_a_box():
     doc["model"]["strong_form"]["domain"] = L_SHAPE
     with pytest.raises(SymbolicError, match="periodic faces are a box's"):
         adr_problem(doc)
+
+
+def test_strong_form_equations_are_what_adr_problem_classifies():
+    """The Space and residuals, in sympy, for a tool that renders a spec."""
+    from pathlib import Path
+    from ymf.compose import load_composed
+    from ymf.symbolic import adr_problem, strong_form_equations, to_notation
+    doc = load_composed(Path(__file__).parent.parent / "examples" / "kovasznay_flow.ymf")
+    space, residuals = strong_form_equations(doc)
+    assert space.components == ["v_0", "v_1", "p"]
+    assert len(residuals) == 3
+    assert [e["component"] for e in adr_problem(doc)["adr"]["equations"]] == space.components
+    assert to_notation(residuals[2]) == "∂v_0/∂x + ∂v_1/∂y"

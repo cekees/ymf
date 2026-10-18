@@ -8,8 +8,8 @@ from ymf.symbolic.adr import adr_form, classify, grad_name, to_code
 from ymf.symbolic.language import (D, Dt, Space, SymbolicError, parse_equation,
                                    parse_expression)
 from ymf.symbolic.printer import equation_notation, to_notation
-from ymf.symbolic.problem import adr_problem
+from ymf.symbolic.problem import adr_problem, strong_form_equations
 
 __all__ = ["D", "Dt", "Space", "SymbolicError", "parse_equation", "parse_expression",
            "classify", "adr_form", "grad_name", "to_code", "adr_problem",
-           "to_notation", "equation_notation"]
+           "to_notation", "equation_notation", "strong_form_equations"]
