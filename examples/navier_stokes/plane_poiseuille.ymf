@@ -125,9 +125,7 @@ solution_paths:
       solver:
         type: nonlinear
         nonlinear_solver: newton
-        # periodic: Proteus's PETSc solvers give wrong answers on its
-        # serial periodic path, so this is solved with its serial LU
-        linear_solver: superlu
+        linear_solver: mumps
         tolerance: 1.0e-10
 
     - name: "equal_order_p1"
@@ -140,9 +138,7 @@ solution_paths:
       solver:
         type: nonlinear
         nonlinear_solver: newton
-        # periodic: Proteus's PETSc solvers give wrong answers on its
-        # serial periodic path, so this is solved with its serial LU
-        linear_solver: superlu
+        linear_solver: petsc
         tolerance: 1.0e-10
 
 vvuq:
