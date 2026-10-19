@@ -483,7 +483,7 @@ must be well-posed, as before.
 
 ## Generated documents
 
-A tool that advances a document -- `pro weak` adding weak forms, `pro disc`
+A tool that advances a document -- `pro weak` adding weak forms, `pro dis`
 adding discretizations -- writes a new file that `extends` its input, so
 each step can be reviewed as one file, and records that it did:
 

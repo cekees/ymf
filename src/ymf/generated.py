@@ -1,6 +1,6 @@
 """Files a tool wrote: the ``generated`` record, and whether it still holds.
 
-A step such as ``pro weak`` or ``pro disc`` writes its output as a new file
+A step such as ``pro weak`` or ``pro dis`` writes its output as a new file
 that ``extends`` its input, so the person who reviews it reads one file and
 the steps stay separate. The file says what wrote it::
 
@@ -55,7 +55,7 @@ def _model_and_analytical(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 #: What a step may read, by name: the part of its parent document whose
 #: change makes the step's output stale. pro weak reads the posed model
-#: (its weak forms are what it writes); pro disc reads the model with its
+#: (its weak forms are what it writes); pro dis reads the model with its
 #: weak forms, and the analytical solutions its outputs are checked against.
 READS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "model_without_weak_forms": _model_without_weak_forms,
@@ -113,7 +113,7 @@ def write(path: str | Path, extends: str, by: str, reads: str,
     file back, and ``content`` in the record is the digest of what was read
     back, so a later :func:`check` compares like with like. ``state``, when
     given, is written as the file's ``ymf_state``: the state the step says
-    the composed document reaches (``pro disc`` writes ``discretized``),
+    the composed document reaches (``pro dis`` writes ``discretized``),
     which the loader then checks. Like ``extends``, it is not content.
     Returns the record.
     """
