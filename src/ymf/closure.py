@@ -65,14 +65,8 @@ __all__ = [
 #: hex digits of the digest shown in a key (the full digest is in the output)
 KEY_DIGITS = 12
 
-# The studied parameters: (realization name, path in the discretization entry)
-_STUDIED = (
-    ("cells", ("mesh", "cells")),
-    ("h", ("mesh", "h")),
-    ("levels", ("mesh", "levels")),
-    ("dt", ("discretization", "dt")),
-)
-_DEFAULTS = {"levels": 1}
+# The studied parameters -- which fields a study may list -- belong to each
+# discretization method: see ymf.discretizations.
 
 
 def _get(entry: Dict[str, Any], path: Tuple[str, ...]) -> Any:
@@ -98,29 +92,33 @@ def realizations(discretization: Dict[str, Any]) -> List[Dict[str, Any]]:
     the command line, as an override. ``cells`` and ``h`` are alternatives;
     an entry giving both is refused.
     """
+    from ymf.discretizations import method_of
     mesh = _get(discretization, ("mesh",))
     if isinstance(mesh, dict) and "cells" in mesh and "h" in mesh:
         raise ValueError("discretization %r: mesh gives both cells and h; "
                          "cells is for a box, h for any other region"
                          % (discretization.get("name"),))
+    method = method_of(discretization)
+    if method.missing(discretization):
+        return []                      # see ymf.discretizations.missing
+    block = _get(discretization, (method.block,))
     axes = []
-    for name, path in _STUDIED:
+    for name, path in method.axes():
         value = _get(discretization, path)
         if value is None:
-            if name in _DEFAULTS and _get(discretization, ("mesh",)) is not None:
-                axes.append((name, [_DEFAULTS[name]]))
+            if name in method.defaults and block is not None:
+                axes.append((name, [method.defaults[name]]))
             continue
         axes.append((name, list(value) if isinstance(value, (list, tuple)) else [value]))
-    if not any(name in ("cells", "h") for name, _ in axes):
-        return []
     names = [name for name, _ in axes]
     return [dict(zip(names, combo)) for combo in itertools.product(*(v for _, v in axes))]
 
 
 def realize(discretization: Dict[str, Any], realization: Dict[str, Any]) -> Dict[str, Any]:
     """The discretization entry with each studied list replaced by one value."""
+    from ymf.discretizations import method_of
     entry = copy.deepcopy(plain(discretization))
-    for name, path in _STUDIED:
+    for name, path in method_of(entry).axes():
         if name in realization and _get(entry, path[:-1]) is not None:
             _set(entry, path, realization[name])
     return entry
@@ -201,22 +199,21 @@ def input_digest(doc: Dict[str, Any], discretization: str,
     return _digest(input_slice(doc, discretization, realization))
 
 
-def _key(discretization: str, realization: Dict[str, Any], digest: str) -> str:
-    size = "cells" if "cells" in realization else "h"
-    parts = [discretization, "%s=%s" % (size, realization[size])]
-    if realization.get("levels", 1) != 1:
-        parts.append("levels=%s" % (realization["levels"],))
-    if "dt" in realization:
-        parts.append("dt=%s" % (realization["dt"],))
-    parts.append(digest[:KEY_DIGITS])
-    return "/".join(parts)
+def _key(doc: Dict[str, Any], discretization: str, realization: Dict[str, Any],
+         digest: str) -> str:
+    from ymf.discretizations import method_of
+    method = method_of(_discretization(doc, discretization))
+    return "/".join([discretization] + method.key_parts(realization)
+                    + [digest[:KEY_DIGITS]])
 
 
 def output_key(doc: Dict[str, Any], discretization: str,
                realization: Dict[str, Any]) -> str:
     """``<discretization>/cells=N[/levels=L][/dt=T]/<digest prefix>``,
-    with ``h=H`` in place of ``cells=N`` for an unstructured mesh."""
-    return _key(discretization, realization, input_digest(doc, discretization, realization))
+    with ``h=H`` in place of ``cells=N`` for an unstructured mesh, and each
+    other method's own axes (ymf.discretizations) in place of the mesh's."""
+    return _key(doc, discretization, realization,
+                input_digest(doc, discretization, realization))
 
 
 def planned_outputs(doc: Dict[str, Any]) -> Iterator[Tuple[str, str, Dict[str, Any]]]:
@@ -276,7 +273,8 @@ def partition(spec: Dict[str, Any], outputs: Dict[str, Any]
             continue
         if current == base:
             kept[key] = output
-        elif _key(name, realization, _digest(legacy_input_slice(spec, name, realization))) == base:
+        elif _key(spec, name, realization,
+                  _digest(legacy_input_slice(spec, name, realization))) == base:
             output = copy.deepcopy(output)
             output["input"] = dict(output.get("input") or {},
                                    sha256=input_digest(spec, name, realization),

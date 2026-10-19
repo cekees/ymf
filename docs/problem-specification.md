@@ -136,6 +136,22 @@ Any of them may be a list, a study with one output per combination.
 `discretization` is a free-form block for anything else, such as the time
 integrator in `heat_equation.ymf`; its `dt` may be a list too.
 
+A mesh is one way of reducing the model to a computable problem, and
+`method` says which way an entry takes:
+
+| `method` | its block | what it needs | studied |
+|---|---|---|---|
+| `mesh` (default) | `mesh:` | `cells` (a box) or `h` | `cells`, `h`, `levels` |
+| `neural` | `neural:` | `width`, `depth`, `points` | all three |
+| `particle` | `particle:` | `spacing`, `kernel` | `spacing` |
+
+Every method also studies `dt`. `neural` (PINNs, weak adversarial
+networks) and `particle` (RKPM, SPH) are schemas so far: their fields
+validate, and a missing one is named with a hint, but no outputs are
+planned for them yet, so a spec using one reaches `well-posed` and says
+why it goes no further. Whether a solver can run a method is the solver's
+question; the document's state does not depend on it.
+
 ## Naming
 
 **Keys are `lower_case_with_underscores`. Values that name a type are
@@ -468,10 +484,16 @@ where along that progression a document stands:
 |---|---|---|
 | `abstract` | part of a model; it must be extended before it can be solved (equations and unknowns, say, with no domain, conditions or values) | the partial schema only |
 | `well-posed` | a complete `model:` block | the full schema |
-| `discretized` | well-posed, and every discretization gives a mesh (`cells` or `h`), so every output it plans has a key | its planned outputs |
+| `discretized` | well-posed, and every discretization has what its `method` needs (a mesh: `cells` or `h`), so every output it plans has a key | its planned outputs |
 | `closed` | discretized, and every planned output is present and still keyed to the input that produced it | its outputs' keys |
 
-Each state includes the ones before it. A document may declare its state,
+Each state includes the ones before it. A document is as far as its least
+advanced discretization, and whatever reports the state names each branch
+that holds it back, with a hint: "P2_quadratic is missing a mesh: give
+mesh: {h: ...} (or {cells: ...} on a box), or --h (--cells) on the command
+line" (`ymf.state.branches` gives the same per branch).
+
+A document may declare its state,
 and the loader checks that its content reaches it; declaring less is
 allowed. Tools that advance a document write the state they reach: a
 runner writing an archive records `closed` when every output it plans is
