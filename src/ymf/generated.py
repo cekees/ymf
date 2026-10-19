@@ -1,6 +1,6 @@
 """Files a tool wrote: the ``generated`` record, and whether it still holds.
 
-A step such as ``pro weak`` or ``pro disc`` writes its output as a new file
+A step such as ``pro weak`` or ``pro dis`` writes its output as a new file
 that ``extends`` its input, so the person who reviews it reads one file and
 the steps stay separate. The file says what wrote it::
 
@@ -55,7 +55,7 @@ def _model_and_analytical(doc: Dict[str, Any]) -> Dict[str, Any]:
 
 #: What a step may read, by name: the part of its parent document whose
 #: change makes the step's output stale. pro weak reads the posed model
-#: (its weak forms are what it writes); pro disc reads the model with its
+#: (its weak forms are what it writes); pro dis reads the model with its
 #: weak forms, and the analytical solutions its outputs are checked against.
 READS: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {
     "model_without_weak_forms": _model_without_weak_forms,
@@ -103,22 +103,33 @@ def record(by: str, reads: str, parent: Dict[str, Any],
 
 
 def write(path: str | Path, extends: str, by: str, reads: str,
-          parent: Dict[str, Any], content: Dict[str, Any]) -> Dict[str, str]:
+          parent: Dict[str, Any], content: Dict[str, Any],
+          state: Optional[str] = None) -> Dict[str, str]:
     """Write a generated file: ``extends``, its ``generated`` record, its content.
 
     ``parent`` is the composed document the step read (``extends`` names
     its file, relative to ``path``). ``content`` is what the step adds, as
     plain data; it is checked against the partial schema by reading the
     file back, and ``content`` in the record is the digest of what was read
-    back, so a later :func:`check` compares like with like. Returns the
-    record.
+    back, so a later :func:`check` compares like with like. ``state``, when
+    given, is written as the file's ``ymf_state``: the state the step says
+    the composed document reaches (``pro dis`` writes ``discretized``),
+    which the loader then checks. Like ``extends``, it is not content.
+    Returns the record.
     """
     from ymf.compose import _dump, _read
     path = Path(path)
     own = content_of(copy.deepcopy(_plain(content)))
 
+    if state is not None:
+        from ymf.state import STATES
+        if state not in STATES:
+            raise ValueError("ymf_state %r is not one of %s" % (state, ", ".join(STATES)))
+
     def text(generated: Optional[Dict[str, str]]) -> str:
         head = {"extends": extends}
+        if state is not None:
+            head["ymf_state"] = state
         if generated is not None:
             head["generated"] = generated
         return _dump(dict(head, **own), allow_unicode=True, sort_keys=False,
