@@ -51,7 +51,10 @@ def test_each_state_is_reached_when_its_content_is(tmp_path):
     assert reached(meshed, well_posed=False)[0] == "abstract"
     unmeshed = load_composed(_write(tmp_path, _without_meshes(), "bare.ymf"))
     state, why = reached(unmeshed)
-    assert state == "well-posed" and "'P1_linear', 'P2_quadratic' gives no mesh" in why
+    assert state == "well-posed"
+    assert why == "; ".join("%s is missing a mesh: give mesh: {h: ...} (or {cells: ...} on "
+                            "a box), or --h (--cells) on the command line" % n
+                            for n in ("P1_linear", "P2_quadratic"))
 
 
 def test_a_declared_state_the_content_reaches_loads(tmp_path):
@@ -64,7 +67,7 @@ def test_a_declared_state_beyond_the_content_is_refused(tmp_path):
     with pytest.raises(YmfStateError, match="declares ymf_state: closed, but it is only "
                                              "discretized: 6 of 6 planned outputs"):
         load_composed(_write(tmp_path, _declaring("closed")))
-    with pytest.raises(YmfStateError, match="only well-posed: discretization"):
+    with pytest.raises(YmfStateError, match="only well-posed: P1_linear is missing a mesh"):
         load_composed(_write(tmp_path, _declaring("discretized", _without_meshes())))
 
 

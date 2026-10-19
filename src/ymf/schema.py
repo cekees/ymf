@@ -28,6 +28,7 @@ from strictyaml import (
     Str,
 )
 
+from ymf.discretizations import METHODS
 from ymf.state import STATES
 
 # ---------------------------------------------------------------------------
@@ -139,6 +140,12 @@ DiscretizationEntry = Map(
         Optional("proteus_modules"): Map({"physics": Str(), "numerics": Str()}),
         # --- v0.2 additions ---
         Optional("bmi_interface"): Bool(),
+        # How the model is reduced to a computable problem, and so which of
+        # the blocks below this entry needs: mesh (the default), neural, or
+        # particle. See ymf.discretizations, which also says what each
+        # method still lacks; the fields here are optional so that a
+        # missing one is reported with a hint, not as a schema error.
+        Optional("method"): Enum(list(METHODS)),
         # The mesh a run uses: cells along each side of the domain's box,
         # or h, the element size of an unstructured mesh of any other
         # region (one of the two), and levels of uniform refinement of that
@@ -148,6 +155,22 @@ DiscretizationEntry = Map(
             Optional("cells"): Int() | Seq(Int()),
             Optional("h"): Float() | Seq(Float()),
             Optional("levels"): Int() | Seq(Int()),
+        }),
+        # method: neural -- a network trained on the equations (PINN, weak
+        # adversarial network). A schema so far: no outputs are planned.
+        Optional("neural"): Map({
+            Optional("width"): Int() | Seq(Int()),
+            Optional("depth"): Int() | Seq(Int()),
+            Optional("points"): Int() | Seq(Int()),
+            Optional("activation"): Str(),
+            Optional("training"): Any(),
+        }),
+        # method: particle -- a meshless particle method (RKPM, SPH). A
+        # schema so far: no outputs are planned.
+        Optional("particle"): Map({
+            Optional("spacing"): Float() | Seq(Float()),
+            Optional("kernel"): Str(),
+            Optional("support"): Float(),
         }),
         Optional("roughness_source"): Map(
             {

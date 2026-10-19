@@ -222,7 +222,7 @@ def test_a_weak_form_that_is_not_there_is_named():
 
 
 def _legacy_key(spec, name, realization):
-    return closure._key(name, realization,
+    return closure._key(spec, name, realization,
                         closure._digest(closure.legacy_input_slice(spec, name, realization)))
 
 
