@@ -158,6 +158,8 @@ __all__ = [
     "inline_domain",
     "domain_arrays",
     "rebase_domain",
+    "select_domain",
+    "step_indices",
     "read_ymf",
     "dump_grid",
     "load_grid",
@@ -1238,6 +1240,118 @@ def _data_items(domain: Dict[str, Any]):
                 yield where + "/Geometry", g["geometry"]
                 for a in g["attributes"]:
                     yield "%s/%s/%s" % (where, a.get("center", "Node"), a["name"]), a
+
+
+def step_indices(spec: Any, n: int) -> List[int]:
+    """The step indices ``spec`` picks out of ``n`` steps, in order.
+
+    ``spec`` is a comma-separated list of Python indices and slices --
+    ``"-1"`` the last step, ``"0,5,9"``, ``"2:8"``, ``"::10"`` every tenth,
+    ``"-3:"`` the last three -- or a sequence of ints. Negative indices
+    count from the end as in Python; an index outside ``range(n)`` is
+    refused rather than silently dropped, since it names a step the
+    archive does not have.
+    """
+    if isinstance(spec, str):
+        parts = [p.strip() for p in spec.split(",") if p.strip()]
+    else:
+        parts = [str(int(i)) for i in spec]
+    chosen: List[int] = []
+    for part in parts:
+        if ":" in part:
+            try:
+                bounds = [int(b) if b.strip() else None for b in part.split(":")]
+            except ValueError:
+                raise YmfArchiveError("step selection %r is not a slice" % (part,)) from None
+            if len(bounds) > 3:
+                raise YmfArchiveError("step selection %r has too many colons" % (part,))
+            indices = list(range(n))[slice(*bounds)]
+        else:
+            try:
+                index = int(part)
+            except ValueError:
+                raise YmfArchiveError(
+                    "step selection %r is neither an index nor a slice" % (part,)) from None
+            if not -n <= index < n:
+                raise YmfArchiveError(
+                    "step %d does not exist; the archive holds %d step(s)" % (index, n))
+            indices = [index % n]
+        for i in indices:
+            if i not in chosen:
+                chosen.append(i)
+    return chosen
+
+
+def select_domain(
+    domain: Dict[str, Any],
+    *,
+    collections: Optional[Sequence[str]] = None,
+    fields: Optional[Sequence[str]] = None,
+    steps: Any = None,
+) -> Dict[str, Any]:
+    """A copy of ``domain`` holding only the chosen collections, fields and steps.
+
+    An archive of a long run with several spaces and a dozen fields is more
+    than a viewer wants to open at once, and more than anyone wants to copy;
+    this is the cherry-picking behind ``ymf2xmf --collection/--field/--steps``.
+
+    ``collections`` names the time collections to keep, each either a
+    collection's exact name or a substring of one (``"c0p2"`` for
+    ``Mesh_c0p2_Lagrange``). ``fields`` names the attributes to keep on
+    every grid; ``steps`` is a :func:`step_indices` selection applied to
+    every collection. ``None`` keeps everything. A name that matches
+    nothing is refused, with what the archive does hold, rather than
+    yielding an emptier archive than was asked for.
+    """
+    import copy
+
+    all_collections = domain.get("time_collections", [])
+    names = [c.get("name", "") for c in all_collections]
+    if collections is not None:
+        keep = []
+        for want in collections:
+            matched = [c for c in all_collections
+                       if c.get("name", "") == want or want in c.get("name", "")]
+            if not matched:
+                raise YmfArchiveError(
+                    "no collection matches %r; the archive holds %s" % (want, names))
+            for c in matched:
+                if c not in keep:
+                    keep.append(c)
+        all_collections = keep
+
+    def grids_of(step: Dict[str, Any]):
+        if "spatial_collection" in step:
+            return step["spatial_collection"]
+        return [step]
+
+    if fields is not None:
+        present = set()
+        for c in all_collections:
+            for step in c.get("data", []):
+                for g in grids_of(step):
+                    present.update(a["name"] for a in g.get("attributes", []))
+        missing = [f for f in fields if f not in present]
+        if missing:
+            raise YmfArchiveError(
+                "no field named %s; the archive holds %s"
+                % (", ".join(repr(f) for f in missing), sorted(present)))
+
+    chosen = []
+    for c in all_collections:
+        data = c.get("data", [])
+        indices = (step_indices(steps, len(data)) if steps is not None
+                   else list(range(len(data))))
+        new_steps = []
+        for i in indices:
+            step = copy.deepcopy(data[i])
+            if fields is not None:
+                for g in grids_of(step):
+                    g["attributes"] = [a for a in g.get("attributes", [])
+                                       if a["name"] in fields]
+            new_steps.append(step)
+        chosen.append(dict(c, data=new_steps))
+    return dict(domain, time_collections=chosen)
 
 
 def inline_domain(domain: Dict[str, Any], base_dir: str | Path = ".") -> Dict[str, Any]:

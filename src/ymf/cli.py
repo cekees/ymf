@@ -21,10 +21,11 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from ymf.archive import YmfArchiveError, canonicalize_domain, read_ymf, validate_domain
+from ymf.archive import (YmfArchiveError, canonicalize_domain, read_ymf, select_domain,
+                         validate_domain)
 from ymf.xdmf import write_xdmf
 
-__all__ = ["archive2xmf", "ymf2xmf", "ymf2xmf_main"]
+__all__ = ["archive2xmf", "describe", "ymf2xmf", "ymf2xmf_main"]
 
 
 def _default_output(source: Path) -> Path:
@@ -37,6 +38,9 @@ def ymf2xmf(
     output: Optional[str | Path] = None,
     *,
     validate: bool = True,
+    collections: Optional[Sequence[str]] = None,
+    fields: Optional[Sequence[str]] = None,
+    steps: Optional[str] = None,
 ) -> Path:
     """Write the ``.xmf`` for a ``.ymf`` archive. Returns the output path.
 
@@ -50,6 +54,11 @@ def ymf2xmf(
         Check the archive's structure before converting. On by default: a
         malformed archive is better reported here, with the offending
         field named, than as a file a viewer silently mis-draws.
+    collections, fields, steps:
+        Convert only these: see :func:`ymf.archive.select_domain`. The
+        ``.xmf`` then describes a part of the archive, which is what a
+        viewer opening one space, one field or one instant of a long run
+        wants; the ``.ymf`` is untouched.
 
     The archive's ``extra`` payload -- ``Problem``, ``solution_paths``,
     ``vvuq`` and anything else with no XDMF equivalent -- is carried into
@@ -64,6 +73,8 @@ def ymf2xmf(
         raise YmfArchiveError(
             "%s holds no domain, so there is nothing to convert" % (source,))
     domain = validate_domain(domain) if validate else canonicalize_domain(domain)
+    if collections is not None or fields is not None or steps is not None:
+        domain = select_domain(domain, collections=collections, fields=fields, steps=steps)
     destination = Path(output) if output is not None else _default_output(source)
     write_xdmf(domain, destination, ymf_extra=extra)
     return destination
@@ -121,10 +132,25 @@ def _is_archive(source: Path) -> bool:
     return False
 
 
-def _describe(domain) -> List[str]:
-    """A short summary of what an archive holds, for --verbose."""
+def _fields_of(collection) -> List[str]:
+    """Every field name any grid of the collection carries, in first-seen order."""
+    names: List[str] = []
+    for step in collection.get("data", []):
+        grids = step.get("spatial_collection", [step])
+        for g in grids:
+            for a in g.get("attributes", []):
+                if a["name"] not in names:
+                    names.append(a["name"])
+    return names
+
+
+def describe(domain) -> List[str]:
+    """What an archive holds, one line per collection, for ``--show`` and ``--verbose``.
+
+    Each collection is numbered so the interactive prompt can refer to it.
+    """
     lines = []
-    for collection in domain.get("time_collections", []):
+    for i, collection in enumerate(domain.get("time_collections", []), start=1):
         steps = collection["data"]
         times = [step["time"] for step in steps]
         span = ("no steps" if not times
@@ -136,12 +162,68 @@ def _describe(domain) -> List[str]:
             if "spatial_collection" in first:
                 detail = ", %d subdomains" % len(first["spatial_collection"])
                 first = first["spatial_collection"][0]
-            fields = [a["name"] for a in first.get("attributes", [])]
             detail += ", %s topology" % first["topology"]["type"]
+            fields = _fields_of(collection)
             if fields:
                 detail += ", fields: %s" % ", ".join(fields)
-        lines.append("  %s: %s%s" % (collection["name"], span, detail))
+        lines.append("  %d. %s: %s%s" % (i, collection["name"], span, detail))
     return lines
+
+
+_describe = describe
+
+
+def _pick(prompt: str, options: Sequence[str], ask=None) -> Optional[List[str]]:
+    """Ask for some of ``options`` by number; blank keeps them all (None)."""
+    ask = ask or input
+    for i, option in enumerate(options, start=1):
+        print("  %d. %s" % (i, option))
+    answer = ask(prompt).strip()
+    if not answer:
+        return None
+    chosen = []
+    for token in answer.replace(",", " ").split():
+        try:
+            index = int(token)
+        except ValueError:
+            raise YmfArchiveError("%r is not a number" % (token,)) from None
+        if not 1 <= index <= len(options):
+            raise YmfArchiveError("%d is not one of 1..%d" % (index, len(options)))
+        if options[index - 1] not in chosen:
+            chosen.append(options[index - 1])
+    return chosen
+
+
+def interactive_selection(domain, ask=None):
+    """Ask which collections, fields and steps to convert.
+
+    Returns ``(collections, fields, steps)`` as :func:`ymf2xmf` takes
+    them, each ``None`` where everything was kept. ``ask`` defaults to
+    ``input`` (looked up at call time, so a test can replace it); tests
+    pass their own.
+    """
+    ask = ask or input
+    collections = domain.get("time_collections", [])
+    names = [c["name"] for c in collections]
+    print("Collections (blank for all):")
+    chosen_names = _pick("collections> ", names, ask)
+    kept = [c for c in collections if chosen_names is None or c["name"] in chosen_names]
+    fields: List[str] = []
+    for c in kept:
+        for f in _fields_of(c):
+            if f not in fields:
+                fields.append(f)
+    chosen_fields = None
+    if fields:
+        print("Fields (blank for all):")
+        chosen_fields = _pick("fields> ", fields, ask)
+    n_steps = max((len(c.get("data", [])) for c in kept), default=0)
+    steps = None
+    if n_steps > 1:
+        answer = ask("Steps of %d, as indices or slices, e.g. -1, 0:10, ::5 (blank for all)> "
+                     % (n_steps,)).strip()
+        steps = answer or None
+    return chosen_names, chosen_fields, steps
 
 
 def ymf2xmf_main(argv: Optional[Sequence[str]] = None) -> int:
@@ -162,6 +244,18 @@ def ymf2xmf_main(argv: Optional[Sequence[str]] = None) -> int:
                         help="skip the structural check before converting")
     parser.add_argument("-v", "--verbose", action="store_true",
                         help="describe what the archive holds")
+    parser.add_argument("--show", action="store_true",
+                        help="describe what the archive holds and stop; convert nothing")
+    parser.add_argument("-c", "--collection", action="append", metavar="NAME",
+                        help="convert only this time collection, by name or part of one "
+                             "(repeatable; default: all)")
+    parser.add_argument("-f", "--field", action="append", metavar="NAME",
+                        help="convert only this field (repeatable; default: all)")
+    parser.add_argument("-s", "--steps", metavar="SPEC",
+                        help="convert only these steps: indices and slices, e.g. -1, "
+                             "0:10, ::5 (default: all)")
+    parser.add_argument("-i", "--interactive", action="store_true",
+                        help="ask which collections, fields and steps to convert")
     args = parser.parse_args(argv)
 
     source = Path(args.archive)
@@ -174,13 +268,21 @@ def ymf2xmf_main(argv: Optional[Sequence[str]] = None) -> int:
                                            validate=not args.no_validate):
                 print("wrote %s" % (destination,))
             return 0
-        if args.verbose:
+        collections, fields, steps = args.collection, args.field, args.steps
+        if args.verbose or args.show or args.interactive:
             domain, _ = read_ymf(source)
+            domain = canonicalize_domain(domain)
             print("%s" % (source,))
-            for line in _describe(canonicalize_domain(domain)):
-                print(line)
+            if not args.interactive:
+                for line in describe(domain):
+                    print(line)
+            if args.show:
+                return 0
+            if args.interactive:
+                collections, fields, steps = interactive_selection(domain)
         destination = ymf2xmf(source, args.output,
-                               validate=not args.no_validate)
+                               validate=not args.no_validate,
+                               collections=collections, fields=fields, steps=steps)
     except YmfArchiveError as exc:
         # A structural problem in the archive, named. Not a traceback:
         # the user asked to convert a file, and the file is the problem.
