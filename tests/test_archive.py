@@ -1,6 +1,7 @@
 """Tests for ymf.archive -- the pyyaml-only archive core."""
 
 import sys
+import warnings
 
 import pytest
 
@@ -13,6 +14,7 @@ from ymf.archive import (
     add_collection,
     add_spatial_step,
     add_uniform_step,
+    append_step,
     attribute,
     canonicalize_domain,
     check_dimensions,
@@ -747,3 +749,156 @@ def test_inline_domain_copies_hdf5_arrays_in_exactly(tmp_path):
     for key in referenced:
         assert copied[key].dtype == referenced[key].dtype
         assert np.array_equal(copied[key], referenced[key])
+
+
+# --------------------------------------------------------------------------
+# append_step: a writer should not rewrite the document to record a step
+# --------------------------------------------------------------------------
+
+
+def _one_step(time):
+    """A step dict, built the way a writer builds one."""
+    domain = new_domain("scratch")
+    add_uniform_step(
+        domain, time,
+        {"type": "Triangle", "number_of_elements": 4,
+         "data_item": data_item([4, 3], "o.h5:/e", data_type="Int")},
+        {"type": "XYZ", "data_item": data_item([6, 3], "o.h5:/n")},
+        [], collection=0)
+    return domain["time_collections"][0]["data"][0]
+
+
+def _archive(tmp_path, name="a.ymf"):
+    path = tmp_path / name
+    write_ymf(new_domain("Mesh Spatial_Domain"), path)
+    return path
+
+
+def _times(domain):
+    return {c["name"]: [s["time"] for s in c["data"]]
+            for c in domain["time_collections"]}
+
+
+def test_appended_steps_are_read_back(tmp_path):
+    path = _archive(tmp_path)
+    for t in (0.0, 0.5, 1.0):
+        append_step(path, "Mesh Spatial_Domain", _one_step(t))
+    domain, _ = read_ymf(path)
+    assert _times(domain) == {"Mesh Spatial_Domain": [0.0, 0.5, 1.0]}
+
+
+def test_a_collection_may_appear_after_the_header(tmp_path):
+    """Collections are created lazily, so the header cannot know them all.
+
+    A model that first archives at step 40 adds its collection then. That is
+    why a step record names its collection instead of indexing into the
+    header's list -- an index agreed at step 0 would be wrong by step 40.
+    """
+    path = _archive(tmp_path)
+    append_step(path, "Mesh Spatial_Domain", _one_step(0.0))
+    append_step(path, "Mesh_c0p2_Lagrange", _one_step(0.0))   # new here
+    append_step(path, "Mesh Spatial_Domain", _one_step(0.5))
+    domain, _ = read_ymf(path)
+    assert _times(domain) == {"Mesh Spatial_Domain": [0.0, 0.5],
+                              "Mesh_c0p2_Lagrange": [0.0]}
+
+
+def test_appending_matches_writing_the_whole_document(tmp_path):
+    """The two ways to produce an archive have to agree.
+
+    Otherwise what a reader gets depends on how the writer happened to
+    build the file, which is the bug this is meant to prevent rather than
+    introduce.
+    """
+    appended = _archive(tmp_path, "appended.ymf")
+    whole = new_domain("Mesh Spatial_Domain")
+    for t in (0.0, 0.5):
+        step = _one_step(t)
+        append_step(appended, "Mesh Spatial_Domain", step)
+        whole["time_collections"][0]["data"].append(step)
+    written = tmp_path / "written.ymf"
+    write_ymf(whole, written)
+    assert read_ymf(appended)[0] == read_ymf(written)[0]
+
+
+def test_only_the_step_being_written_is_lost_to_a_kill(tmp_path):
+    """The reason for appending at all.
+
+    Note what makes this detectable: a truncated YAML document usually still
+    *parses* -- cutting inside a mapping leaves a shorter mapping -- so the
+    reader cannot judge completeness by parsing. It judges by the explicit
+    document-end marker, which is written last.
+    """
+    path = _archive(tmp_path)
+    for t in (0.0, 0.5, 1.0):
+        append_step(path, "Mesh Spatial_Domain", _one_step(t))
+    with open(path, "a", encoding="utf-8") as stream:
+        stream.write("---\ncollection: Mesh Spatial_Domain\n"
+                     "step:\n  time: 1.5\n  topology:\n    type: Tri")
+    with pytest.warns(RuntimeWarning, match="did not finish"):
+        domain, _ = read_ymf(path)
+    assert _times(domain) == {"Mesh Spatial_Domain": [0.0, 0.5, 1.0]}
+
+
+@pytest.mark.parametrize("tail", ["---\n", "---\ncollection: X\n", "---"])
+def test_a_partial_record_is_dropped_wherever_it_was_cut(tmp_path, tail):
+    path = _archive(tmp_path)
+    append_step(path, "Mesh Spatial_Domain", _one_step(0.0))
+    with open(path, "a", encoding="utf-8") as stream:
+        stream.write(tail)
+    with pytest.warns(RuntimeWarning):
+        domain, _ = read_ymf(path)
+    assert _times(domain) == {"Mesh Spatial_Domain": [0.0]}
+
+
+def test_a_kill_during_the_very_first_step_leaves_the_header(tmp_path):
+    """No end marker exists yet, so the whole appended region is partial."""
+    path = _archive(tmp_path)
+    with open(path, "a", encoding="utf-8") as stream:
+        stream.write("---\ncollection: X\nstep:\n  time: 0.0\n  topo")
+    with pytest.warns(RuntimeWarning):
+        domain, _ = read_ymf(path)
+    assert _times(domain) == {"Mesh Spatial_Domain": []}
+
+
+def test_a_complete_archive_does_not_warn(tmp_path):
+    path = _archive(tmp_path)
+    append_step(path, "Mesh Spatial_Domain", _one_step(0.0))
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        read_ymf(path)
+
+
+def test_corruption_before_the_end_is_an_error_not_a_truncation(tmp_path):
+    """A bad document in the middle is not a killed writer, and must not be
+    silently treated as one -- that would hide real damage."""
+    path = _archive(tmp_path)
+    for t in (0.0, 0.5):
+        append_step(path, "Mesh Spatial_Domain", _one_step(t))
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text.replace("time: 0.0", "time: [unclosed", 1),
+                    encoding="utf-8")
+    with pytest.raises(Exception):
+        read_ymf(path)
+
+
+def test_appending_is_constant_work_per_step(tmp_path):
+    """What this exists for: the file grows, the write does not.
+
+    Rewriting is O(steps) per step and so O(steps^2) over a run. Appending
+    writes one record whatever the archive already holds -- asserted on
+    bytes written, which is deterministic, rather than on time.
+    """
+    path = _archive(tmp_path)
+    sizes = []
+    for t in range(12):
+        before = path.stat().st_size
+        append_step(path, "Mesh Spatial_Domain", _one_step(float(t)))
+        sizes.append(path.stat().st_size - before)
+    # Not byte-identical: the time value's own text is a character wider at
+    # 10.0 than at 0.0. What matters is that the write does not grow with
+    # what the archive already holds, so bound the spread rather than
+    # demanding equality -- a rewrite would show the last write an order of
+    # magnitude above the first.
+    assert max(sizes) - min(sizes) <= 8, sizes
+    assert path.stat().st_size > 10 * max(sizes)   # the file grew; the write did not
