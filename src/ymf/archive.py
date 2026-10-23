@@ -106,6 +106,7 @@ ParaView and VisIt read natively. Nothing in this module knows about XML.
 from __future__ import annotations
 
 import re
+import os
 import warnings
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -123,6 +124,7 @@ except ImportError:  # pragma: no cover
 
 
 __all__ = [
+    "append_step",
     "YmfArchiveError",
     "HAVE_LIBYAML",
     "require_libyaml",
@@ -178,6 +180,12 @@ class YmfArchiveError(ValueError):
 #: so a version mismatch produces a clear error instead of a confusing
 #: parse failure somewhere downstream.
 ARCHIVE_FORMAT_VERSION = 1
+
+#: Separators framing an appended step. The end marker is YAML's explicit
+#: document-end token, and it is what lets a reader tell a complete record
+#: from a truncated one -- see :func:`append_step`.
+_STEP_START = "---\n"
+_STEP_END = "...\n"
 
 #: XDMF 2.0 topology types. Closed on purpose: getting one of these wrong
 #: yields an ``.xmf`` that a viewer rejects (or worse, silently misdraws),
@@ -1067,6 +1075,58 @@ def write_ymf(
     Path(path).write_text(_dump(document), encoding="utf-8")
 
 
+def append_step(
+    path: str | Path,
+    collection: str,
+    step: Dict[str, Any],
+    *,
+    fsync: bool = False,
+) -> None:
+    """Append one timestep to a ``.ymf`` file, without rewriting it.
+
+    A writer that produces a timestep at a time should not have to rewrite
+    the whole document to record it. Rewriting is O(steps) per step, which
+    is O(steps^2) over a run -- an inheritance from XML, where a document
+    has to be closed to be well formed. YAML has no such requirement: a
+    stream of documents separated by ``---`` is valid after any complete
+    document, so a step can simply be appended and flushed.
+
+    The file therefore has two shapes, and :func:`read_ymf` accepts both:
+
+    * **one document**, what :func:`write_ymf` produces, with every step
+      nested under its collection. This is the canonical form and what a
+      completed run leaves behind.
+    * **a stream**: that same document first, then one document per step.
+      This is what a run in progress leaves, and what a run that was killed
+      leaves for good.
+
+    Each appended document names its collection, rather than indexing into
+    the header's list, because collections are created lazily -- a model
+    that first archives at step 40 adds one then -- so an index agreed at
+    step 0 would be wrong by step 40. Naming them also means the header
+    need not know them all in advance.
+
+    ``step`` is the dict :func:`add_uniform_step` and :func:`add_spatial_step`
+    put in a collection's ``data``.
+
+    ``fsync`` forces the write to disk rather than to the page cache. It is
+    off by default: a flush already survives the process dying, which is the
+    case this exists for, and only a machine losing power needs more.
+    """
+    text = _dump({"collection": collection, "step": step})
+    with open(path, "a", encoding="utf-8") as stream:
+        # One write, so a concurrent reader sees a whole record or none. The
+        # trailing "..." is YAML's explicit document-end marker, and it is
+        # what makes truncation detectable: a half-written step is usually
+        # still *valid* YAML -- cutting inside a mapping leaves a shorter
+        # mapping -- so a reader cannot tell a partial record from a complete
+        # one by parsing it. It can tell by the marker being absent.
+        stream.write(_STEP_START + text + _STEP_END)
+        stream.flush()
+        if fsync:
+            os.fsync(stream.fileno())
+
+
 def read_ymf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
     """Read a ``.ymf`` document written by :func:`write_ymf`.
 
@@ -1074,8 +1134,21 @@ def read_ymf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
     a format-version mismatch, so an archive from an incompatible writer
     fails with a clear message rather than a confusing downstream
     ``KeyError``.
+
+    Reads both shapes described in :func:`append_step`: a single document,
+    or that document followed by one per appended step. Appended steps are
+    folded into their named collection, which is created if the header did
+    not have it.
+
+    A trailing partial document -- a run killed mid-write -- is dropped,
+    with every complete step before it kept. That is the whole point of
+    appending: the archive degrades by one step rather than by all of them.
     """
-    document = _load(Path(path).read_text(encoding="utf-8"))
+    text = Path(path).read_text(encoding="utf-8")
+    documents, truncated = _load_stream(text)
+    if not documents:
+        raise YmfArchiveError(f"{path}: no YAML document found")
+    document = documents[0]
     if not isinstance(document, dict):
         raise YmfArchiveError(f"{path}: expected a YAML mapping at the top level")
     version = document.get("ymf_archive_version")
@@ -1084,7 +1157,54 @@ def read_ymf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
             f"{path}: archive format version {version!r}, but this ymf writes "
             f"and reads version {ARCHIVE_FORMAT_VERSION}"
         )
-    return document.get("domain", {}), document.get("extra")
+    domain = document.get("domain", {})
+    for record in documents[1:]:
+        if not isinstance(record, dict) or "step" not in record:
+            raise YmfArchiveError(
+                f"{path}: appended document is not a step record; got "
+                f"{sorted(record) if isinstance(record, dict) else type(record).__name__}"
+            )
+        _fold_step(domain, record["collection"], record["step"])
+    if truncated:
+        warnings.warn(
+            f"{path}: the last appended step is incomplete and was dropped "
+            f"-- the run that wrote it did not finish. The {len(documents) - 1} "
+            f"complete steps before it were kept.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    return domain, document.get("extra")
+
+
+def _fold_step(domain: Dict[str, Any], collection: str, step: Dict[str, Any]) -> None:
+    """Put an appended step into its collection, creating it if need be."""
+    collections = domain.setdefault("time_collections", [])
+    for existing in collections:
+        if existing.get("name") == collection:
+            existing.setdefault("data", []).append(step)
+            return
+    collections.append({"name": collection, "data": [step]})
+
+
+def _load_stream(text: str) -> Tuple[List[Any], bool]:
+    """Every complete document in ``text``, and whether a partial one followed.
+
+    Completeness is decided by the document-end marker :func:`append_step`
+    writes, not by whether the text parses. A writer killed mid-record
+    usually leaves something that still parses -- truncating a mapping
+    gives a shorter mapping -- so parsing is not evidence of completeness.
+    Anything after the last marker is a partial write and is dropped.
+    """
+    end = text.rfind(_STEP_END)
+    if end == -1:
+        # no appended steps; a partial first one may still be there
+        start = text.find(_STEP_START)
+        if start == -1:
+            return list(yaml.load_all(text, Loader=_SpecLoader)), False
+        return list(yaml.load_all(text[:start], Loader=_SpecLoader)), True
+    complete = text[: end + len(_STEP_END)]
+    truncated = text[end + len(_STEP_END):].strip() != ""
+    return list(yaml.load_all(complete, Loader=_SpecLoader)), truncated
 
 
 def load_array(item: Dict[str, Any], base_dir: str | Path = "."):
