@@ -66,7 +66,8 @@ import base64
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
-from xml.etree.ElementTree import Element, ElementTree, ParseError, SubElement, parse as et_parse
+from xml.etree.ElementTree import (Element, ElementTree, ParseError, SubElement, fromstring,
+                                   parse as et_parse)
 
 from ymf.archive import YmfArchiveError, canonicalize_domain
 
@@ -390,6 +391,53 @@ def grid_element_time(grid_elem: Element, where: str = "Grid") -> Optional[float
             "%s.Time: TimeType=%r; a YMF step holds a single time value"
             % (where, time_type))
     return float(_attr(time_elem, ("Value",), where + ".Time"))
+
+
+def read_grid_fragment(text: str | bytes) -> Tuple[Dict[str, Any], Optional[float]]:
+    """Parse one serialized ``<Grid>`` element: ``(grid, time)``.
+
+    For the per-step metadata that Proteus <= 1.9.x stored inside its HDF5
+    files, one XDMF ``<Grid>`` fragment per rank and step, and that a
+    current Proteus still reads when it hot starts from or converts such an
+    archive. The time is the fragment's own ``<Time>`` when it has one and
+    ``None`` otherwise; Proteus recorded it on only one of its two write
+    paths, so the reader tells the two apart by its presence.
+
+    This is the only XML a Proteus archive reader needs, and it lives here
+    so that Proteus itself imports no XML parser: XDMF is this module's
+    business.
+    """
+    try:
+        grid_elem = fromstring(text)
+    except ParseError as exc:
+        raise YmfArchiveError("grid fragment is not XML (%s)" % (exc,)) from exc
+    if grid_elem.tag != "Grid":
+        raise YmfArchiveError(
+            "grid fragment: expected a <Grid> element, got <%s>" % (grid_elem.tag,))
+    return parse_grid_element(grid_elem), grid_element_time(grid_elem)
+
+
+def collection_names(path: str | Path) -> List[str]:
+    """The names of the top-level grids of an ``.xmf`` file, in order.
+
+    What a reader needs from the ``.xmf`` that Proteus <= 1.9.x wrote
+    beside its archive and nothing else: the order of the temporal
+    collections, which that Proteus recorded nowhere else and which a hot
+    start must reproduce. Only the ``<Domain>``'s direct ``<Grid>``
+    children are read, so a file holding grids the archive model cannot
+    represent still yields its names.
+    """
+    try:
+        root = et_parse(path).getroot()
+    except ParseError as exc:
+        raise YmfArchiveError("%s is not an XML document (%s)" % (path, exc)) from exc
+    domain_elem = root.find("Domain")
+    if domain_elem is None:
+        return []
+    names = []
+    for ci, grid_elem in enumerate(domain_elem.findall("Grid")):
+        names.append(grid_elem.attrib.get("Name", "Grid %d" % (ci,)))
+    return names
 
 
 def _encode_ymf_extra(ymf_extra: Any) -> str:
