@@ -403,13 +403,21 @@ That is the front-end's job.
 ```bash
 ymf2xmf run.ymf                 # writes run.xmf beside it
 ymf2xmf -v run.ymf -o view.xmf  # -v summarizes what the archive holds
+ymf2xmf --show run.ymf          # summarizes and converts nothing
+ymf2xmf run.ymf -c c0p2 -f u -s -1 -o last.xmf   # one space, one field, the last step
+ymf2xmf -i run.ymf              # asks which collections, fields and steps
 ```
 
 ```text
 run.ymf
-  Mesh Spatial_Domain: 6 steps, t=0..50, Triangle topology, fields: T, q, side
+  1. Mesh Spatial_Domain: 6 steps, t=0..50, Triangle topology, fields: T, q, side
 wrote view.xmf
 ```
+
+`-c/--collection` (a name or part of one), `-f/--field` and `-s/--steps`
+(Python indices and slices: `-1`, `0:10`, `::5`) cherry-pick what the `.xmf`
+describes; the `.ymf` is never changed. In code the same selection is
+`ymf.archive.select_domain(domain, collections=, fields=, steps=)`.
 
 ParaView and VisIt open the `.xmf` directly. `extra` is carried into it as
 a base64-encoded JSON `<Information Name="YMF" Value="..."/>` element, a
