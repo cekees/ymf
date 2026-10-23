@@ -460,6 +460,57 @@ XDMF XML with this model:
   rather than from an `.xmf`; only a ≤ 1.9 archive, which never recorded
   the order, still needs the `.xmf` written beside it.
 
+## Open: the nesting of time and space may be inverted
+
+Recorded 2026-10-23, from cekees. The document today has **one temporal
+collection per function space**, each holding its own list of instants:
+
+```yaml
+time_collections:
+- name: Mesh_c0p1_Lagrange
+  data: [{time: 0.0, ...}, {time: 0.5, ...}]
+- name: Mesh_c0p2_Lagrange
+  data: [{time: 0.0, ...}, {time: 0.5, ...}]
+```
+
+That shape is inherited from XDMF, where a `Temporal` `GridCollection`
+belongs to a grid type. The likely better model is the transpose — **one
+time collection, with the spaces nested inside each instant**:
+
+```yaml
+times:
+- time: 0.0
+  spaces:
+    Mesh_c0p1_Lagrange: {topology: ..., geometry: ..., attributes: ...}
+    Mesh_c0p2_Lagrange: {...}
+```
+
+The objection to it is operator splitting: sub-models advance on different
+time steps, so there is no single instant at which every space is current.
+It does not hold, for two reasons:
+
+- an operator-split or fractional-step calculation **has synchronization
+  points** where every space is known, and those are the logical places to
+  archive anyway;
+- where it does not, there are rational ways to write every space at the
+  finest-grained step.
+
+More to the point, **the archiving step is a separate choice from the
+numerical step**. Writing every space at every step it was approximated at
+is usually not affordable, so the archive already samples; and once it
+samples, it samples at instants, which is exactly what the transposed shape
+describes.
+
+What it would buy: "which instants does this archive hold?" becomes a
+direct question rather than a walk over every collection; and a writer
+appending one record per instant needs no lazily-created collections, so
+the records would not have to name a collection at all. The append support
+added for proteus had to name them precisely because collections appear as
+models first archive — see :func:`ymf.archive.append_step`.
+
+What it would cost: `ymf2xmf` transposes on the way out, both ends of the
+reader and writer change, and it is a format version.
+
 ## Limits
 
 - Fields carry no units. The archive says what shape and type a field is,
@@ -467,6 +518,8 @@ XDMF XML with this model:
   problem spec in `extra`.
 - One level of spatial nesting: a step is a single grid or a flat
   collection of subdomain grids.
+- Time is nested inside space rather than the other way round; see the
+  section above.
 - `extra` is stored as-is and not validated.
 - Format version 1 is the only one. A reader refuses any other version
   rather than guess.
