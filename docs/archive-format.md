@@ -519,6 +519,9 @@ models first archive — see :func:`ymf.archive.append_step`.
 What it would cost: `ymf2xmf` transposes on the way out, both ends of the
 reader and writer change, and it is a format version.
 
+The design, with the migration and the Proteus changes, is in
+[design-time-outside-space.md](design-time-outside-space.md); it awaits approval.
+
 ## Limits
 
 - Fields carry no units. The archive says what shape and type a field is,
