@@ -5,6 +5,7 @@ import warnings
 
 import pytest
 
+from ymf.archive import time_collections  # noqa: E402
 from ymf.archive import (
     domain_arrays,
     inline_domain,
@@ -231,10 +232,10 @@ def test_canonicalize_fills_every_documented_default():
         }
     }
     c = canonicalize_domain(sparse)
-    # the singular input form normalizes into the canonical list form
-    assert list(c) == ["time_collections"]
-    assert len(c["time_collections"]) == 1
-    tc = c["time_collections"][0]
+    # the singular format 1 input form is upgraded to format 2
+    assert list(c) == ["times"]
+    assert len(time_collections(c)) == 1
+    tc = time_collections(c)[0]
     assert tc["name"] == "TimeCollection"
     step = tc["data"][0]
     assert step["geometry"]["type"] == "XYZ"
@@ -253,7 +254,7 @@ def test_canonicalize_supplies_an_empty_attributes_list():
         topology("Triangle", 1, data_item([1, 3], "f.h5:/e")),
         geometry(data_item([3, 2], "f.h5:/n")),
     )
-    assert canonicalize_domain(domain)["time_collections"][0]["data"][0]["attributes"] == []
+    assert time_collections(canonicalize_domain(domain))[0]["data"][0]["attributes"] == []
 
 
 def test_canonicalize_of_an_empty_domain_is_empty():
@@ -312,7 +313,7 @@ def test_validate_returns_the_canonicalized_document():
 
 def test_validate_rejects_an_unknown_topology_type():
     domain = make_uniform_domain()
-    domain["time_collections"][0]["data"][0]["topology"]["type"] = "Dodecahedron"
+    time_collections(domain)[0]["data"][0]["topology"]["type"] = "Dodecahedron"
     with pytest.raises(YmfArchiveError, match="not a known XDMF topology type"):
         validate_domain(domain)
 
@@ -332,21 +333,21 @@ def test_validate_accepts_every_topology_type_proteus_emits():
 
 def test_validate_rejects_a_bad_centering():
     domain = make_uniform_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["center"] = "Vertex"
+    time_collections(domain)[0]["data"][0]["attributes"][0]["center"] = "Vertex"
     with pytest.raises(YmfArchiveError, match=r"attributes\[0\]\.center"):
         validate_domain(domain)
 
 
 def test_validate_rejects_a_bad_attribute_type():
     domain = make_uniform_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["attribute_type"] = "Scalarr"
+    time_collections(domain)[0]["data"][0]["attributes"][0]["attribute_type"] = "Scalarr"
     with pytest.raises(YmfArchiveError, match=r"attributes\[0\]\.attribute_type"):
         validate_domain(domain)
 
 
 def test_validate_rejects_a_bad_data_type():
     domain = make_uniform_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["data_item"]["data_type"] = "Double"
+    time_collections(domain)[0]["data"][0]["attributes"][0]["data_item"]["data_type"] = "Double"
     with pytest.raises(YmfArchiveError, match="data_type"):
         validate_domain(domain)
 
@@ -355,7 +356,7 @@ def test_validate_rejects_duplicate_attribute_names_within_one_grid():
     # Viewers key fields by name within a grid, so a duplicate silently
     # shadows rather than erroring at read time -- worth catching on write.
     domain = make_uniform_domain()
-    attrs = domain["time_collections"][0]["data"][0]["attributes"]
+    attrs = time_collections(domain)[0]["data"][0]["attributes"]
     attrs[1]["name"] = attrs[0]["name"]
     attrs[1]["center"] = attrs[0]["center"]
     with pytest.raises(YmfArchiveError, match="duplicate .*-centred attribute name"):
@@ -366,7 +367,7 @@ def test_validate_allows_the_same_name_on_different_centerings():
     # Point data and cell data are separate namespaces in a viewer; an
     # exporter writing T both cell- and node-centred is legitimate.
     domain = make_uniform_domain()
-    attrs = domain["time_collections"][0]["data"][0]["attributes"]
+    attrs = time_collections(domain)[0]["data"][0]["attributes"]
     attrs[1]["name"] = attrs[0]["name"]
     attrs[0]["center"], attrs[1]["center"] = "Cell", "Node"
     validate_domain(domain)
@@ -386,14 +387,14 @@ def test_validate_rejects_an_empty_spatial_collection():
 
 def test_validate_rejects_empty_dimensions():
     domain = make_uniform_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["data_item"]["dimensions"] = []
+    time_collections(domain)[0]["data"][0]["attributes"][0]["data_item"]["dimensions"] = []
     with pytest.raises(YmfArchiveError, match="must not be empty"):
         validate_domain(domain)
 
 
 def test_validate_rejects_a_negative_dimension():
     domain = make_uniform_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["data_item"]["dimensions"] = [-1]
+    time_collections(domain)[0]["data"][0]["attributes"][0]["data_item"]["dimensions"] = [-1]
     with pytest.raises(YmfArchiveError, match="non-negative"):
         validate_domain(domain)
 
@@ -436,7 +437,7 @@ def test_text_include_data_items_round_trip_through_yaml(tmp_path):
     write_ymf(domain, path)
     read_domain, _ = read_ymf(path)
     assert read_domain == canonicalize_domain(domain)
-    assert read_domain["time_collections"][0]["data"][0]["attributes"][0]["data_item"]["include"] == "./d/u.txt"
+    assert time_collections(read_domain)[0]["data"][0]["attributes"][0]["data_item"]["include"] == "./d/u.txt"
 
 
 def test_extra_payload_round_trips_and_is_stored_readably(tmp_path):
@@ -485,17 +486,17 @@ def test_read_ymf_rejects_a_non_mapping_document(tmp_path):
 
 def test_write_ymf_validates_by_default(tmp_path):
     domain = make_uniform_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["center"] = "Nowhere"
+    time_collections(domain)[0]["data"][0]["attributes"][0]["center"] = "Nowhere"
     with pytest.raises(YmfArchiveError, match="center"):
         write_ymf(domain, tmp_path / "archive.ymf")
 
 
 def test_write_ymf_can_skip_validation_deliberately(tmp_path):
     domain = make_uniform_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["center"] = "Nowhere"
+    time_collections(domain)[0]["data"][0]["attributes"][0]["center"] = "Nowhere"
     path = tmp_path / "archive.ymf"
     write_ymf(domain, path, validate=False)
-    assert read_ymf(path)[0]["time_collections"][0]["data"][0]["attributes"][0]["center"] == "Nowhere"
+    assert time_collections(read_ymf(path)[0])[0]["data"][0]["attributes"][0]["center"] == "Nowhere"
 
 
 # --------------------------------------------------------------------------
@@ -504,7 +505,7 @@ def test_write_ymf_can_skip_validation_deliberately(tmp_path):
 
 
 def test_a_single_grid_fragment_round_trips_as_a_string():
-    g = make_spatial_domain()["time_collections"][0]["data"][0]["spatial_collection"][0]
+    g = time_collections(make_spatial_domain())[0]["data"][0]["spatial_collection"][0]
     assert load_grid(dump_grid(g)) == g
 
 
@@ -513,13 +514,13 @@ def test_grid_fragments_reassemble_into_a_spatial_step():
     # to a string, the strings are collected, and the master reassembles.
     original = make_spatial_domain(n_ranks=4)
     fragments = [
-        dump_grid(g) for g in original["time_collections"][0]["data"][0]["spatial_collection"]
+        dump_grid(g) for g in time_collections(original)[0]["data"][0]["spatial_collection"]
     ]
-    rebuilt = new_domain(original["time_collections"][0]["name"])
+    rebuilt = new_domain(time_collections(original)[0]["name"])
     add_spatial_step(rebuilt, 0.0, [load_grid(f) for f in fragments])
     assert (
-        canonicalize_domain(rebuilt)["time_collections"][0]["data"][0]
-        == canonicalize_domain(original)["time_collections"][0]["data"][0]
+        time_collections(canonicalize_domain(rebuilt))[0]["data"][0]
+        == time_collections(canonicalize_domain(original))[0]["data"][0]
     )
 
 
@@ -567,14 +568,14 @@ def _two_space_domain():
 
 def test_new_domain_starts_with_one_named_collection():
     domain = new_domain("Mesh Spatial_Domain")
-    assert [c["name"] for c in domain["time_collections"]] == ["Mesh Spatial_Domain"]
+    assert [c["name"] for c in time_collections(domain)] == ["Mesh Spatial_Domain"]
 
 
 def test_add_collection_appends_a_second_mesh():
     domain = _two_space_domain()
-    names = [c["name"] for c in domain["time_collections"]]
+    names = [c["name"] for c in time_collections(domain)]
     assert names == ["Mesh Spatial_Domain", "Mesh_c0p2_Lagrange"]
-    assert [len(c["data"]) for c in domain["time_collections"]] == [2, 2]
+    assert [len(c["data"]) for c in time_collections(domain)] == [2, 2]
 
 
 def test_add_collection_rejects_a_duplicate_name():
@@ -585,12 +586,12 @@ def test_add_collection_rejects_a_duplicate_name():
 
 def test_steps_can_target_a_collection_by_name_or_index():
     domain = _two_space_domain()
-    by_name = domain["time_collections"][1]["data"]
+    by_name = time_collections(domain)[1]["data"]
     assert all(step["topology"]["type"] == "Tri_6" for step in by_name)
     # index 0 is the default target
     assert all(
         step["topology"]["type"] == "Triangle"
-        for step in domain["time_collections"][0]["data"]
+        for step in time_collections(domain)[0]["data"]
     )
 
 
@@ -694,7 +695,7 @@ def test_validate_refuses_inline_values_under_another_format():
                      topology("Polyvertex", 1, data_item([1], values=[0], data_type="Int"),
                               nodes_per_element=1),
                      geometry(data_item([1, 3], values=[0.0, 0.0, 0.0])))
-    domain["time_collections"][0]["data"][0]["geometry"]["data_item"]["format"] = "HDF"
+    time_collections(domain)[0]["data"][0]["geometry"]["data_item"]["format"] = "HDF"
     with pytest.raises(YmfArchiveError, match=r"geometry\.data_item: inline 'values' need format='XML'"):
         validate_domain(domain)
 
@@ -743,7 +744,7 @@ def test_inline_domain_copies_hdf5_arrays_in_exactly(tmp_path):
                      [attribute("u", data_item_for(u, "m.h5:/u"))])
     referenced = domain_arrays(domain, tmp_path)
     inline = inline_domain(domain, tmp_path)
-    assert all("values" in a["data_item"] for a in inline["time_collections"][0]["data"][0]["attributes"])
+    assert all("values" in a["data_item"] for a in time_collections(inline)[0]["data"][0]["attributes"])
     copied = domain_arrays(inline)            # no base directory needed any more
     assert set(copied) == set(referenced)
     for key in referenced:
@@ -765,7 +766,7 @@ def _one_step(time):
          "data_item": data_item([4, 3], "o.h5:/e", data_type="Int")},
         {"type": "XYZ", "data_item": data_item([6, 3], "o.h5:/n")},
         [], collection=0)
-    return domain["time_collections"][0]["data"][0]
+    return time_collections(domain)[0]["data"][0]
 
 
 def _archive(tmp_path, name="a.ymf"):
@@ -776,7 +777,7 @@ def _archive(tmp_path, name="a.ymf"):
 
 def _times(domain):
     return {c["name"]: [s["time"] for s in c["data"]]
-            for c in domain["time_collections"]}
+            for c in time_collections(domain)}
 
 
 def test_appended_steps_are_read_back(tmp_path):
@@ -815,7 +816,7 @@ def test_appending_matches_writing_the_whole_document(tmp_path):
     for t in (0.0, 0.5):
         step = _one_step(t)
         append_step(appended, "Mesh Spatial_Domain", step)
-        whole["time_collections"][0]["data"].append(step)
+        time_collections(whole)[0]["data"].append(step)
     written = tmp_path / "written.ymf"
     write_ymf(whole, written)
     assert read_ymf(appended)[0] == read_ymf(written)[0]
@@ -858,7 +859,8 @@ def test_a_kill_during_the_very_first_step_leaves_the_header(tmp_path):
         stream.write("---\ncollection: X\nstep:\n  time: 0.0\n  topo")
     with pytest.warns(RuntimeWarning):
         domain, _ = read_ymf(path)
-    assert _times(domain) == {"Mesh Spatial_Domain": []}
+    # a space exists once an instant holds it; the header held none
+    assert _times(domain) == {}
 
 
 def test_a_complete_archive_does_not_warn(tmp_path):

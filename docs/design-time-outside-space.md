@@ -1,11 +1,10 @@
 # Design note: time outside, space inside
 
-**Status: proposed, for cekees's approval. No code changes accompany this note.**
+**Status: approved by cekees 2026-10-25 (all six recommendations); implemented in the ymf PR that follows this note. See § Implementation notes for what differs from the plan.**
 Closes the open question at the end of [archive-format.md](archive-format.md)
 (recorded 2026-10-23). Drafted 2026-10-25.
 
-Nothing here touches the Proteus writer until the decisions in
-[§ Decisions needed](#decisions-needed) are answered.
+The Proteus writer is a separate PR, after the ymf one (§ 7).
 
 ## 1. The proposal
 
@@ -326,3 +325,39 @@ New tests, then the existing suites that mention the shape.
    one release or two.
 6. **Optional `ymf2xmf --upgrade`**: wanted, or is "format 1 reads forever"
    enough?
+
+## Implementation notes
+
+Differences from the plan above, and what the ymf PR does not do.
+
+- **`ymf2xmf --upgrade` is not implemented.** Format 1 reads indefinitely,
+  and `scripts/gatherTimes` regenerates a document from the `.h5`.
+- **Format 1 records in a format 2 header are accepted.** The current Proteus
+  writer writes `write_ymf(new_domain(name))` (now a format 2 header) and then
+  `append_step(path, name, step)`. `read_ymf` joins those records into
+  instants, so a run of today's Proteus against the new ymf still reads. Only
+  an instant record inside a format **1** header is an error.
+- **A format 1 header's empty collections are dropped.** A space exists once
+  an instant holds it, so `new_domain("Mesh")` followed by nothing reads as
+  no spaces. The `_times` assertion of a test that expected the name was
+  changed accordingly.
+- **`add_uniform_step(..., collection=)` defaults to `None`.** On a format 2
+  domain that means the space `"TimeCollection"`, which is what
+  `new_domain()` with no name used to create; an integer indexes the spaces
+  seen so far. `add_collection` on a format 2 domain is a no-op.
+- **`new_domain(name)` still returns a format 1 domain**, which every
+  function upgrades; `new_domain()` returns `{"times": []}`.
+- **`time_collections(domain)`** returns a format 1 domain's list as it is.
+- **The compatibility claim in § 7 was too strong.** What the shims keep
+  working is *writing*. *Reading* changed shape: `read_ymf(...)[0]
+  ["time_collections"]` is gone, and Proteus has consumers of exactly that
+  (`scripts/clearh5.py`, which would silently loop over nothing, and tests
+  in `test_archive_parallel_metadata`, `test_archive_v1_compat`,
+  `test_hdf5_api_migration`, `test_archive_dtypes`). Proteus CI installs ymf
+  from `@main`. So the order is: (1) a Proteus PR whose readers accept either
+  shape, with no dependence on the new ymf; (2) this ymf PR; (3) the Proteus
+  writer PR (§ 4.3). The ymf PR should not merge before (1).
+- Verified: `.xmf` output of `write_archive.py` (both archives) and of a
+  two-space, three-instant domain is byte-identical to what the pre-change
+  code wrote, from a format 1 domain, from a format 2 domain, and from a
+  format 1 `.ymf` read back (`tests/fixtures/format1_two_spaces.*`).

@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 from ymf.archive import (YmfArchiveError, canonicalize_domain, read_ymf, select_domain,
+                         space_names, time_collections,
                          validate_domain)
 from ymf.xdmf import write_xdmf
 
@@ -150,7 +151,7 @@ def describe(domain) -> List[str]:
     Each collection is numbered so the interactive prompt can refer to it.
     """
     lines = []
-    for i, collection in enumerate(domain.get("time_collections", []), start=1):
+    for i, collection in enumerate(time_collections(canonicalize_domain(domain)), start=1):
         steps = collection["data"]
         times = [step["time"] for step in steps]
         span = ("no steps" if not times
@@ -203,7 +204,7 @@ def interactive_selection(domain, ask=None):
     pass their own.
     """
     ask = ask or input
-    collections = domain.get("time_collections", [])
+    collections = time_collections(canonicalize_domain(domain))
     names = [c["name"] for c in collections]
     print("Collections (blank for all):")
     chosen_names = _pick("collections> ", names, ask)
@@ -247,12 +248,12 @@ def ymf2xmf_main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--show", action="store_true",
                         help="describe what the archive holds and stop; convert nothing")
     parser.add_argument("-c", "--collection", action="append", metavar="NAME",
-                        help="convert only this time collection, by name or part of one "
+                        help="convert only this space (time collection), by name or part of one "
                              "(repeatable; default: all)")
     parser.add_argument("-f", "--field", action="append", metavar="NAME",
                         help="convert only this field (repeatable; default: all)")
     parser.add_argument("-s", "--steps", metavar="SPEC",
-                        help="convert only these steps: indices and slices, e.g. -1, "
+                        help="convert only these instants: indices and slices, e.g. -1, "
                              "0:10, ::5 (default: all)")
     parser.add_argument("-i", "--interactive", action="store_true",
                         help="ask which collections, fields and steps to convert")
@@ -274,6 +275,12 @@ def ymf2xmf_main(argv: Optional[Sequence[str]] = None) -> int:
             domain = canonicalize_domain(domain)
             print("%s" % (source,))
             if not args.interactive:
+                times = [i["time"] for i in domain.get("times", [])]
+                if times:
+                    print("  %d instant%s, t=%g..%g, %d space%s"
+                          % (len(times), "" if len(times) == 1 else "s",
+                             times[0], times[-1], len(space_names(domain)),
+                             "" if len(space_names(domain)) == 1 else "s"))
                 for line in describe(domain):
                     print(line)
             if args.show:

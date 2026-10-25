@@ -60,7 +60,7 @@ outputs:
       solve: {by: {ymf: ..., proteus_git: ..., numpy: ..., platform: ...}, created: ...}
     storage: poisson_2365d177bb1f.h5        # or: inline
     verification: {l2_errors: {u: 0.0105...}}
-    approximation: {time_collections: [...]} # the solver's domain tree
+    approximation: {times: [...]}           # the solver's domain tree
     reproduced: [{created: ..., by: {...}}] # each rerun that matched, bitwise
 ```
 
@@ -160,9 +160,9 @@ formats has to keep two representations consistent, and eventually won't.
 A solver's document has three top-level keys:
 
 ```yaml
-ymf_archive_version: 1        # refused on read if it isn't the version this ymf knows
-domain:                       # the mesh/time/field tree -- see below
-  time_collections: [...]
+ymf_archive_version: 2        # refused on read if it isn't a version this ymf knows
+domain:                       # the time/space/field tree -- see below
+  times: [...]
 extra:                        # optional: anything with no XDMF equivalent
   Problem: {...}              #   typically the problem spec that produced the run
   solution_paths: {...}
@@ -179,34 +179,34 @@ Here is one time step of `heat.ymf` from
 [`examples/write_archive.py`](../examples/write_archive.py):
 
 ```yaml
-ymf_archive_version: 1
+ymf_archive_version: 2
 domain:
-  time_collections:
-  - name: Mesh Spatial_Domain
-    data:
-    - time: 0.0
-      topology:
-        type: Triangle
-        number_of_elements: 512
-        data_item: {format: HDF, data_type: Int, precision: 4,
-                   dimensions: [512, 3], data: 'heat.h5:/elements'}
-      geometry:
-        type: XYZ
-        data_item: {format: HDF, data_type: Float, precision: 8,
-                   dimensions: [289, 3], data: 'heat.h5:/nodes'}
-      attributes:
-      - name: T
-        attribute_type: Scalar
-        center: Node
-        data_item: {format: HDF, data_type: Float, precision: 8,
-                   dimensions: [289], data: 'heat.h5:/T_t0'}
-      - name: q
-        attribute_type: Vector
-        center: Node
-        data_item: {format: HDF, data_type: Float, precision: 8,
-                   dimensions: [289, 3], data: 'heat.h5:/q_t0'}
-    - time: 10.0
-      ...
+  times:
+  - time: 0.0
+    spaces:
+      Mesh Spatial_Domain:
+        topology:
+          type: Triangle
+          number_of_elements: 512
+          data_item: {format: HDF, data_type: Int, precision: 4,
+                     dimensions: [512, 3], data: 'heat.h5:/elements'}
+        geometry:
+          type: XYZ
+          data_item: {format: HDF, data_type: Float, precision: 8,
+                     dimensions: [289, 3], data: 'heat.h5:/nodes'}
+        attributes:
+        - name: T
+          attribute_type: Scalar
+          center: Node
+          data_item: {format: HDF, data_type: Float, precision: 8,
+                     dimensions: [289], data: 'heat.h5:/T_t0'}
+        - name: q
+          attribute_type: Vector
+          center: Node
+          data_item: {format: HDF, data_type: Float, precision: 8,
+                     dimensions: [289, 3], data: 'heat.h5:/q_t0'}
+  - time: 10.0
+    ...
 extra:
   Problem:
     name: Transient heat conduction, unit square
@@ -225,7 +225,7 @@ The structure follows XDMF, so the conversion is a direct mapping, but the
 *names* are YMF's own: keys are `lower_case_with_underscores` like
 everything else in the format, and `ymf2xmf` supplies the capitalization
 XDMF wants. (The correspondence was never one-to-one anyway —
-`time_collections`, `spatial_collection` and `attributes` as a list are
+`times`, `spaces`, `spatial_collection` and `attributes` as a list are
 YMF's, with no XDMF element behind them.) Values that name a type —
 `Triangle`, `Node`, `Scalar`, `Float`, `XYZ` — keep their capitals, which
 is both the naming rule and what XDMF needs. An archive written with the
@@ -233,11 +233,12 @@ old capitalized keys still reads: they are folded on load.
 
 ```text
 domain
-└── time_collections: [collection, ...]       one per finite-element space
-    └── collection: {name, data: [step, ...]}
-        └── step: one instant, in one of two forms
-            ├── uniform:  {time, topology, geometry, attributes}
-            └── spatial:  {time, spatial_collection: [grid, ...]}   one grid per subdomain
+└── times: [instant, ...]                      one per archived instant, in time order
+    └── instant: {time, spaces: {name: space, ...}}
+        └── space: the state of one finite-element space at that instant,
+                   in one of two forms
+            ├── uniform:  {topology, geometry, attributes}
+            └── spatial:  {spatial_collection: [grid, ...]}   one grid per subdomain
                           grid = {name?, topology, geometry, attributes}
 
 topology   {type, number_of_elements, nodes_per_element?, data_item}
@@ -248,12 +249,33 @@ data_item  {format: HDF, data_type, precision, dimensions, data: "file.h5:/datas
          | {format: XML, data_type, precision, dimensions, values: [1.0, 2.5, ...]}
 ```
 
-**Why a list of time collections.** A solver writes one collection per
+**Why spaces inside each instant.** A solver writes one mesh per
 finite-element space: a Proteus run with quadratic velocity holds both
 `Mesh Spatial_Domain` (the linear base mesh) and `Mesh_c0p2_Lagrange` (same
 elements, more nodes). 195 of the 814 Proteus archives surveyed when this
-model was designed had two. `{"TimeCollection": {...}}` (singular) is
-accepted as input shorthand and normalized to the list.
+model was designed had two. The instants are the archive's own sampling of
+the run, and every space is archived at every instant it exists at, so the
+instant is the outer level: "which instants does this archive hold?" is
+`[i["time"] for i in domain["times"]]`, and an appended record is one whole
+instant. A space that is first archived late is simply absent from the
+earlier instants. The key order of `spaces` is the order the spaces were
+first archived in, and it is part of the format (a hot start depends on it).
+
+XDMF nests the other way round (a temporal collection per grid type), so
+`ymf2xmf` writes one temporal collection per space, in that order, and
+`read_xdmf` joins them back into instants on time. For a space-by-space view
+of a domain, `space_names(domain)` and `series(domain, name)`;
+`time_collections(domain)` is the format 1 shape as a view.
+
+**Format 1.** Until `ymf_archive_version` 2 the domain was a list of
+`time_collections`, each `{name, data: [step, ...]}` with a step
+`{time, <the space>}`. It is still read, in memory, as the transposed domain
+(`transpose_collections`): steps of different spaces are joined on exact
+time, a repeated time pairs up by occurrence, and a space missing at a time
+is omitted from that instant. Nothing is rewritten on disk. Code that built
+a domain with `new_domain(name)` / `add_collection` / `add_uniform_step(...,
+collection=)` keeps working and is upgraded when the domain is validated or
+written; `{"time_collection": {...}}` (singular) is accepted as before.
 
 **Closed sets.** These fields take a fixed set of values, and anything else
 is rejected when the archive is written:
@@ -282,19 +304,19 @@ disagree with what's in the file.
 
 ```python
 import h5py, numpy as np
-from ymf.archive import (new_domain, add_uniform_step, topology, geometry,
+from ymf.archive import (new_domain, add_instant, uniform_grid, topology, geometry,
                          attribute, data_item_for, write_ymf)
 
-domain = new_domain("Mesh Spatial_Domain")
+domain = new_domain()
 with h5py.File("heat.h5", "w") as h5:
     h5["nodes"], h5["elements"] = nodes, elements          # mesh written once
     topo = topology("Triangle", len(elements), data_item_for(elements, "heat.h5:/elements"))
     geom = geometry(data_item_for(nodes, "heat.h5:/nodes"))
     for k, t in enumerate(times):
         h5["T_t%d" % k] = T = solve_to(t)
-        add_uniform_step(domain, t, topo, geom, [
+        add_instant(domain, t, {"Mesh Spatial_Domain": uniform_grid(topo, geom, [
             attribute("T", data_item_for(T, "heat.h5:/T_t%d" % k)),
-        ])
+        ])})
 
 write_ymf(domain, "heat.ymf", extra={"Problem": problem})
 ```
@@ -388,7 +410,7 @@ genuine mismatch is not. Errors name the offending field:
 
 ```text
 data_item_for().dimensions: declared [81] (81 values) but the array has shape [25] (25 values)
-time_collections[0].data[0].topology.type: 'Triangel' is not a known XDMF topology type. ...
+times[0].spaces[Mesh].topology.type: 'Triangel' is not a known XDMF topology type. ...
 ```
 
 The first of these is a real bug this check found in Proteus: a field
@@ -468,69 +490,29 @@ XDMF XML with this model:
   rather than from an `.xmf`; only a ≤ 1.9 archive, which never recorded
   the order, still needs the `.xmf` written beside it.
 
-## Open: the nesting of time and space may be inverted
+## Time outside, space inside
 
-Recorded 2026-10-23, from cekees. The document today has **one temporal
-collection per function space**, each holding its own list of instants:
+Decided 2026-10-25 (cekees), after being recorded as open on 2026-10-23. The
+domain used to hold one temporal collection per function space, each with
+its own list of instants, because XDMF does; it now holds one list of
+instants with the spaces inside each. The reasons, the migration and the
+Proteus changes are in
+[design-time-outside-space.md](design-time-outside-space.md). In short:
+the Proteus writer already refused a space missing at an instant; an
+instant is now the unit of an appended record, so a killed run loses a whole
+instant and never one space of it; and `append_step` no longer names
+collections.
 
-```yaml
-time_collections:
-- name: Mesh_c0p1_Lagrange
-  data: [{time: 0.0, ...}, {time: 0.5, ...}]
-- name: Mesh_c0p2_Lagrange
-  data: [{time: 0.0, ...}, {time: 0.5, ...}]
-```
-
-That shape is inherited from XDMF, where a `Temporal` `GridCollection`
-belongs to a grid type. The likely better model is the transpose — **one
-time collection, with the spaces nested inside each instant**:
-
-```yaml
-times:
-- time: 0.0
-  spaces:
-    Mesh_c0p1_Lagrange: {topology: ..., geometry: ..., attributes: ...}
-    Mesh_c0p2_Lagrange: {...}
-```
-
-The objection to it is operator splitting: sub-models advance on different
-time steps, so there is no single instant at which every space is current.
-It does not hold, for two reasons:
-
-- an operator-split or fractional-step calculation **has synchronization
-  points** where every space is known, and those are the logical places to
-  archive anyway;
-- where it does not, there are rational ways to write every space at the
-  finest-grained step.
-
-More to the point, **the archiving step is a separate choice from the
-numerical step**. Writing every space at every step it was approximated at
-is usually not affordable, so the archive already samples; and once it
-samples, it samples at instants, which is exactly what the transposed shape
-describes.
-
-What it would buy: "which instants does this archive hold?" becomes a
-direct question rather than a walk over every collection; and a writer
-appending one record per instant needs no lazily-created collections, so
-the records would not have to name a collection at all. The append support
-added for proteus had to name them precisely because collections appear as
-models first archive — see :func:`ymf.archive.append_step`.
-
-What it would cost: `ymf2xmf` transposes on the way out, both ends of the
-reader and writer change, and it is a format version.
-
-The design, with the migration and the Proteus changes, is in
-[design-time-outside-space.md](design-time-outside-space.md); it awaits approval.
+Proteus's HDF5 metadata version (`ymf_archive_metadata_version`, 2) is a
+different number and did not change.
 
 ## Limits
 
 - Fields carry no units. The archive says what shape and type a field is,
   not what physical quantity it is. Today that information lives in the
   problem spec in `extra`.
-- One level of spatial nesting: a step is a single grid or a flat
-  collection of subdomain grids.
-- Time is nested inside space rather than the other way round; see the
-  section above.
+- One level of spatial nesting: a space at an instant is a single grid or a
+  flat collection of subdomain grids.
 - `extra` is stored as-is and not validated.
-- Format version 1 is the only one. A reader refuses any other version
-  rather than guess.
+- Format version 2 is written. Version 1 is read (and upgraded in memory); a
+  reader refuses any other version rather than guess.

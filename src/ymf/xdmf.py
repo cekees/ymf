@@ -69,7 +69,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from xml.etree.ElementTree import (Element, ElementTree, ParseError, SubElement, fromstring,
                                    parse as et_parse)
 
-from ymf.archive import YmfArchiveError, canonicalize_domain
+from ymf.archive import (YmfArchiveError, canonicalize_domain,
+                         time_collections, transpose_collections)
 
 XDMF_HEADER = b'<?xml version="1.0" ?>\n<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>\n'
 
@@ -516,7 +517,9 @@ def build_xdmf_tree(
     # Canonicalize up front so this function reads one well-defined shape
     # rather than re-deriving defaults inline at every use.
     canonical = canonicalize_domain(domain)
-    for time_collection in canonical.get("time_collections", []):
+    # XDMF nests the other way round -- a temporal collection per grid type --
+    # so the spaces inside each instant come back out as one collection each.
+    for time_collection in time_collections(canonical):
         collection_elem = SubElement(
             domain_elem,
             "Grid",
@@ -661,7 +664,7 @@ def parse_xdmf_domain(root: Element) -> Dict[str, Any]:
             "data": steps,
         })
 
-    return {"time_collections": collections} if collections else {}
+    return {"times": transpose_collections(collections)} if collections else {}
 
 
 def parse_xdmf_extra(root: Element) -> Optional[Any]:

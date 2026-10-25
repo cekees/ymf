@@ -6,6 +6,7 @@ from xml.etree.ElementTree import parse
 
 import pytest
 
+from ymf.archive import time_collections  # noqa: E402
 from ymf.archive import (
     YmfArchiveError,
     add_spatial_step,
@@ -91,7 +92,7 @@ def test_the_conversion_preserves_every_dataset_reference(archive):
     """
     domain, _ = read_ymf(archive)
     expected = []
-    for collection in domain["time_collections"]:
+    for collection in time_collections(domain):
         for step in collection["data"]:
             for g in step.get("spatial_collection", [step]):
                 expected.append(g["topology"]["data_item"]["data"])
@@ -139,7 +140,7 @@ def test_an_empty_archive_is_refused(tmp_path):
 
 def test_a_malformed_archive_is_refused_by_default(tmp_path):
     domain = make_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["center"] = "Nowhere"
+    time_collections(domain)[0]["data"][0]["attributes"][0]["center"] = "Nowhere"
     path = tmp_path / "bad.ymf"
     write_ymf(domain, path, validate=False)
     with pytest.raises(YmfArchiveError, match="center"):
@@ -148,7 +149,7 @@ def test_a_malformed_archive_is_refused_by_default(tmp_path):
 
 def test_validation_can_be_skipped_deliberately(tmp_path):
     domain = make_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["center"] = "Nowhere"
+    time_collections(domain)[0]["data"][0]["attributes"][0]["center"] = "Nowhere"
     path = tmp_path / "bad.ymf"
     write_ymf(domain, path, validate=False)
     assert ymf2xmf(path, validate=False).exists()
@@ -188,7 +189,7 @@ def test_a_missing_file_is_a_usage_error(tmp_path):
 def test_a_malformed_archive_exits_nonzero_without_a_traceback(tmp_path, capsys):
     """A bad input file is the user's problem to see, not a stack trace."""
     domain = make_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["center"] = "Nowhere"
+    time_collections(domain)[0]["data"][0]["attributes"][0]["center"] = "Nowhere"
     path = tmp_path / "bad.ymf"
     write_ymf(domain, path, validate=False)
     assert ymf2xmf_main([str(path)]) == 1
@@ -197,7 +198,7 @@ def test_a_malformed_archive_exits_nonzero_without_a_traceback(tmp_path, capsys)
 
 def test_the_cli_skips_validation_when_asked(tmp_path):
     domain = make_domain()
-    domain["time_collections"][0]["data"][0]["attributes"][0]["center"] = "Nowhere"
+    time_collections(domain)[0]["data"][0]["attributes"][0]["center"] = "Nowhere"
     path = tmp_path / "bad.ymf"
     write_ymf(domain, path, validate=False)
     assert ymf2xmf_main([str(path), "--no-validate"]) == 0
