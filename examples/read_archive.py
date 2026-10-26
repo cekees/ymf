@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ymf.archive import canonicalize_domain, read_ymf
+from ymf.archive import canonicalize_domain, read_ymf, series, space_names
 from ymf.xdmf import read_xdmf
 
 
@@ -83,17 +83,17 @@ def main(argv=None) -> int:
     print("kappa in the spec: %g %s"
           % (kappa_spec, problem["strong_form"]["coefficients"]["κ"]["units"]))
 
-    collection = domain["time_collections"][0]
+    (space,) = space_names(domain)
     times, peaks = [], []
     print("\n  time   subdomains   max T [K]")
-    for step in collection["data"]:
+    for t, step in series(domain, space):
         grids = grids_of(step)
         # The peak over the whole domain is the peak over its subdomains.
         peak = max(load_array(field(g, "T")["data_item"], base_dir).max()
                    for g in grids)
-        times.append(step["time"])
+        times.append(t)
         peaks.append(peak)
-        print("  %5.1f   %10d   %9.4f" % (step["time"], len(grids), peak))
+        print("  %5.1f   %10d   %9.4f" % (t, len(grids), peak))
 
     # ln(T_max - T_wall) = ln(A) - 2 pi^2 kappa t, so the slope gives kappa.
     slope = np.polyfit(times, np.log(np.array(peaks) - t_wall), 1)[0]

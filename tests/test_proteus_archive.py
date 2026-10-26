@@ -38,6 +38,7 @@ from xml.etree.ElementTree import parse as et_parse
 
 import pytest
 
+from ymf.archive import time_collections  # noqa: E402
 from ymf.archive import (
     canonicalize_domain,
     read_ymf,
@@ -74,7 +75,7 @@ def test_fixtures_are_present():
 def test_fixtures_cover_every_observed_topology_type():
     found = set()
     for path in FIXTURES:
-        for collection in _parse(path)["time_collections"]:
+        for collection in time_collections(_parse(path)):
             for step in collection["data"]:
                 found.add(step["topology"]["type"])
     assert found == EXPECTED_TOPOLOGY_TYPES
@@ -83,7 +84,7 @@ def test_fixtures_cover_every_observed_topology_type():
 @pytest.mark.parametrize("path", FIXTURES, ids=lambda p: p.stem)
 def test_real_proteus_archive_parses_into_the_domain_model(path):
     domain = _parse(path)
-    collections = domain["time_collections"]
+    collections = time_collections(domain)
     assert collections, "archive has no time collections"
     for tc in collections:
         assert tc["name"], "time collection has no name"
@@ -139,7 +140,7 @@ def test_reemitted_xmf_preserves_every_hdf5_dataset_reference(path, tmp_path):
 
     def references(domain):
         refs = []
-        for collection in domain["time_collections"]:
+        for collection in time_collections(domain):
             refs.append(collection["name"])
             for step in collection["data"]:
                 grids = step.get("spatial_collection", [step])

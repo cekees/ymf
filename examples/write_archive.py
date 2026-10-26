@@ -41,8 +41,9 @@ import numpy as np
 import yaml
 
 from ymf.archive import (
-    add_spatial_step,
-    add_uniform_step,
+    add_instant,
+    spatial_grid,
+    uniform_grid,
     attribute,
     data_item_for,
     geometry,
@@ -135,7 +136,7 @@ def open_store(outdir, stem, inline):
 def write_serial(outdir, nodes, elements, times, problem, inline=False):
     """One grid per time step. Returns the path of the .ymf written."""
     store = open_store(outdir, "heat", inline)
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_domain()
     # The mesh does not move, so it is stored once and every step refers
     # to the same arrays.
     topo = topology("Triangle", len(elements), store.item("elements", elements))
@@ -149,11 +150,11 @@ def write_serial(outdir, nodes, elements, times, problem, inline=False):
     for k, t in enumerate(times):
         T = exact_temperature(nodes, t)
         q = exact_heat_flux(nodes, t)
-        add_uniform_step(domain, t, topo, geom, [
+        add_instant(domain, t, {"Mesh Spatial_Domain": uniform_grid(topo, geom, [
             attribute("T", store.item("T_t%d" % k, T)),
             attribute("q", store.item("q_t%d" % k, q), attribute_type="Vector"),
             side_attr,
-        ])
+        ])})
     store.close()
 
     ymf_path = outdir / "heat.ymf"
@@ -183,7 +184,7 @@ def write_split(outdir, nodes, elements, times, problem, inline=False):
     """Each step is a SpatialCollection of per-subdomain grids."""
     store = open_store(outdir, "heat_split", inline)
     parts = split_mesh(nodes, elements)
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_domain()
     meshes = [
         (topology("Triangle", len(local_elements),
                   store.item("elements_p%d" % rank, local_elements)),
@@ -198,7 +199,7 @@ def write_split(outdir, nodes, elements, times, problem, inline=False):
             grids.append(grid(topo, geom, [
                 attribute("T", store.item("T_p%d_t%d" % (rank, k), T)),
             ], name="subdomain_%d" % rank))
-        add_spatial_step(domain, t, grids)
+        add_instant(domain, t, {"Mesh Spatial_Domain": spatial_grid(grids)})
     store.close()
 
     ymf_path = outdir / "heat_split.ymf"

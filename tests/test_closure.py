@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from ymf import closure
+from ymf.archive import time_collections  # noqa: E402
 from ymf.archive import (YmfArchiveError, add_uniform_step, data_item, geometry,
                          new_domain, read_document, topology)
 
@@ -155,14 +156,14 @@ def test_inherited_outputs_still_point_at_their_files(tmp_path):
     (key, _, r), = closure.planned_outputs(spec)
     output = fake_output(r)
     domain = canonicalize_domain(output["approximation"])
-    domain["time_collections"][0]["data"][0]["geometry"]["data_item"] = data_item(
+    time_collections(domain)[0]["data"][0]["geometry"]["data_item"] = data_item(
         [2, 2], "poisson_x.h5:/nodes")
     output["approximation"] = domain
     closure.write(base / "poisson.archive.ymf", spec, {key: output})
     child = tmp_path / "child.ymf"
     child.write_text("extends: base/poisson.archive.ymf\n", encoding="utf-8")
     _, kept, _ = closure.load(child)
-    step = kept[key]["approximation"]["time_collections"][0]["data"][0]
+    step = time_collections(kept[key]["approximation"])[0]["data"][0]
     assert step["geometry"]["data_item"]["data"] == "base/poisson_x.h5:/nodes"
 
 

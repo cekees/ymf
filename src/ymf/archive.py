@@ -53,28 +53,32 @@ The domain model
 A *domain* is a plain dict -- no classes, no schema objects, so it costs
 nothing to build, gathers across MPI natively, and serializes directly::
 
-    {"time_collections": [{"name": str, "data": [step, ...]}, ...]}
+    {"times": [{"time": float, "spaces": {name: space, ...}}, ...]}
 
-There is a *list* of time collections, not one, because a solver writes one
-per finite-element space: a real Proteus archive commonly holds both
-``Mesh Spatial_Domain`` (the linear base mesh) and ``Mesh_c0p2_Lagrange``
-(the quadratic space, on the same elements with more nodes). 195 of the 814
-archives surveyed when this model was designed had two. A single-collection
-document may be written as ``{"time_collection": {...}}`` for convenience;
-:func:`canonicalize_domain` normalizes it to the list form, which is the
-only form written to disk.
+There is a *mapping* of spaces inside each instant, not one grid, because a
+solver writes one mesh per finite-element space: a real Proteus archive
+commonly holds both ``Mesh Spatial_Domain`` (the linear base mesh) and
+``Mesh_c0p2_Lagrange`` (the quadratic space, on the same elements with more
+nodes). 195 of the 814 archives surveyed when this model was designed had
+two. A space first archived late is absent from the earlier instants. The
+order of the names is the order they were first archived in.
 
-Each ``step`` is one instant in time and takes exactly one of two forms:
+Format 1 nested the other way, ``{"time_collections": [{"name": str, "data":
+[step, ...]}, ...]}``; it is still accepted everywhere and
+:func:`canonicalize_domain` upgrades it. See
+docs/design-time-outside-space.md.
+
+A space at an instant takes exactly one of two forms:
 
 *uniform* -- a single grid, which is what a serial run or a globally
 synchronized parallel write produces::
 
-    {"time": float, "topology": T, "geometry": G, "attributes": [A, ...]}
+    {"topology": T, "geometry": G, "attributes": [A, ...]}
 
 *spatial* -- a collection of grids, one per MPI rank, which is what a
 subdomain-per-rank write produces::
 
-    {"time": float, "spatial_collection": [grid, ...]}
+    {"spatial_collection": [grid, ...]}
 
 and the pieces are::
 
@@ -141,6 +145,13 @@ __all__ = [
     "geometry",
     "grid",
     "new_domain",
+    "add_instant",
+    "uniform_grid",
+    "spatial_grid",
+    "space_names",
+    "series",
+    "time_collections",
+    "transpose_collections",
     "add_collection",
     "add_uniform_step",
     "add_spatial_step",
@@ -181,7 +192,14 @@ class YmfArchiveError(ValueError):
 #: into every document by :func:`write_ymf` and checked by :func:`read_ymf`,
 #: so a version mismatch produces a clear error instead of a confusing
 #: parse failure somewhere downstream.
-ARCHIVE_FORMAT_VERSION = 1
+ARCHIVE_FORMAT_VERSION = 2
+
+#: Document formats :func:`read_ymf` accepts. Format 1 nests time inside
+#: space (``time_collections``, one per space); format 2 nests space inside
+#: time (``times``, each instant holding its ``spaces``). A format 1
+#: document is upgraded in memory on read and never written; see
+#: docs/design-time-outside-space.md.
+_READABLE_FORMAT_VERSIONS = (1, 2)
 
 #: Separators framing an appended step. The end marker is YAML's explicit
 #: document-end token, and it is what lets a reader tell a complete record
@@ -526,23 +544,61 @@ def grid(
     return g
 
 
-def new_domain(name: str = _DEFAULT_TIME_COLLECTION_NAME) -> Dict[str, Any]:
-    """Create a domain with one empty, named time collection.
+def new_domain(name: Optional[str] = None) -> Dict[str, Any]:
+    """Create an empty domain.
 
-    Add further collections with :func:`add_collection` -- one per
-    finite-element space that needs its own mesh.
+    The domain is ``{"times": []}``: add instants with :func:`add_instant`.
+    ``name`` is the format 1 spelling, which started a domain with one named
+    time collection; given, it still does, and :func:`add_uniform_step` and
+    friends then keep building format 1 (which :func:`canonicalize_domain`
+    upgrades). New code should not pass it.
     """
+    if name is None:
+        return {"times": []}
     return {"time_collections": [{"name": str(name), "data": []}]}
 
 
-def add_collection(domain: Dict[str, Any], name: str) -> Dict[str, Any]:
-    """Append a new named time collection. Returns it.
+def uniform_grid(
+    topo: Dict[str, Any],
+    geom: Dict[str, Any],
+    attributes: Optional[Iterable[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """The value of a space at an instant, as one grid: ``{topology, geometry, attributes}``."""
+    return {"topology": topo, "geometry": geom,
+            "attributes": list(attributes) if attributes is not None else []}
 
-    Use one collection per finite-element space: the nodes of a quadratic
-    space are not the nodes of the linear mesh, so they cannot share a
-    grid, and a viewer needs to see them as separate meshes over the same
-    elements.
+
+def spatial_grid(grids: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """The value of a space at an instant, as one grid per subdomain."""
+    return {"spatial_collection": list(grids)}
+
+
+def add_instant(
+    domain: Dict[str, Any], time: float, spaces: Dict[str, Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Append one instant holding ``spaces`` (name -> :func:`uniform_grid` or
+    :func:`spatial_grid`). Returns the new instant.
+
+    The order of ``spaces`` is the order the archive records its spaces in,
+    which a hot start depends on.
     """
+    if "time_collections" in domain:
+        raise YmfArchiveError(
+            "domain is in format 1 (time_collections); add_instant needs a "
+            "format 2 domain, from new_domain() with no name")
+    instant = {"time": float(time), "spaces": dict(spaces)}
+    domain.setdefault("times", []).append(instant)
+    return instant
+
+
+def add_collection(domain: Dict[str, Any], name: str) -> Dict[str, Any]:
+    """Format 1 spelling: append a new named time collection. Returns it.
+
+    On a format 2 domain this does nothing, and returns ``None``: a space
+    exists once an instant holds it, so there is nothing to declare.
+    """
+    if "times" in domain:
+        return None
     collections = domain.setdefault("time_collections", [])
     if any(c.get("name") == name for c in collections):
         raise YmfArchiveError(
@@ -559,7 +615,7 @@ def _resolve_collection(domain: Dict[str, Any], collection: Any) -> Dict[str, An
     collections = domain.get("time_collections")
     if not collections:
         raise YmfArchiveError(
-            "domain has no time collections; build it with new_domain()"
+            "domain has no time collections; build it with new_domain(name)"
         )
     if isinstance(collection, int):
         try:
@@ -578,6 +634,33 @@ def _resolve_collection(domain: Dict[str, Any], collection: Any) -> Dict[str, An
     )
 
 
+def _add_to_space(domain: Dict[str, Any], time: float, collection: Any,
+                  grid_like: Dict[str, Any]) -> Dict[str, Any]:
+    """Set ``collection``'s value at ``time`` in a format 2 domain.
+
+    Joins the last instant if it is at that time and lacks the space, else
+    starts one, which is how a writer that goes space by space within a
+    step builds the instant. Returns the instant.
+    """
+    if collection is None:
+        collection = _DEFAULT_TIME_COLLECTION_NAME
+    elif isinstance(collection, int):
+        names = space_names(domain)
+        if not -len(names) <= collection < len(names):
+            raise YmfArchiveError(
+                "domain has %d space(s); no index %d. On a format 2 domain "
+                "a space is named." % (len(names), collection))
+        collection = names[collection]
+    t = float(time)
+    times = domain.setdefault("times", [])
+    # A writer fills an instant space by space, so the instant to join is the
+    # last one; a space already present there means this is a new instant.
+    if times and times[-1]["time"] == t and collection not in times[-1]["spaces"]:
+        times[-1]["spaces"][collection] = grid_like
+        return times[-1]
+    return add_instant(domain, t, {collection: grid_like})
+
+
 def add_uniform_step(
     domain: Dict[str, Any],
     time: float,
@@ -585,17 +668,21 @@ def add_uniform_step(
     geom: Dict[str, Any],
     attributes: Optional[Iterable[Dict[str, Any]]] = None,
     *,
-    collection: Any = 0,
+    collection: Any = None,
 ) -> Dict[str, Any]:
     """Append a timestep holding a single grid. Returns the new step.
 
     ``collection`` selects which time collection to append to, by index or
     by name; it defaults to the first, which is the only one in a
-    single-mesh archive.
+    single-mesh archive. On a format 2 domain it names the space, and the
+    step joins the instant at ``time``.
     """
-    step: Dict[str, Any] = {"time": float(time), "topology": topo, "geometry": geom}
-    step["attributes"] = list(attributes) if attributes is not None else []
-    _resolve_collection(domain, collection)["data"].append(step)
+    grid_like = uniform_grid(topo, geom, attributes)
+    if "times" in domain:
+        _add_to_space(domain, time, collection, grid_like)
+        return grid_like
+    step: Dict[str, Any] = {"time": float(time), **grid_like}
+    _resolve_collection(domain, 0 if collection is None else collection)["data"].append(step)
     return step
 
 
@@ -604,12 +691,106 @@ def add_spatial_step(
     time: float,
     grids: Iterable[Dict[str, Any]],
     *,
-    collection: Any = 0,
+    collection: Any = None,
 ) -> Dict[str, Any]:
     """Append a timestep holding one grid per subdomain. Returns the new step."""
-    step = {"time": float(time), "spatial_collection": list(grids)}
-    _resolve_collection(domain, collection)["data"].append(step)
+    grid_like = spatial_grid(grids)
+    if "times" in domain:
+        _add_to_space(domain, time, collection, grid_like)
+        return grid_like
+    step = {"time": float(time), **grid_like}
+    _resolve_collection(domain, 0 if collection is None else collection)["data"].append(step)
     return step
+
+
+def space_names(domain: Dict[str, Any]) -> List[str]:
+    """The spaces of a format 2 domain, in the order they first appear."""
+    names: List[str] = []
+    seen = set()
+    for instant in domain.get("times", []):
+        for name in instant["spaces"]:
+            if name not in seen:
+                seen.add(name)
+                names.append(name)
+    return names
+
+
+def series(domain: Dict[str, Any], name: str) -> List[Tuple[float, Dict[str, Any]]]:
+    """``[(time, grid), ...]`` for one space, in instant order.
+
+    The grid is the space's own dict (not a copy), so editing it edits the
+    domain.
+    """
+    return [(i["time"], i["spaces"][name])
+            for i in domain.get("times", []) if name in i["spaces"]]
+
+
+def time_collections(domain: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The format 1 view of a format 2 domain: ``[{name, data: [step, ...]}]``.
+
+    For code that thinks one space at a time. A copy of the structure; the
+    grids inside are shared. A domain still in format 1 is returned as it is.
+    """
+    if "times" not in domain and "time_collections" in domain:
+        return domain["time_collections"]
+    return [{"name": name,
+             "data": [{"time": t, **grid_like} for t, grid_like in series(domain, name)]}
+            for name in space_names(domain)]
+
+
+class _Joiner:
+    """Builds instants out of per-space steps, joining on exact time.
+
+    A step is keyed by ``(time, occurrence)``, where ``occurrence`` counts
+    the earlier steps of the same space at that same time, so a time that
+    legitimately recurs pairs up correctly. Times are compared exactly:
+    they are written with ``repr(float)`` and YAML returns them unchanged,
+    and a tolerance would merge instants that are really distinct.
+    """
+
+    def __init__(self) -> None:
+        self.times: List[Dict[str, Any]] = []
+        self._by_key: Dict[Tuple[float, int], Dict[str, Any]] = {}
+        self._seen: Dict[Tuple[str, float], int] = {}
+
+    def add(self, space: str, step: Dict[str, Any]) -> None:
+        t = float(step["time"])
+        occurrence = self._seen.get((space, t), 0)
+        self._seen[(space, t)] = occurrence + 1
+        instant = self._by_key.get((t, occurrence))
+        if instant is None:
+            instant = {"time": t, "spaces": {}}
+            self._by_key[(t, occurrence)] = instant
+            self.times.append(instant)
+        instant["spaces"][space] = {k: v for k, v in step.items() if k != "time"}
+
+
+def transpose_collections(collections: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Turn format 1 time collections into format 2 instants.
+
+    Instants are ordered by time when every collection's own steps are in
+    non-decreasing time order (a space first archived late then lands among
+    the instants it belongs to, and equal times keep first-appearance order);
+    otherwise by first appearance, walking step 0 of every collection, then
+    step 1, and so on. Equal-length series zip either way. A space missing at
+    an instant is omitted from it. Collections keep their list order inside
+    each instant.
+    """
+    collections = [c for c in collections]
+    joiner = _Joiner()
+    longest = max((len(c.get("data", [])) for c in collections), default=0)
+    for i in range(longest):
+        for c in collections:
+            data = c.get("data", [])
+            if i < len(data):
+                joiner.add(c.get("name", _DEFAULT_TIME_COLLECTION_NAME), data[i])
+    order = [c.get("name", _DEFAULT_TIME_COLLECTION_NAME) for c in collections]
+    for instant in joiner.times:
+        instant["spaces"] = {n: instant["spaces"][n] for n in order if n in instant["spaces"]}
+    if all(all(a["time"] <= b["time"] for a, b in zip(c.get("data", []), c.get("data", [])[1:]))
+           for c in collections):
+        return sorted(joiner.times, key=lambda instant: instant["time"])   # stable
+    return joiner.times
 
 
 # ---------------------------------------------------------------------------
@@ -783,52 +964,75 @@ def fold_archive_keys(obj: Any) -> Any:
 
 
 def canonicalize_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
-    """Return ``domain`` with every defaultable field filled in explicitly.
+    """Return ``domain`` in format 2, with every defaultable field filled in.
 
-    Use this before comparing a hand-written sparse domain against one read
-    back from a file -- see :func:`_canonicalize_data_item` for why a direct
-    ``==`` can otherwise fail without anything having been lost.
+    Accepts both shapes and always returns ``{"times": [...]}``: a format 1
+    domain (``time_collections``, or the singular ``time_collection``) is
+    upgraded with :func:`transpose_collections`. Use this before comparing a
+    hand-written sparse domain against one read back from a file -- see
+    :func:`_canonicalize_data_item` for why a direct ``==`` can otherwise
+    fail without anything having been lost.
 
-    The defaults applied are exactly: ``DataItem.Format`` (inferred from
-    ``Data`` vs ``Include``), ``DataItem.DataType`` (``Float``),
-    ``DataItem.Precision`` (4, XDMF's default),
-    ``Attribute.AttributeType`` (``Scalar``),
-    ``Attribute.Center`` (``Node``), ``Geometry.Type`` (``XYZ``),
-    ``Attributes`` (empty list), and ``TimeCollections[i].Name``. A singular
-    ``TimeCollection`` is normalized into a one-element ``TimeCollections``.
-    Every other
-    field is required, and ``Topology.NodesPerElement`` is optional-absent
+    The defaults applied are exactly: ``DataItem.format`` (inferred from
+    ``data`` vs ``include``), ``DataItem.data_type`` (``Float``),
+    ``DataItem.precision`` (4, XDMF's default), ``attribute_type``
+    (``Scalar``), ``center`` (``Node``), ``geometry.type`` (``XYZ``),
+    ``attributes`` (empty list), and a format 1 collection's ``name``. Every
+    other field is required, and ``nodes_per_element`` is optional-absent
     rather than defaulted.
     """
     domain = fold_archive_keys(domain)
-    collections = domain.get("time_collections")
-    if collections is None:
-        single = domain.get("time_collection")
-        if single is None:
-            return {}
-        # Singular form is input sugar; the canonical output is always the list.
-        collections = [single]
-    result_collections = []
-    seen: Dict[str, int] = {}
-    for ci, collection in enumerate(collections):
-        name = collection.get("name", _DEFAULT_TIME_COLLECTION_NAME)
-        if name in seen:
+    if "times" in domain:
+        if "time_collections" in domain or "time_collection" in domain:
             raise YmfArchiveError(
-                f"time_collections[{ci}].name: duplicate collection name {name!r} "
-                f"(also at TimeCollections[{seen[name]}]); names are how a reader "
-                "tells the meshes apart, so they must be unique"
+                "domain has both 'times' and 'time_collections'; a domain is "
+                "in one format or the other")
+        instants = domain["times"]
+    else:
+        collections = domain.get("time_collections")
+        if collections is None:
+            single = domain.get("time_collection")
+            if single is None:
+                return {}
+            # Singular form is input sugar; the canonical output is always the list.
+            collections = [single]
+        seen: Dict[str, int] = {}
+        canonical_collections = []
+        for ci, collection in enumerate(collections):
+            name = collection.get("name", _DEFAULT_TIME_COLLECTION_NAME)
+            if name in seen:
+                raise YmfArchiveError(
+                    f"time_collections[{ci}].name: duplicate collection name {name!r} "
+                    f"(also at time_collections[{seen[name]}]); names are how a reader "
+                    "tells the meshes apart, so they must be unique"
+                )
+            seen[name] = ci
+            canonical_collections.append(
+                {
+                    "name": name,
+                    "data": [
+                        _canonicalize_step(step, f"time_collections[{ci}].data[{i}]")
+                        for i, step in enumerate(collection.get("data", []))
+                    ],
+                }
             )
-        seen[name] = ci
-        result_collections.append(
-            {
-                "name": name,
-                "data": [
-                    _canonicalize_step(step, f"time_collections[{ci}].data[{i}]")
-                    for i, step in enumerate(collection.get("data", []))
-                ],
-            }
-        )
-    return {"time_collections": result_collections}
+        return {"times": transpose_collections(canonical_collections)}
+    result = []
+    for i, instant in enumerate(instants):
+        where = f"times[{i}]"
+        if "time" not in instant:
+            raise YmfArchiveError(f"{where}: instant has no 'time'")
+        spaces = instant.get("spaces")
+        if not isinstance(spaces, dict) or not spaces:
+            raise YmfArchiveError(f"{where}.spaces: must name at least one space")
+        canonical_spaces = {}
+        for name, space in spaces.items():
+            step = _canonicalize_step(dict(space, time=instant["time"]),
+                                      f"{where}.spaces[{name}]")
+            del step["time"]
+            canonical_spaces[str(name)] = step
+        result.append({"time": float(instant["time"]), "spaces": canonical_spaces})
+    return {"times": result}
 
 
 # ---------------------------------------------------------------------------
@@ -921,16 +1125,16 @@ def validate_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
     Raises :class:`YmfArchiveError` naming the offending path.
     """
     canonical = canonicalize_domain(domain)
-    for ci, collection in enumerate(canonical.get("time_collections", [])):
-        for i, step in enumerate(collection["data"]):
-            where = f"time_collections[{ci}].data[{i}]"
-            if "spatial_collection" in step:
-                if not step["spatial_collection"]:
+    for i, instant in enumerate(canonical.get("times", [])):
+        for name, space in instant["spaces"].items():
+            where = f"times[{i}].spaces[{name}]"
+            if "spatial_collection" in space:
+                if not space["spatial_collection"]:
                     raise YmfArchiveError(f"{where}.spatial_collection: must not be empty")
-                for j, g in enumerate(step["spatial_collection"]):
+                for j, g in enumerate(space["spatial_collection"]):
                     _validate_grid_like(g, f"{where}.spatial_collection[{j}]")
             else:
-                _validate_grid_like(step, where)
+                _validate_grid_like(space, where)
     return canonical
 
 
@@ -1079,43 +1283,49 @@ def write_ymf(
 
 def append_step(
     path: str | Path,
-    collection: str,
-    step: Dict[str, Any],
+    instant_or_collection: Any,
+    step: Optional[Dict[str, Any]] = None,
     *,
     fsync: bool = False,
 ) -> None:
-    """Append one timestep to a ``.ymf`` file, without rewriting it.
+    """Append one instant to a ``.ymf`` file, without rewriting it.
 
     A writer that produces a timestep at a time should not have to rewrite
     the whole document to record it. Rewriting is O(steps) per step, which
     is O(steps^2) over a run -- an inheritance from XML, where a document
     has to be closed to be well formed. YAML has no such requirement: a
     stream of documents separated by ``---`` is valid after any complete
-    document, so a step can simply be appended and flushed.
+    document, so an instant can simply be appended and flushed.
 
     The file therefore has two shapes, and :func:`read_ymf` accepts both:
 
-    * **one document**, what :func:`write_ymf` produces, with every step
-      nested under its collection. This is the canonical form and what a
-      completed run leaves behind.
-    * **a stream**: that same document first, then one document per step.
-      This is what a run in progress leaves, and what a run that was killed
-      leaves for good.
+    * **one document**, what :func:`write_ymf` produces, with every instant
+      in ``times``. This is the canonical form and what a completed run
+      leaves behind.
+    * **a stream**: that same document first, then one document per
+      instant. This is what a run in progress leaves, and what a run that
+      was killed leaves for good.
 
-    Each appended document names its collection, rather than indexing into
-    the header's list, because collections are created lazily -- a model
-    that first archives at step 40 adds one then -- so an index agreed at
-    step 0 would be wrong by step 40. Naming them also means the header
-    need not know them all in advance.
+    ``instant`` is ``{"time": t, "spaces": {name: grid_or_spatial}}``. It
+    holds every space known at that instant, so a record names no collection
+    and a space first archived at step 40 is just a key that first appears
+    in the 41st record. An instant is also the unit of atomicity: a run
+    killed mid-write loses a whole instant or none of it, never one space of
+    it.
 
-    ``step`` is the dict :func:`add_uniform_step` and :func:`add_spatial_step`
-    put in a collection's ``data``.
+    The format 1 call, ``append_step(path, collection, step)``, still works
+    and appends a record for one space at one time; :func:`read_ymf` joins
+    such records into instants on read.
 
     ``fsync`` forces the write to disk rather than to the page cache. It is
     off by default: a flush already survives the process dying, which is the
     case this exists for, and only a machine losing power needs more.
     """
-    text = _dump({"collection": collection, "step": step})
+    if step is None:
+        record = {"step": instant_or_collection}
+    else:
+        record = {"collection": instant_or_collection, "step": step}
+    text = _dump(record)
     with open(path, "a", encoding="utf-8") as stream:
         # One write, so a concurrent reader sees a whole record or none. The
         # trailing "..." is YAML's explicit document-end marker, and it is
@@ -1132,15 +1342,16 @@ def append_step(
 def read_ymf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
     """Read a ``.ymf`` document written by :func:`write_ymf`.
 
-    Returns a ``(domain, extra)`` tuple. Raises :class:`YmfArchiveError` on
+    Returns a ``(domain, extra)`` tuple, the domain always in format 2
+    (a format 1 document is upgraded; see :func:`transpose_collections`). Raises :class:`YmfArchiveError` on
     a format-version mismatch, so an archive from an incompatible writer
     fails with a clear message rather than a confusing downstream
     ``KeyError``.
 
     Reads both shapes described in :func:`append_step`: a single document,
-    or that document followed by one per appended step. Appended steps are
-    folded into their named collection, which is created if the header did
-    not have it.
+    or that document followed by one per appended step. An appended instant
+    is added to ``times``; a format 1 record, which names its collection, is
+    joined into the instant at its time.
 
     A trailing partial document -- a run killed mid-write -- is dropped,
     with every complete step before it kept. That is the whole point of
@@ -1154,19 +1365,27 @@ def read_ymf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
     if not isinstance(document, dict):
         raise YmfArchiveError(f"{path}: expected a YAML mapping at the top level")
     version = document.get("ymf_archive_version")
-    if version != ARCHIVE_FORMAT_VERSION:
+    if version not in _READABLE_FORMAT_VERSIONS:
         raise YmfArchiveError(
             f"{path}: archive format version {version!r}, but this ymf writes "
-            f"and reads version {ARCHIVE_FORMAT_VERSION}"
+            f"version {ARCHIVE_FORMAT_VERSION} and reads "
+            f"{', '.join(str(v) for v in _READABLE_FORMAT_VERSIONS)}"
         )
-    domain = document.get("domain", {})
+    domain = _upgrade_domain(document.get("domain", {}))
     for record in documents[1:]:
         if not isinstance(record, dict) or "step" not in record:
             raise YmfArchiveError(
                 f"{path}: appended document is not a step record; got "
                 f"{sorted(record) if isinstance(record, dict) else type(record).__name__}"
             )
-        _fold_step(domain, record["collection"], record["step"])
+        if "collection" in record:
+            _fold_step(domain, record["collection"], record["step"])
+        elif version == 1:
+            raise YmfArchiveError(
+                f"{path}: a format 1 document holds records that name a "
+                "collection; this one holds an instant")
+        else:
+            domain.setdefault("times", []).append(fold_archive_keys(record["step"]))
     if truncated:
         warnings.warn(
             f"{path}: the last appended step is incomplete and was dropped "
@@ -1178,14 +1397,36 @@ def read_ymf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
     return domain, document.get("extra")
 
 
+def _upgrade_domain(domain: Any) -> Dict[str, Any]:
+    """A domain in format 2 shape, without canonicalizing it.
+
+    Cheaper than :func:`canonicalize_domain`, which :func:`read_ymf` leaves
+    to the caller as it always has: this only moves format 1's steps into
+    instants.
+    """
+    domain = fold_archive_keys(domain)
+    if not isinstance(domain, dict) or "times" in domain:
+        return domain
+    collections = domain.get("time_collections")
+    if collections is None and domain.get("time_collection") is not None:
+        collections = [domain["time_collection"]]
+    if collections is None:
+        return domain
+    return dict({k: v for k, v in domain.items()
+                 if k not in ("time_collections", "time_collection")},
+                times=transpose_collections(collections))
+
+
 def _fold_step(domain: Dict[str, Any], collection: str, step: Dict[str, Any]) -> None:
-    """Put an appended step into its collection, creating it if need be."""
-    collections = domain.setdefault("time_collections", [])
-    for existing in collections:
-        if existing.get("name") == collection:
-            existing.setdefault("data", []).append(step)
-            return
-    collections.append({"name": collection, "data": [step]})
+    """Put a record that names its collection into the instant at its time.
+
+    The format 1 record: one space at one time. It joins the last instant if
+    that is at the same time and lacks the space, as a writer that goes
+    space by space within a step produces them, and otherwise starts one.
+    """
+    step = fold_archive_keys(step)
+    grid_like = {k: v for k, v in step.items() if k != "time"}
+    _add_to_space(domain, step["time"], collection, grid_like)
 
 
 def _load_stream(text: str) -> Tuple[List[Any], bool]:
@@ -1231,11 +1472,15 @@ def load_array(item: Dict[str, Any], base_dir: str | Path = "."):
 
 
 def _data_items(domain: Dict[str, Any]):
-    """Every DataItem dict of a canonical domain, with a readable path."""
-    for collection in domain.get("time_collections", []):
-        for i, step in enumerate(collection["data"]):
-            for j, g in enumerate(step.get("spatial_collection", [step])):
-                where = "%s/%d%s" % (collection["name"], i, "" if "topology" in step else "/%d" % j)
+    """Every DataItem dict of a canonical domain, with a readable path.
+
+    Paths are ``<space>/<n>/...`` where ``n`` counts that space's own
+    steps, so they do not depend on which other spaces an instant holds.
+    """
+    for name in space_names(domain):
+        for i, (_, space) in enumerate(series(domain, name)):
+            for j, g in enumerate(space.get("spatial_collection", [space])):
+                where = "%s/%d%s" % (name, i, "" if "topology" in space else "/%d" % j)
                 yield where + "/Topology", g["topology"]
                 yield where + "/Geometry", g["geometry"]
                 for a in g["attributes"]:
@@ -1305,31 +1550,32 @@ def select_domain(
     """
     import copy
 
-    all_collections = domain.get("time_collections", [])
-    names = [c.get("name", "") for c in all_collections]
+    domain = canonicalize_domain(domain)
+    names = space_names(domain)
+    chosen_names = names
     if collections is not None:
-        keep = []
+        chosen_names = []
         for want in collections:
-            matched = [c for c in all_collections
-                       if c.get("name", "") == want or want in c.get("name", "")]
+            matched = [n for n in names if n == want or want in n]
             if not matched:
                 raise YmfArchiveError(
                     "no collection matches %r; the archive holds %s" % (want, names))
-            for c in matched:
-                if c not in keep:
-                    keep.append(c)
-        all_collections = keep
+            for n in matched:
+                if n not in chosen_names:
+                    chosen_names.append(n)
+        # keep the archive's own order of spaces, not the order asked for
+        chosen_names = [n for n in names if n in chosen_names]
 
-    def grids_of(step: Dict[str, Any]):
-        if "spatial_collection" in step:
-            return step["spatial_collection"]
-        return [step]
+    def grids_of(space: Dict[str, Any]):
+        if "spatial_collection" in space:
+            return space["spatial_collection"]
+        return [space]
 
     if fields is not None:
         present = set()
-        for c in all_collections:
-            for step in c.get("data", []):
-                for g in grids_of(step):
+        for instant in domain.get("times", []):
+            for n in chosen_names:
+                for g in grids_of(instant["spaces"].get(n, {"attributes": []})):
                     present.update(a["name"] for a in g.get("attributes", []))
         missing = [f for f in fields if f not in present]
         if missing:
@@ -1337,21 +1583,27 @@ def select_domain(
                 "no field named %s; the archive holds %s"
                 % (", ".join(repr(f) for f in missing), sorted(present)))
 
-    chosen = []
-    for c in all_collections:
-        data = c.get("data", [])
-        indices = (step_indices(steps, len(data)) if steps is not None
-                   else list(range(len(data))))
-        new_steps = []
-        for i in indices:
-            step = copy.deepcopy(data[i])
+    # An instant that holds none of the chosen spaces is not in the selection,
+    # and `steps` then counts the instants that remain.
+    kept = [i for i in domain.get("times", [])
+            if any(n in i["spaces"] for n in chosen_names)]
+    indices = (step_indices(steps, len(kept)) if steps is not None
+               else list(range(len(kept))))
+    new_times = []
+    for k in indices:
+        instant = kept[k]
+        spaces = {}
+        for n in chosen_names:
+            if n not in instant["spaces"]:
+                continue
+            space = copy.deepcopy(instant["spaces"][n])
             if fields is not None:
-                for g in grids_of(step):
+                for g in grids_of(space):
                     g["attributes"] = [a for a in g.get("attributes", [])
                                        if a["name"] in fields]
-            new_steps.append(step)
-        chosen.append(dict(c, data=new_steps))
-    return dict(domain, time_collections=chosen)
+            spaces[n] = space
+        new_times.append({"time": instant["time"], "spaces": spaces})
+    return dict(domain, times=new_times)
 
 
 def inline_domain(domain: Dict[str, Any], base_dir: str | Path = ".") -> Dict[str, Any]:

@@ -3,6 +3,7 @@ from xml.etree.ElementTree import parse
 
 import pytest
 
+from ymf.archive import canonicalize_domain, time_collections  # noqa: E402
 from ymf.archive import (
     YmfArchiveError,
     add_spatial_step,
@@ -50,7 +51,7 @@ def two_spaces(n_steps=4, spatial=False):
 
 
 def names_of(domain):
-    return [c["name"] for c in domain["time_collections"]]
+    return [c["name"] for c in time_collections(domain)]
 
 
 def fields_of(step):
@@ -84,7 +85,7 @@ def test_a_step_the_archive_does_not_have_is_refused():
 
 def test_everything_is_kept_by_default():
     domain = two_spaces()
-    assert select_domain(domain) == domain
+    assert select_domain(domain) == canonicalize_domain(domain)
 
 
 def test_a_collection_is_picked_by_name_or_part_of_it():
@@ -97,7 +98,7 @@ def test_a_collection_is_picked_by_name_or_part_of_it():
 
 def test_fields_are_picked_on_every_grid():
     picked = select_domain(two_spaces(), fields=["p"])
-    base, quadratic = picked["time_collections"]
+    base, quadratic = time_collections(picked)
     assert all(fields_of(step) == ["p"] for step in base["data"])
     # the quadratic space has no p: its grids keep their mesh and lose their fields
     assert all(fields_of(step) == [] for step in quadratic["data"])
@@ -106,7 +107,7 @@ def test_fields_are_picked_on_every_grid():
 
 def test_fields_are_picked_inside_spatial_collections():
     picked = select_domain(two_spaces(spatial=True), fields=["u"], collections=["Spatial"])
-    for step in picked["time_collections"][0]["data"]:
+    for step in time_collections(picked)[0]["data"]:
         assert [fields_of(g) for g in step["spatial_collection"]] == [["u"], ["u"]]
 
 
@@ -117,17 +118,17 @@ def test_an_unknown_field_is_refused_with_what_there_is():
 
 def test_steps_apply_to_every_collection():
     picked = select_domain(two_spaces(), steps="-1")
-    for c in picked["time_collections"]:
+    for c in time_collections(picked):
         assert [s["time"] for s in c["data"]] == [pytest.approx(0.3)]
     picked = select_domain(two_spaces(), steps="::2")
-    assert [s["time"] for s in picked["time_collections"][0]["data"]] == [0.0, pytest.approx(0.2)]
+    assert [s["time"] for s in time_collections(picked)[0]["data"]] == [0.0, pytest.approx(0.2)]
 
 
 def test_the_source_is_not_modified():
     domain = two_spaces()
     select_domain(domain, collections=["c0p2"], fields=["u2"], steps="0")
     assert names_of(domain) == ["Mesh Spatial_Domain", "Mesh_c0p2_Lagrange"]
-    assert fields_of(domain["time_collections"][0]["data"][3]) == ["u", "p", "vof"]
+    assert fields_of(time_collections(domain)[0]["data"][3]) == ["u", "p", "vof"]
 
 
 # --------------------------------------------------------------------------
@@ -157,7 +158,7 @@ def test_the_conversion_can_cherry_pick(archive, tmp_path):
     assert [a.attrib["Name"] for a in steps[0].findall("Attribute")] == ["vof"]
     # the archive itself is untouched
     domain, _ = read_ymf(archive)
-    assert len(domain["time_collections"]) == 2
+    assert len(time_collections(domain)) == 2
 
 
 def test_the_flags_reach_the_conversion(archive, tmp_path, capsys):
@@ -184,7 +185,7 @@ def test_show_describes_and_converts_nothing(archive, capsys):
 def test_describe_lists_every_field_any_step_carries():
     domain = two_spaces(n_steps=2)
     # a field that appears only at the second step is still listed
-    domain["time_collections"][0]["data"][1]["attributes"].append(
+    time_collections(domain)[0]["data"][1]["attributes"].append(
         attribute("late", data_item([9], "out.h5:/late", precision=8)))
     (base, _) = describe(domain)
     assert base.endswith("fields: u, p, vof, late")
