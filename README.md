@@ -67,7 +67,7 @@ ymf version that wrote it (`ymf:`), and a reader refuses one from a newer ymf.
 ## Quick start
 
 ```bash
-git clone git@github.com:cekees/ymf.git && cd ymf
+git clone git@github.com:proteustoolkit/ymf.git && cd ymf
 pip install -e '.[dev]'        # front-end, examples and tests
 pytest
 
