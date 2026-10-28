@@ -15,8 +15,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # requires-python is >=3.9, so the oldest supported python gets a leg.
-          - {name: "linux-64 / py3.9", os: ubuntu-latest, python: "3.9"}
+          # requires-python is >=3.10, so the oldest supported python gets a leg.
+          - {name: "linux-64 / py3.10", os: ubuntu-latest, python: "3.10"}
           - {name: "linux-64 / py3.12", os: ubuntu-latest, python: "3.12"}
           - {name: "linux-64 / py3.13", os: ubuntu-latest, python: "3.13"}
           - {name: "linux-64 / py3.14", os: ubuntu-latest, python: "3.14"}

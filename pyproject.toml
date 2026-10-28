@@ -7,7 +7,7 @@ name = "ymf"
 dynamic = ["version"]
 description = "YAML Modeling Format for computational physics — problem specification, VVUQ, and multi-backend dispatch."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "cekees" }]
 # Core runtime dependency, kept to exactly one on purpose: a solver that
