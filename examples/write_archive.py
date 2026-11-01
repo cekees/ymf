@@ -48,7 +48,7 @@ from ymf.archive import (
     data_item_for,
     geometry,
     grid,
-    new_domain,
+    new_approximation,
     topology,
     write_ymf,
 )
@@ -136,7 +136,7 @@ def open_store(outdir, stem, inline):
 def write_serial(outdir, nodes, elements, times, problem, inline=False):
     """One grid per time step. Returns the path of the .ymf written."""
     store = open_store(outdir, "heat", inline)
-    domain = new_domain()
+    domain = new_approximation()
     # The mesh does not move, so it is stored once and every step refers
     # to the same arrays.
     topo = topology("Triangle", len(elements), store.item("elements", elements))
@@ -184,7 +184,7 @@ def write_split(outdir, nodes, elements, times, problem, inline=False):
     """Each step is a SpatialCollection of per-subdomain grids."""
     store = open_store(outdir, "heat_split", inline)
     parts = split_mesh(nodes, elements)
-    domain = new_domain()
+    domain = new_approximation()
     meshes = [
         (topology("Triangle", len(local_elements),
                   store.item("elements_p%d" % rank, local_elements)),

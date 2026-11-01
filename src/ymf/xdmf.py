@@ -23,7 +23,7 @@ schema-validating XDMF reader could legitimately reject).
 
 So: everything in a YMF document that *does* map onto XDMF concepts
 (``Domain``/``Grid``/``Topology``/``Geometry``/``DataItem`` — i.e. the mesh
-archive) is written as real XDMF elements. Everything else (``Problem``,
+archive) is written as real XDMF elements. Everything else (``model``,
 ``solution_paths``, ``vvuq``, and any ``archive``-level metadata XDMF has
 no concept of) is serialized to JSON, base64-encoded (safe inside an XML
 attribute value with no escaping headaches), and stashed in a single
@@ -49,7 +49,7 @@ The round-trip is **not** claimed to be fully lossless in general:
 
 - Mesh/archive data (``Domain``) round-trips exactly (it *is* the native
   XDMF representation already).
-- Everything under ``Problem``/``solution_paths``/``vvuq`` round-trips
+- Everything under ``model``/``solution_paths``/``vvuq`` round-trips
   exactly *as long as it survives a YAML dump/load cycle* — which is true
   for everything currently in the schema (plain strings, numbers, nested
   maps/sequences). :func:`round_trip_equal` is provided to verify this for
@@ -69,7 +69,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from xml.etree.ElementTree import (Element, ElementTree, ParseError, SubElement, fromstring,
                                    parse as et_parse)
 
-from ymf.archive import (YmfArchiveError, canonicalize_domain,
+from ymf.archive import (YmfArchiveError, canonicalize_approximation,
                          time_collections, transpose_collections)
 
 XDMF_HEADER = b'<?xml version="1.0" ?>\n<!DOCTYPE Xdmf SYSTEM "Xdmf.dtd" []>\n'
@@ -516,7 +516,7 @@ def build_xdmf_tree(
 
     # Canonicalize up front so this function reads one well-defined shape
     # rather than re-deriving defaults inline at every use.
-    canonical = canonicalize_domain(domain)
+    canonical = canonicalize_approximation(domain)
     # XDMF nests the other way round -- a temporal collection per grid type --
     # so the spaces inside each instant come back out as one collection each.
     for time_collection in time_collections(canonical):
@@ -603,7 +603,7 @@ def _parse_step(step_elem: Element, where: str) -> Dict[str, Any]:
                 raise YmfArchiveError(
                     "%s: a spatial collection in a YMF archive holds uniform grids "
                     "only, not further collections" % (at,))
-            # Name goes first, matching the key order canonicalize_domain()
+            # Name goes first, matching the key order canonicalize_approximation()
             # produces, so a parsed document compares equal to a canonical one.
             sub: Dict[str, Any] = {}
             if "Name" in sub_elem.attrib:
@@ -723,6 +723,6 @@ def round_trip_equal(domain: Dict[str, Any], ymf_extra: Optional[Any] = None) ->
     try:
         write_xdmf(domain, tmp_path, ymf_extra=ymf_extra)
         read_domain, read_extra = read_xdmf(tmp_path)
-        return read_domain == canonicalize_domain(domain) and read_extra == ymf_extra
+        return read_domain == canonicalize_approximation(domain) and read_extra == ymf_extra
     finally:
         Path(tmp_path).unlink(missing_ok=True)

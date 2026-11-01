@@ -15,7 +15,7 @@ from ymf.archive import (
     data_item,
     geometry,
     grid,
-    new_domain,
+    new_approximation,
     read_ymf,
     topology,
     write_ymf,
@@ -24,7 +24,7 @@ from ymf.cli import ymf2xmf, ymf2xmf_main
 
 
 def make_domain(spatial=False, n_ranks=2):
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_approximation("Mesh Spatial_Domain")
     for t in (0.0, 0.5):
         if spatial:
             add_spatial_step(domain, t, [
@@ -117,7 +117,7 @@ def test_a_per_subdomain_archive_converts_to_spatial_collections(tmp_path):
 
 
 def test_the_extra_payload_survives_the_conversion(tmp_path):
-    """Problem/vvuq metadata rides along in the <Information> element.
+    """model/vvuq metadata rides along in the <Information> element.
 
     So converting for a viewer does not discard the physics description,
     and read_xdmf can recover it.

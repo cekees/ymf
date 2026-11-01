@@ -43,7 +43,7 @@ and it is recorded rather than refused. The composed document gets a
     composition:
       sources: [navier_stokes_model.ymf, plane_poiseuille.ymf, ...]
       overrides:
-        - path: Problem.characteristic_scales.viscosity.value
+        - path: model.characteristic_scales.viscosity.value
           was: 1.0
           now: 0.01
           set_by: plane_poiseuille_re100.ymf
@@ -399,7 +399,7 @@ def _read_text(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
     for old, new in _KEY_ALIASES.items():
         # top level only: a nested key is indented, and a path inside a
-        # string value ("Problem.strong_form...") never starts a line
+        # string value ("model.strong_form...") never starts a line
         text = re.sub(r"^%s:" % old, "%s:" % new, text, flags=re.M)
     return text
 
@@ -442,8 +442,8 @@ def _compose(path: Path, chain: Tuple[Path, ...]):
     data, outputs = _read(path)
     if outputs and chain:
         # an inherited output's files are relative to its own archive
-        from ymf.archive import rebase_domain
-        outputs = {k: dict(v, approximation=rebase_domain(
+        from ymf.archive import rebase_approximation
+        outputs = {k: dict(v, approximation=rebase_approximation(
                        v["approximation"], path.parent, chain[0].parent))
                    if v.get("approximation") else v for k, v in outputs.items()}
     own = {k: v for k, v in data.items() if k not in _FILE_KEYS}

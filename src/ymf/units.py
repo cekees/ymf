@@ -722,7 +722,7 @@ def _eval_notation(formula: str, scope: Dict[str, float]) -> Optional[float]:
 
 
 def characteristic_scale_values(problem: Dict[str, Any]) -> Dict[str, float]:
-    """Resolve ``Problem.characteristic_scales`` to a flat ``{name: value}`` dict.
+    """Resolve ``model.characteristic_scales`` to a flat ``{name: value}`` dict.
 
     Direct (``value:``) scales are taken as-is. ``derived: true`` scales
     (e.g. ``time: {derived: true, formula: "L_char / U_char"}``, report
@@ -831,7 +831,7 @@ def _coefficient_values(problem: Dict[str, Any]) -> Dict[str, float]:
 
 
 def compute_dimensionless_numbers(problem: Dict[str, Any]) -> Dict[str, float]:
-    """Evaluate ``Problem.dimensionless_numbers[].formula`` (report §5.2).
+    """Evaluate ``model.dimensionless_numbers[].formula`` (report §5.2).
 
     Formulas are evaluated against a scope built from
     :func:`characteristic_scale_values` (using bare names ``L``, ``U``,
@@ -882,7 +882,7 @@ _PRESSURE_DIM = _UREG.get_dimensionality("Pa")
 def non_dimensionalize(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Build the non-dimensionalization block described in report §5.2/§5.3.
 
-    Given a document with ``Problem.characteristic_scales`` and
+    Given a document with ``model.characteristic_scales`` and
     units-annotated ``unknowns``, returns:
 
     - ``characteristic_scales``: resolved numeric values (incl. derived ones)

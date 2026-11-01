@@ -62,13 +62,13 @@ def test_mesh_keys_read_as_they_always_have():
 
 pytest.importorskip("strictyaml")
 
-from ymf.archive import add_uniform_step, data_item, geometry, new_domain, topology  # noqa: E402
+from ymf.archive import add_uniform_step, data_item, geometry, new_approximation, topology  # noqa: E402
 from ymf.compose import load_composed  # noqa: E402
 from ymf.state import branches, reached  # noqa: E402
 
 
 def _output(realization):
-    domain = new_domain()
+    domain = new_approximation()
     nodes = data_item([2, 2], values=[0.0, 0.0, 1.0, 1.0])
     vertices = data_item([2], values=[0, 1], data_type="Int", precision=4)
     add_uniform_step(domain, 0.0, topology("Polyvertex", 2, vertices, nodes_per_element=1),
