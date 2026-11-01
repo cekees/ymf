@@ -1,7 +1,8 @@
 # Design note: time outside, space inside
 
-**Status: approved by cekees 2026-10-25 (all six recommendations); implemented in the ymf PR that follows this note. See § Implementation notes for what differs from the plan.**
-Closes the open question at the end of [archive-format.md](archive-format.md)
+**Status: implemented.** Approved by cekees 2026-10-25 (all six recommendations), implemented in proteustoolkit/ymf#22 and #23 (merged 2026-10-26), Proteus side in cekees/proteus#109 and #110. The two open questions in § 8 were answered on the Proteus side by cekees/proteus#121 (2026-10-27): a hot start *replaces* the steps after the one it resumes from, and a space first archived mid-run is covered by a writer-level test. See § Implementation notes for what differs from the plan.
+
+Closes the open question at the end of [archive-format.md](../archive-format.md)
 (recorded 2026-10-23). Drafted 2026-10-25.
 
 The Proteus writer is a separate PR, after the ymf one (§ 7).

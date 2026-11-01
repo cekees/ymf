@@ -1,6 +1,6 @@
 """Normalization helpers for YMF's backward-compatible schema evolution.
 
-See ``docs/ymf-schema-v0.2-delta.md`` §2 for the rationale: ``unknowns``
+See ``docs/history/schema-v0.2-delta.md`` §2 for the rationale: ``unknowns``
 widened from ``Seq(Str())`` (v0.1) to accept either bare strings or
 structured maps with ``units``/``std_name``/``provenance`` (v0.2). Downstream code should
 call :func:`normalize_unknowns` immediately after parsing so it only ever
