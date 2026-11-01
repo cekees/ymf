@@ -27,6 +27,7 @@ from strictyaml import (
     Seq,
     Str,
 )
+from strictyaml.validators import OrValidator
 
 from ymf.discretizations import METHODS
 from ymf.state import STATES
@@ -506,7 +507,15 @@ def _partial(validator, keep=()):
     an inherited discretization by naming it and giving only that field.
     The composed document is validated in full, so an entry that is new
     and incomplete is still caught there.
+
+    Both sides of an alternative are relaxed too: the domain is the notation
+    string or a mapping, and a file that tags an inherited region writes
+    ``boundary_tags`` without restating its ``kind``. The composed domain
+    is checked against its kind by ymf.domain.
     """
+    if isinstance(validator, OrValidator):
+        return OrValidator(_partial(validator._validator_a, keep),
+                           _partial(validator._validator_b, keep))
     if isinstance(validator, Map):
         return Map({
             (key if isinstance(key, Optional) or key in keep else Optional(key)):
