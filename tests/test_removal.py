@@ -16,10 +16,11 @@ exactly how it came to be.
 
 import pytest
 
+strictyaml = pytest.importorskip("strictyaml")
+
 from ymf import load_ymf
 from ymf.compose import YmfRemovalError
 
-strictyaml = pytest.importorskip("strictyaml")
 
 
 MODEL = """\

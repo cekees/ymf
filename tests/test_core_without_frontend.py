@@ -81,7 +81,8 @@ print("ok")
 
 
 def test_compose_still_offers_the_old_private_name():
-    """Proteus imports ymf.compose._is_archive_text; it must keep working."""
+    """Proteus imported ymf.compose._is_archive_text; it must keep working."""
+    pytest.importorskip("strictyaml")   # ymf.compose is ymf[spec]
     from ymf.archive import is_archive_text
     from ymf.compose import _is_archive_text
     assert _is_archive_text is is_archive_text

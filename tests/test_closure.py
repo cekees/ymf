@@ -15,6 +15,7 @@ MESH = "      mesh: {cells: [4, 8], levels: 2}\n"
 
 def spec_with_mesh(tmp_path, mesh=MESH, name="poisson.ymf"):
     """examples/poisson.ymf with this mesh on P1_linear, and none on P2."""
+    pytest.importorskip("strictyaml")   # closure.load composes the spec: ymf[spec]
     text = "".join(line for line in
                    (EXAMPLES / "poisson.ymf").read_text(encoding="utf-8").splitlines(True)
                    if not line.lstrip().startswith("mesh:"))

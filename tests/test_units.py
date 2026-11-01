@@ -1,4 +1,7 @@
+import importlib.util
 import math
+from pathlib import Path
+
 import pytest
 
 # The YMF core deliberately depends on pyyaml alone, so a solver writing
@@ -209,13 +212,18 @@ def test_compute_dimensionless_numbers_uses_validated_coefficients(coefficients_
     # Regression: coefficients are MapPattern(Str(), Any()) in the schema, so
     # strictyaml returns '1.0e-3' (a string) and formulas referencing kappa
     # used to be silently dropped.
+    pytest.importorskip("strictyaml")
     from ymf import validate_ymf
 
     doc = validate_ymf(_heat_doc_with_numbers(coefficients_yaml))
     numbers = compute_dimensionless_numbers(doc["model"])
     assert numbers["Peclet"] == pytest.approx(0.5 * 1.0 / 1.0e-3)
-    # the time scale is derived, 1/(2π²κ), so κ·time/L² is 1/(2π²) exactly
-    assert numbers["Fourier"] == pytest.approx(1.0 / (2.0 * math.pi ** 2))
+    # the time scale is derived, 1/(2π²κ), so κ·time/L² is 1/(2π²) exactly;
+    # that formula is in the spec notation, which only ymf[symbolic] reads
+    if importlib.util.find_spec("sympy") is None:
+        assert "Fourier" not in numbers
+    else:
+        assert numbers["Fourier"] == pytest.approx(1.0 / (2.0 * math.pi ** 2))
 
 
 def test_an_expression_coefficient_resolves_but_a_non_number_still_does_not():
@@ -225,6 +233,7 @@ def test_an_expression_coefficient_resolves_but_a_non_number_still_does_not():
     expression-valued coefficient went silently missing while adr_problem
     resolved the same coefficient without difficulty.
     """
+    pytest.importorskip("sympy")   # evaluating "π²" is ymf.symbolic's job
     problem = {
         "characteristic_scales": {"length": {"value": 1.0, "units": "m"}},
         "strong_form": {"coefficients": {"Q": "π²", "k": "nan", "flag": True}},
@@ -240,12 +249,13 @@ def test_an_expression_coefficient_resolves_but_a_non_number_still_does_not():
 
 def test_units_and_the_solver_agree_on_a_coefficient():
     """One spec, one answer -- the reason sympy is in the frontend extra."""
+    pytest.importorskip("strictyaml")
+    pytest.importorskip("sympy")
     from ymf import load_ymf
     from ymf.symbolic.problem import coefficient_numbers
     from ymf.units import _coefficient_values
 
-    pytest.importorskip("sympy")
-    problem = load_ymf("examples/kovasznay_flow.ymf")["model"]
+    problem = load_ymf(Path(__file__).parent.parent / "examples" / "kovasznay_flow.ymf")["model"]
     by_units = _coefficient_values(problem)
     by_solver = coefficient_numbers(problem["strong_form"]["coefficients"])
     assert by_units == by_solver
@@ -573,3 +583,4 @@ def test_checking_twice_reuses_the_stand_in_units():
     doc = _conduction({"type": "neumann", "value": 1.0}, unknown_units=None)
     first = [str(i) for i in check(doc, missing_units="warn")]
     assert first == [str(i) for i in check(doc, missing_units="warn")]
+

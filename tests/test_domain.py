@@ -13,12 +13,15 @@ Not how to mesh it -- that is ``discretizations[].mesh`` -- and not the
 state of whatever object happens to hold it.
 """
 
+from pathlib import Path
+
 import pytest
+
+strictyaml = pytest.importorskip("strictyaml")
 
 from ymf import load_ymf
 from ymf.domain import DOMAIN_KINDS, YmfDomainError, box_bounds, validate_domain_block
 
-strictyaml = pytest.importorskip("strictyaml")
 
 
 def spec(domain):
@@ -152,7 +155,7 @@ def test_the_two_box_forms_give_the_same_problem():
 
     from ymf.symbolic.problem import adr_problem
 
-    doc = load_ymf("examples/poisson.ymf")
+    doc = load_ymf(Path(__file__).parent.parent / "examples" / "poisson.ymf")
     mapped = copy.deepcopy(doc)
     mapped["model"]["strong_form"]["domain"] = {
         "kind": "box", "lower": [0.0, 0.0], "upper": [1.0, 1.0]}
