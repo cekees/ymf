@@ -1,5 +1,12 @@
 # YMF Schema v0.2 — Consolidation Delta
 
+> **Superseded draft, kept as a changelog.** `ymf.schema` implements the validators below and
+> [problem-specification.md](../problem-specification.md) describes the result.
+> `unknown_provenance` below has since been renamed `provenance`. Of § 7's items deferred to
+> v0.3, the ones since done say so inline. The four documents it was synthesized from are now
+> under [research/](../research/) and [history/](./).
+
+
 **Date**: 2026-08-12
 **Status**: Draft — proposed additive/breaking changes to `ymf-schema.md` (v0.1), synthesized from four background reports:
 

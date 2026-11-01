@@ -1,6 +1,6 @@
 """Convert between a YMF data tree and an XDMF 2.0 XML document, round-trip.
 
-Per ``docs/ymf-schema.md`` §5 ("XDMF Preservation") and the design
+Per ``docs/history/schema-v0.1.md`` §5 ("XDMF Preservation") and the design
 principle that *XDMF is a consumer, not a dependency* of YMF: this module
 reads a plain Python dict describing a time-collection of grids (mesh
 topology + geometry, optionally HDF5-backed) and emits an ``.xmf`` file
@@ -467,7 +467,7 @@ def build_xdmf_tree(
     ----------
     domain:
         A plain dict shaped like the ``Domain`` block described in
-        ``docs/ymf-schema.md`` §5, e.g.::
+        ``docs/history/schema-v0.1.md`` §5, e.g.::
 
             {
                 "time_collection": {

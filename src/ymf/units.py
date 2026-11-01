@@ -1,7 +1,7 @@
 """Unit handling, dimensional consistency checking, and non-dimensionalization.
 
 Implements the "immediate"/"short-term" recommendations from
-``docs/ymf-units-report.md``:
+``docs/research/units.md``:
 
 - pint-backed unit string parsing (report §1.1, §6.2), tolerant of the
   bare-exponent (``m2/s``), unicode-superscript (``m²``), caret (``m^2``),

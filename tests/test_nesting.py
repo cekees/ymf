@@ -1,6 +1,6 @@
 """Time outside, space inside: format 2 of the archive domain.
 
-See docs/design-time-outside-space.md. The format 1 fixture was written by
+See docs/design/time-outside-space.md. The format 1 fixture was written by
 ymf before the change (two spaces, three instants), with the .xmf it gave.
 """
 

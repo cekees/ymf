@@ -1,5 +1,8 @@
 # Physical Units Support for YMF
 
+> **Background research.** Drafted with an LLM research agent and not all checked against its sources. Treat specific numbers and API names as leads to verify, not facts.
+> It is the basis for `ymf.units`.
+
 A report on adding physical unit support to YMF in a non-intrusive way that enables dimensional consistency checks and non-dimensionalization.
 
 ---

@@ -51,7 +51,7 @@ ymf version that wrote it (`ymf:`), and a reader refuses one from a newer ymf.
 
 | Piece | State |
 |---|---|
-| Archive data model, YAML I/O, structural checks (`ymf.archive`) | **Implemented.** Tested against real Proteus output; used by Proteus's `ymf_io` branch, aimed at Proteus 2.0 |
+| Archive data model, YAML I/O, structural checks (`ymf.archive`) | **Implemented.** Tested against real Proteus output; used by Proteus 2.0 (its `main` line) |
 | `.ymf` → `.xmf` conversion (`ymf2xmf`, `ymf.xdmf`) | **Implemented.** Lossless round trip; output opens in ParaView. Reads XDMF from other tools too, refusing by name what the model can't hold ([docs/xdmf-model.yaml](docs/xdmf-model.yaml)) |
 | Self-contained archives: arrays inline, no HDF5 | **Implemented.** `data_item_for(array, inline=True)`; `write_archive.py --inline` |
 | Problem-spec schema v0.2 (`ymf.schema`) | **Implemented.** See the [known gaps](docs/problem-specification.md#known-gaps) |
