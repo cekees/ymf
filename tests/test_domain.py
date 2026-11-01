@@ -174,6 +174,67 @@ def test_a_kind_nothing_solves_yet_says_so(tmp_path):
         adr_problem(doc)
 
 
+# --------------------------------------------------------------------------
+# a domain composed across files
+# --------------------------------------------------------------------------
+
+PSLG_MODEL = spec("""
+      kind: piecewise_linear
+      dimension: 2
+      vertices: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+      segments: [[0, 1], [1, 2], [2, 3], [3, 0]]""")
+
+
+def compose(tmp_path, child):
+    (tmp_path / "model.ymf").write_text(PSLG_MODEL, encoding="utf-8")
+    (tmp_path / "child.ymf").write_text(
+        "ymf_state: abstract\nextends: model.ymf\n" + child, encoding="utf-8")
+    return load_ymf(tmp_path / "child.ymf")
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "the partial schema does not relax a Str() | Map() validator, so every "
+    "file in a chain must restate the domain's kind"))
+def test_a_child_may_tag_the_region_its_parent_states(tmp_path):
+    """The region in the model, the names of its boundaries in the problem."""
+    doc = compose(tmp_path, """\
+model:
+  strong_form:
+    domain:
+      boundary_tags: {bottom: 1, right: 2, top: 3, left: 4}
+""")
+    domain = doc["model"]["strong_form"]["domain"]
+    assert domain["kind"] == "piecewise_linear" and len(domain["vertices"]) == 4
+    assert domain["boundary_tags"]["left"] == 4
+
+
+def test_a_child_that_changes_the_kind_keeps_the_parents_keys_and_is_refused(tmp_path):
+    """Mappings merge key by key, so a box over a PSLG still has vertices.
+    The composed domain is checked against its kind, which names them."""
+    with pytest.raises(YmfDomainError, match="kind 'box' does not take segments, vertices"):
+        compose(tmp_path, """\
+model:
+  strong_form:
+    domain: {kind: box, lower: [0.0, 0.0], upper: [1.0, 2.0]}
+""")
+
+
+def test_a_child_replaces_the_region_by_removing_what_it_does_not_keep(tmp_path):
+    doc = compose(tmp_path, """\
+remove:
+  - "model.strong_form.domain.vertices"
+  - "model.strong_form.domain.segments"
+model:
+  strong_form:
+    domain: {kind: box, lower: [0.0, 0.0], upper: [1.0, 2.0]}
+""")
+    domain = doc["model"]["strong_form"]["domain"]
+    assert box_bounds(domain) == [[0.0, 0.0], [1.0, 2.0]]
+    assert "vertices" not in domain and "segments" not in domain
+    removed = [r["path"] for r in doc["composition"]["removals"]]
+    assert removed == ["model.strong_form.domain.vertices", "model.strong_form.domain.segments"]
+
+
 def test_every_kind_is_covered_by_the_tests_above():
     """So a kind added later is not silently untested."""
     assert set(DOMAIN_KINDS) == {"box", "piecewise_linear", "discrete", "file"}

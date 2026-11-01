@@ -1,5 +1,6 @@
 import importlib.util
 import math
+import sys
 from pathlib import Path
 
 import pytest
@@ -584,3 +585,54 @@ def test_checking_twice_reuses_the_stand_in_units():
     first = [str(i) for i in check(doc, missing_units="warn")]
     assert first == [str(i) for i in check(doc, missing_units="warn")]
 
+
+# ---------------------------------------------------------------------------
+# a bare ymf[units] install, without ymf[symbolic]
+# ---------------------------------------------------------------------------
+
+
+def _without_symbolic(monkeypatch):
+    """Make sympy and ymf.symbolic unimportable for the rest of the test.
+
+    The units-only CI leg runs this for real; here it runs in the full
+    environment too, so the fallback is guarded wherever the suite runs.
+    """
+    for name in list(sys.modules):
+        if name in ("sympy", "ymf.symbolic") or name.startswith(("sympy.", "ymf.symbolic.")):
+            monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setitem(sys.modules, "sympy", None)
+    monkeypatch.setitem(sys.modules, "ymf.symbolic", None)
+
+
+def test_without_symbolic_numbers_resolve_and_expressions_are_left_out(monkeypatch):
+    """What problem-specification.md promises a bare ymf[units] install:
+    it still sees the coefficients that are already numbers."""
+    _without_symbolic(monkeypatch)
+    problem = {
+        "characteristic_scales": {"length": {"value": 2.0, "units": "m"}},
+        "strong_form": {"coefficients": {"k": 3.0, "c": {"value": "0.5"}, "Q": "π²"}},
+        "dimensionless_numbers": {
+            "A": {"formula": "k * L"},       # a number: resolves
+            "B": {"formula": "c * L"},       # a quoted number: resolves
+            "C": {"formula": "Q * L"},       # an expression coefficient: left out
+            "D": {"formula": "2πL"},         # the spec notation: left out
+        },
+    }
+    assert compute_dimensionless_numbers(problem) == {
+        "A": pytest.approx(6.0), "B": pytest.approx(1.0)}
+
+
+def test_without_symbolic_a_flux_condition_is_undecided_not_wrong(monkeypatch):
+    """A neumann g is compared with [k][T]/[L], which needs the equation read:
+    without ymf[symbolic] the check says it did not check, and does not fail
+    a condition that may well be right."""
+    _without_symbolic(monkeypatch)
+    bc = {"type": "neumann", "value": 5.0, "units": "W/m**2"}
+    assert check(_conduction(bc)).ok                 # skip: nothing to report
+    strict = check(_conduction(bc), missing_units="error")
+    assert not strict.ok
+    assert all("not checked" in e for e in _errors(strict))
+    assert any("ymf[symbolic]" in e for e in _errors(strict))
+    # a dirichlet condition needs no equation, so it is still decided
+    assert check(_conduction({"type": "dirichlet", "value": 300.0, "units": "K"}),
+                 missing_units="error").ok
