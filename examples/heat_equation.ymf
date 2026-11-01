@@ -54,9 +54,6 @@ model:
         units: K
     coefficients:
       κ: {value: 1.0e-3, units: m2/s}
-    dimensional_check:
-      enabled: true
-      method: automatic
 
   weak_forms:
     - label: "galerkin"

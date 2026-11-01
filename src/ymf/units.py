@@ -15,11 +15,11 @@ Deliberately **non-intrusive** (report §2.1): every function accepts YMF
 documents with no units at all and simply reports "nothing to check" rather
 than raising. Units are an enhancement, never a requirement.
 
-Symbolic parsing of ``strong_form_expression`` term-by-term (report §4.2) is
-explicitly **out of scope** here — it needs a real expression parser and is
-deferred to the ibvp/sympy language layer per the v0.2 delta doc §7. What
-*is* implemented is everything checkable from unit strings already present
-on the parsed document.
+Reading the ``equations`` is ymf.symbolic's job, not this module's. With
+ymf[symbolic] installed, the boundary-condition check uses it to find each
+equation's diffusive flux; without it, those comparisons are reported as
+not checked. Everything else here is checkable from the unit strings
+already present on the parsed document.
 """
 
 from __future__ import annotations
@@ -892,7 +892,7 @@ def non_dimensionalize(doc: Dict[str, Any]) -> Dict[str, Any]:
       pressure), mirroring the report's worked examples (§5.4)
 
     This produces the substitution *relations*, not a symbolic substitution
-    into ``strong_form_expression`` — doing that requires a full sympy-based
+    into the ``equations`` — doing that requires a full sympy-based
     PDE parser and is explicitly deferred (v0.2 delta doc §7: "automatic
     non-dimensionalization pipeline").
     """

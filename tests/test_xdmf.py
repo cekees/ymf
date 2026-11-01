@@ -238,8 +238,7 @@ model:
     provenance: llm_derived
     unknowns: [u]
     equation_formulation: "Poisson"
-    strong_form_expression: |
-      Delta u = f
+    equations: ["−Δu = f  in Ω"]
     domain: |
       unit cube [0,1]^3
     boundary_regions:
