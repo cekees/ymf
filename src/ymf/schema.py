@@ -54,7 +54,6 @@ ICTypeEnum = Enum(["constant", "function", "data_source"])
 
 UnitConventionEnum = Enum(["SI", "CGS", "US", "dimensionless"])
 
-DimCheckMethodEnum = Enum(["automatic", "manual", "off"])
 
 # ---------------------------------------------------------------------------
 # v0.1 building blocks (unchanged)
@@ -140,7 +139,6 @@ DiscretizationEntry = Map(
         Optional("discretization_details"): Str(),
         Optional("proteus_modules"): Map({"physics": Str(), "numerics": Str()}),
         # --- v0.2 additions ---
-        Optional("bmi_interface"): Bool(),
         # How the model is reduced to a computable problem, and so which of
         # the blocks below this entry needs: mesh (the default), neural, or
         # particle. See ymf.discretizations, which also says what each
@@ -362,23 +360,6 @@ CharacteristicScalesDef = MapPattern(Str(), ScaleDef)
 
 DimensionlessNumberDef = Map({"formula": Str(), Optional("value"): Float()})
 
-DimensionalCheckDef = Map(
-    {
-        Optional("enabled"): Bool(),
-        Optional("method"): DimCheckMethodEnum,
-        Optional("tolerance"): Float(),
-    }
-)
-
-UnitSystemDef = Map(
-    {
-        Optional("length"): Str(),
-        Optional("mass"): Str(),
-        Optional("time"): Str(),
-        Optional("temperature"): Str(),
-    }
-)
-
 UnitsDef = Map(
     {
         Optional("convention"): UnitConventionEnum,
@@ -406,7 +387,7 @@ MeshGenerationDef = Map(
 )
 
 # ---------------------------------------------------------------------------
-# StrongFormDef (updated: widened unknowns + new IC/BC/dimensional_check)
+# StrongFormDef (updated: widened unknowns + new IC/BC)
 # ---------------------------------------------------------------------------
 
 StrongFormDef = Map(
@@ -416,9 +397,6 @@ StrongFormDef = Map(
         "provenance": ProvenanceEnum,
         "unknowns": Seq(UnknownDef),  # CHANGED in v0.2: was Seq(Str())
         "equation_formulation": Str(),
-        # Superseded by ``equations``, which is written in the same notation
-        # and read by ymf.symbolic; kept so older documents still validate.
-        Optional("strong_form_expression"): Str(),
         # "Ω = [0, 1] × [0, 1]", optionally ", t ∈ (0, 50]" for the time
         # interval of a transient problem.
         "domain": DomainDef,
@@ -430,11 +408,7 @@ StrongFormDef = Map(
         "boundary_regions": Seq(Map({"name": Str(), "where": Str()})),
         Optional("initial_conditions"): Seq(InitialConditionDef),
         Optional("boundary_conditions"): Seq(BoundaryConditionDef),
-        Optional("known_analytical_solution"): Map(
-            {"formula": Str(), "reference": Str()}
-        ),
         Optional("coefficients"): MapPattern(Str(), CoefficientDef),
-        Optional("dimensional_check"): DimensionalCheckDef,
         # The equations, one string per (vector or scalar) equation, in the
         # notation of ymf.symbolic.notation -- "∂T/∂t = ∇·(κ∇T)  in Ω",
         # "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f" -- ordered like the unknowns.
@@ -443,7 +417,7 @@ StrongFormDef = Map(
 )
 
 # ---------------------------------------------------------------------------
-# Problem (updated: + characteristic_scales, units, unit_systems, mesh_generation)
+# Problem (updated: + characteristic_scales, units, mesh_generation)
 # ---------------------------------------------------------------------------
 
 ModelDef = Map(
@@ -455,7 +429,6 @@ ModelDef = Map(
         Optional("characteristic_scales"): CharacteristicScalesDef,
         Optional("dimensionless_numbers"): MapPattern(Str(), DimensionlessNumberDef),
         Optional("units"): UnitsDef,
-        Optional("unit_systems"): MapPattern(Str(), UnitSystemDef),
         Optional("mesh_generation"): MeshGenerationDef,
     }
 )
@@ -471,8 +444,6 @@ YMF_SCHEMA = Map(
         Optional("vvuq"): Map(
             {Optional("verification"): Any(), Optional("validation"): Any()}
         ),
-        Optional("archive"): Any(),
-        Optional("xdmf"): Any(),
         # File-level keys, see ymf.compose. "extends" names the document
         # this one builds on; "ymf_state" says how far the document has got
         # (abstract, well-posed, discretized, closed: see ymf.state), and is

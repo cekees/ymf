@@ -383,15 +383,15 @@ _is_archive_text = is_archive_text
 
 #: Spellings accepted on input and folded to the canonical one as the file is
 #: read. Keys are lower_case_with_underscores (see "Naming" in
-#: docs/problem-specification.md); these two were capitalized before that rule
-#: was written down.
+#: docs/problem-specification.md). "Problem" was capitalized before that rule
+#: was written down, and "problem" is the key's name before it became "model".
 #:
 #: Folding happens before anything is merged, deliberately. Composition pairs
 #: keys by exact match, so a model writing "Problem:" and a variant writing
 #: "problem:" would not merge -- they would become siblings, and the result
 #: would be a document with two problems. An alias eases a rename; it is not
 #: a standing second spelling.
-_KEY_ALIASES = {"Problem": "model", "problem": "model", "Xdmf": "xdmf"}
+_KEY_ALIASES = {"Problem": "model", "problem": "model"}
 
 
 def _read_text(path: Path) -> str:

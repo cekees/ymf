@@ -5,6 +5,28 @@ closed, newest first, with the commit that closed each, so that nobody has to
 rediscover why a thing is the way it is. Open gaps are in
 [problem-specification.md § Known gaps](problem-specification.md#known-gaps).
 
+## 2026-11
+
+- **2026-11-01: eight keys that nothing read are refused.** The schema
+  accepted them from the v0.1 and v0.2 drafts, and no code in ymf or
+  Proteus read or wrote them, so a document carrying one said something
+  nobody heard. A document that still carries one is now told which key:
+  - `strong_form.strong_form_expression`: superseded by `equations`, which
+    ymf.symbolic reads.
+  - `strong_form.known_analytical_solution`: superseded by
+    `solution_paths.analytical` and `vvuq.verification.reference`.
+  - `strong_form.dimensional_check`: the unit check is `ymf.units.check`,
+    run by whoever wants it; a switch in the document turned nothing on.
+  - `model.unit_systems`: nothing defined what a named system selects; units
+    are given on each unknown, coefficient and condition.
+  - `discretizations[].bmi_interface`: no BMI adapter exists.
+  - top-level `archive` and `xdmf` (and the v0.1 spelling `Xdmf`, which is
+    no longer folded): the archive is its own format, written by a solver
+    and by `ymf.closure`, not a block of the spec.
+
+  `mesh_generation` and `roughness_source` stay for now: `ymf.data_sources`
+  reads them, and whether that module stays is a separate decision.
+
 ## 2026-10
 
 - **2026-10-27: a hot start repeating a time replaces.** The two open

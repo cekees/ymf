@@ -23,7 +23,6 @@ model:
       - name: u
         units: m/s
     equation_formulation: "model"
-    strong_form_expression: "x"
     coefficients:
       mu: {units: Pa*s}
 """

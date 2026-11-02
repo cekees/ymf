@@ -53,7 +53,6 @@ model:                     # required
   characteristic_scales: ... # optional: for non-dimensionalization
   dimensionless_numbers: ... # optional: formulas over the scales
   units: ...                 # optional: {convention: SI|CGS|US|dimensionless}
-  unit_systems: ...          # optional
   mesh_generation: ...       # optional: where a mesh comes from (DEM, filters)
 
 solution_paths:              # required
@@ -61,8 +60,6 @@ solution_paths:              # required
   discretizations: [...]     # stages 4-5, possibly empty
 
 vvuq: ...                    # optional, free-form: verification/validation plans and results
-archive: ...                 # optional, free-form: reserved for output configuration
-Xdmf: ...                    # optional, free-form: legacy, from the v0.1 draft
 
 extends: model.ymf          # optional: the document this one builds on
 ymf_state: abstract          # optional: abstract | well-posed | discretized | closed
@@ -85,11 +82,10 @@ equations themselves, in the [notation](#writing-it-once-the-notation).
 Unknowns are either bare names (`[u, p]`) or structured entries with
 `units`, an optional `std_name`, `provenance`, and `rank` (1 for a vector).
 `ymf.normalize_unknowns()` turns either form into the structured one.
-Optional: `initial_conditions`, `boundary_conditions`, `coefficients`,
-`dimensional_check`. (`strong_form_expression` and
-`known_analytical_solution` are accepted from older documents; they
-duplicate `equations` and the analytical solution path, so new documents
-leave them out.)
+Optional: `initial_conditions`, `boundary_conditions`, `coefficients`.
+(`strong_form_expression`, `known_analytical_solution` and
+`dimensional_check` used to be accepted and are refused now; see
+[changes.md](changes.md).)
 
 ```yaml
 initial_conditions:
@@ -837,10 +833,11 @@ solver derives the weak form from the strong one (Proteus integrates the
 flux terms by parts), and the weak form's `stabilization_method` selects
 what the solver adds.
 
-`vvuq`, `archive` and `Xdmf` are accepted with any content. The intended
-shape of `vvuq` is in [schema v0.1 § 3](history/schema-v0.1.md#3-vvuq-results).
-`archive` is reserved for output configuration. The archive format itself
-is implemented separately; see [archive-format.md](archive-format.md).
+`vvuq` takes `verification` and `validation`, each with any content; the
+reference graph checks `vvuq.verification.reference`. The intended shape of
+the rest is in [schema v0.1 § 3](history/schema-v0.1.md#3-vvuq-results). The
+top-level `archive` and `Xdmf` keys of the v0.1 draft are refused now: the
+archive is its own format, [archive-format.md](archive-format.md).
 
 ## Known gaps
 

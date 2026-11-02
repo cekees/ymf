@@ -1,7 +1,7 @@
 # ============================================================
 # YMF Example: Poisson (heat conduction), v0.2 enriched
 # Demonstrates: structured unknowns with units/std_name,
-# characteristic_scales, dimensional_check, boundary_conditions.
+# characteristic_scales, boundary_conditions.
 # ============================================================
 
 model:
@@ -41,11 +41,6 @@ model:
     coefficients:
       k: "1.0"
       Q: "π²"
-    dimensional_check:
-      enabled: true
-      method: automatic
-      tolerance: 1e-10
-
   weak_forms:
     - label: "global"
       provenance: llm_derived
@@ -72,4 +67,3 @@ solution_paths:
         type: linear
         linear_solver: petsc
         tolerance: 1e-12
-      bmi_interface: true

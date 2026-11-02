@@ -24,7 +24,6 @@ def test_load_v02_enriched_example():
     assert unknowns[0]["std_name"] == "land_surface_temperature"
     bc = doc["model"]["strong_form"]["boundary_conditions"][0]
     assert bc["type"] == "dirichlet"
-    assert doc["solution_paths"]["discretizations"][0]["bmi_interface"] is True
 
 
 def test_rejects_unknown_bc_type():
@@ -35,7 +34,6 @@ model:
     provenance: llm_derived
     unknowns: [u]
     equation_formulation: "x"
-    strong_form_expression: "x"
     domain: "x"
     boundary_regions:
       - name: "a"
@@ -61,7 +59,6 @@ model:
 {provenance}    unknowns:
       - name: u
 {per_unknown}    equation_formulation: "x"
-    strong_form_expression: "x"
     domain: "x"
     boundary_regions:
       - name: "a"
@@ -146,3 +143,48 @@ def test_petsc_options_must_be_a_mapping():
         linear_solver: petsc
         petsc_options: [ksp_type, cg]
 """))
+
+
+# Keys the schema accepted and nothing read, removed 2026-11-01 (docs/changes.md).
+# Each is refused by name, so a document that carries one is told which.
+_BASE = """
+model:
+  name: "p"
+{model}  strong_form:
+    provenance: llm_derived
+    unknowns: [u]
+    equation_formulation: "x"
+    domain: "x"
+    boundary_regions:
+      - {{name: "a", where: "b"}}
+{strong_form}solution_paths:
+  analytical: []
+  discretizations:
+    - name: "d"
+      provenance: human_specified
+      solver: {{type: linear}}
+{discretization}{top}"""
+
+
+@pytest.mark.parametrize("key, where, text", [
+    ("strong_form_expression", "strong_form", '    strong_form_expression: "x"\n'),
+    ("known_analytical_solution", "strong_form",
+     '    known_analytical_solution: {formula: "x", reference: "y"}\n'),
+    ("dimensional_check", "strong_form", "    dimensional_check: {enabled: true}\n"),
+    ("unit_systems", "model", "  unit_systems: {si: {length: m}}\n"),
+    ("bmi_interface", "discretization", "      bmi_interface: true\n"),
+    ("archive", "top", "archive: {}\n"),
+    ("xdmf", "top", "xdmf: {}\n"),
+    ("xdmf", "top", "Xdmf: {}\n"),       # the v0.1 spelling is no longer folded
+])
+def test_a_removed_key_is_refused_by_name(tmp_path, key, where, text):
+    """Loaded from a file, the path on which old spellings used to be folded."""
+    parts = dict(model="", strong_form="", discretization="", top="")
+    path = tmp_path / "p.ymf"
+    path.write_text(_BASE.format(**parts), encoding="utf-8")
+    load_ymf(path)                                   # the base is valid
+    parts[where] = text
+    path.write_text(_BASE.format(**parts), encoding="utf-8")
+    with pytest.raises(strictyaml.YAMLValidationError,
+                       match="unexpected key not in schema '%s'" % text.split(":")[0].strip()):
+        load_ymf(path)
