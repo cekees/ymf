@@ -224,6 +224,7 @@ def test_ymf_extra_with_special_xml_chars_survives_round_trip(tmp_path):
 def test_full_notebook_example_round_trips(tmp_path):
     """End-to-end: the same Problem doc used in YMF-updated.ipynb, plus the
     mesh archive, written and read back through write_xdmf/read_xdmf."""
+    pytest.importorskip("strictyaml")
     from ymf import validate_ymf
 
     poisson_problem_yaml = """

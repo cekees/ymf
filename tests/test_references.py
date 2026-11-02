@@ -15,10 +15,11 @@ bindings.
 
 import pytest
 
+strictyaml = pytest.importorskip("strictyaml")
+
 from ymf import load_ymf
 from ymf.references import YmfReferenceError
 
-strictyaml = pytest.importorskip("strictyaml")
 
 
 def spec(weak_forms, discretizations, analytical="", vvuq="", extra=""):

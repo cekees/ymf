@@ -3,7 +3,8 @@
 from pathlib import Path
 
 import pytest
-import strictyaml
+
+strictyaml = pytest.importorskip("strictyaml")
 
 from ymf.compose import YmfCompositionError
 from ymf.schema import load_ymf

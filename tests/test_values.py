@@ -15,9 +15,10 @@ which reader and how the number was spelled.
 
 import pytest
 
+strictyaml = pytest.importorskip("strictyaml")
+
 from ymf import load_ymf
 
-strictyaml = pytest.importorskip("strictyaml")
 
 
 SPEC = """\
