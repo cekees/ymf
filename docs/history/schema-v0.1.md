@@ -1,6 +1,25 @@
 # YMF — Yet Another Data Model for Physics
 # Draft Schema (v0.1)
 
+> **Superseded draft, kept for its reasoning.** The schema as it is today is described in
+> [problem-specification.md](../problem-specification.md) and implemented by `ymf.schema`.
+> What replaced each part of this draft:
+>
+> - The title expands the old working name. The format is the YAML Modeling Format.
+> - The top-level key `Problem:` is now `model:` (keys are `lower_case_with_underscores`).
+> - The integer index of "two-tier referencing" is gone: a discretization names its weak
+>   form by label, because indices renumber when composition removes an entry.
+> - `branch_ref` is now `vvuq.verification.reference.analytical`, one of four checked
+>   reference edges.
+> - `unknown_provenance` is now `provenance`.
+> - § 4 "Archive Configuration" and § 5 "XDMF Preservation" are superseded by
+>   [archive-format.md](../archive-format.md). The principle that every XDMF document is a
+>   valid YMF document under `Xdmf` was dropped: the archive is its own model, and
+>   [xdmf-model.yaml](../xdmf-model.yaml) says which parts of XDMF it holds.
+>
+> § 3 "VVUQ Results" is still the only description of the intended shape of `vvuq`.
+
+
 A structured, human- and LLM-editable format for describing physical
 models, numerical discretizations, and VVUQ results, with support for
 branching across formulations, solution paths, and solver backends.

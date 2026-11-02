@@ -4,7 +4,7 @@ A YMF archive is how a simulation records its output: the heavy arrays go
 in HDF5, and a small YAML document (`.ymf`) says what each array is — which
 mesh, which time, which field, what shape and type. This half of YMF is
 implemented, tested against real solver output, and is what Proteus writes
-on its `ymf_io` branch.
+on its 2.0 line (`main`).
 
 The code is `ymf.archive` (data model and YAML I/O), `ymf.xdmf` (conversion
 to XDMF), and the `ymf2xmf` command. All three depend on `pyyaml` alone.
@@ -16,8 +16,10 @@ which parts a `.ymf` archive represents.
 An archive takes two forms. **The archive of a spec** is the problem
 specification as realized, followed by every output computed from it;
 `ymf.closure` reads and writes it, and Proteus's `ymf_run` produces it.
-Its outputs each hold an approximation in **the solver's form**, the
-`domain` tree a solver writes and the rest of this page describes.
+Its outputs each hold an approximation in **the solver's form**: the
+time/space/field tree a solver writes, which the rest of this page describes.
+The same tree is called `domain` at the top of a solver's own document and
+`approximation` inside an output of the archive of a spec.
 
 - [The archive of a spec](#the-archive-of-a-spec)
 - [Files on disk](#files-on-disk)
@@ -60,7 +62,7 @@ outputs:
       solve: {by: {ymf: ..., proteus_git: ..., numpy: ..., platform: ...}, created: ...}
     storage: poisson_2365d177bb1f.h5        # or: inline
     verification: {l2_errors: {u: 0.0105...}}
-    approximation: {times: [...]}           # the solver's domain tree
+    approximation: {times: [...]}           # the solver's time/space/field tree
     reproduced: [{created: ..., by: {...}}] # each rerun that matched, bitwise
 ```
 
@@ -472,8 +474,8 @@ as they are written and the full document once, at close.
 
 ## Use in Proteus
 
-Proteus's `ymf_io` branch (aimed at the 2.0 line) replaces its hand-built
-XDMF XML with this model:
+Proteus's 2.0 line (`main`, since the `ymf_io` branch merged) replaces its
+hand-built XDMF XML with this model:
 
 - Every field goes through one `write_field` call, which builds its
   `Attribute` + `DataItem`. Fields beyond the solution itself are declared
@@ -497,7 +499,7 @@ domain used to hold one temporal collection per function space, each with
 its own list of instants, because XDMF does; it now holds one list of
 instants with the spaces inside each. The reasons, the migration and the
 Proteus changes are in
-[design-time-outside-space.md](design-time-outside-space.md). In short:
+[design/time-outside-space.md](design/time-outside-space.md). In short:
 the Proteus writer already refused a space missing at an instant; an
 instant is now the unit of an appended record, so a killed run loses a whole
 instant and never one space of it; and `append_step` no longer names

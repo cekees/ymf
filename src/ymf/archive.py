@@ -66,7 +66,7 @@ order of the names is the order they were first archived in.
 Format 1 nested the other way, ``{"time_collections": [{"name": str, "data":
 [step, ...]}, ...]}``; it is still accepted everywhere and
 :func:`canonicalize_domain` upgrades it. See
-docs/design-time-outside-space.md.
+docs/design/time-outside-space.md.
 
 A space at an instant takes exactly one of two forms:
 
@@ -198,7 +198,7 @@ ARCHIVE_FORMAT_VERSION = 2
 #: space (``time_collections``, one per space); format 2 nests space inside
 #: time (``times``, each instant holding its ``spaces``). A format 1
 #: document is upgraded in memory on read and never written; see
-#: docs/design-time-outside-space.md.
+#: docs/design/time-outside-space.md.
 _READABLE_FORMAT_VERSIONS = (1, 2)
 
 #: Separators framing an appended step. The end marker is YAML's explicit

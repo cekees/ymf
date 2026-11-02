@@ -1,7 +1,7 @@
 """Geospatial/environmental data-sourcing helpers for YMF.
 
 Implements the "short-term integration" items from
-``docs/data-sources-report.md`` §7:
+``docs/research/data-sources.md`` §7:
 
 - A land-cover -> Manning's n lookup table (Arcement & Schneider 1989 /
   Chow 1959 reference ranges, report §4.1), driving ``roughness_source``
@@ -179,7 +179,7 @@ class DataSourceInfo:
     license: str
 
 
-# Catalog transcribed from data-sources-report.md so source names/URLs used
+# Catalog transcribed from research/data-sources.md so source names/URLs used
 # in YMF ``source``/``source_url`` fields can be validated against a known
 # registry (report §7: "Add `url` field to reference data sources directly
 # in the YAML"). Not exhaustive relative to the report — covers every
@@ -278,7 +278,7 @@ def validate_source_record(record: Dict[str, Any]) -> List[str]:
     if known is None:
         warnings.append(
             f"source {source!r} is not in the known data source catalog "
-            "(not an error — just unverified against docs/data-sources-report.md)"
+            "(not an error — just unverified against docs/research/data-sources.md)"
         )
         return warnings
 

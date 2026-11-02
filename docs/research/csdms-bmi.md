@@ -1,5 +1,17 @@
 # CSDMS Standard Names and BMI Integration for YMF
 
+> **Background research.** Drafted with an LLM research agent and not all checked against its sources. Treat specific numbers and API names as leads to verify, not facts.
+>
+> **This report contains known errors.**
+>
+> - CSDMS is the *Community Surface Dynamics Modeling System*, not what § 1 says.
+> - The registry fetched at the time listed 2,653 names, not "~4,000+".
+> - The real naming grammar is `object__quantity` (double underscore), not the pattern given here.
+> - Its "Registry API" section and example variable names were never confirmed against a source.
+>
+> Nothing in `src/` reads it. The `bmi_interface` schema key it proposed has no consumer.
+
+
 A report on integrating CSDMS Standard Names and the Basic Model Interface (BMI) into the YAML Modeling Format (YMF) for computational physics.
 
 ---

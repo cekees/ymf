@@ -1,8 +1,8 @@
 """strictyaml schema validators for YMF v0.2.
 
 This module implements the schema described in
-``docs/ymf-schema-v0.2-delta.md``, merged on top of the v0.1 schema in
-``docs/ymf-schema.md``. Relative to v0.1, ``unknowns`` widens its
+``docs/history/schema-v0.2-delta.md``, merged on top of the v0.1 schema in
+``docs/history/schema-v0.1.md``. Relative to v0.1, ``unknowns`` widens its
 accepted type (bare string OR structured map), and the strong form's
 ``unknown_provenance`` is replaced by ``provenance``, the key every other
 block uses; a structured unknown may carry its own ``provenance`` to
