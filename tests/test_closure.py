@@ -7,7 +7,7 @@ import pytest
 from ymf import closure
 from ymf.archive import time_collections  # noqa: E402
 from ymf.archive import (YmfArchiveError, add_uniform_step, data_item, geometry,
-                         new_domain, read_document, topology)
+                         new_approximation, read_document, topology)
 
 EXAMPLES = Path(__file__).parent.parent / "examples"
 MESH = "      mesh: {cells: [4, 8], levels: 2}\n"
@@ -29,7 +29,7 @@ def spec_with_mesh(tmp_path, mesh=MESH, name="poisson.ymf"):
 
 def fake_output(realization):
     """An output holding one inline, two-point grid."""
-    domain = new_domain()
+    domain = new_approximation()
     nodes = data_item([2, 2], values=[0.0, 0.0, 1.0, 1.0])
     vertices = data_item([2], values=[0, 1], data_type="Int", precision=4)
     add_uniform_step(domain, 0.0, topology("Polyvertex", 2, vertices, nodes_per_element=1),
@@ -111,7 +111,7 @@ def test_extending_an_archive_keeps_only_outputs_whose_input_is_unchanged(tmp_pa
     assert set(outputs) < set(planned) and len(planned) == 3
 
     # changing the problem invalidates every inherited output
-    child.write_text("extends: poisson.archive.ymf\nProblem:\n  name: Changed\n",
+    child.write_text("extends: poisson.archive.ymf\nmodel:\n  name: Changed\n",
                      encoding="utf-8")
     _, kept, dropped = closure.load(child)
     assert kept == {} and set(dropped) == set(outputs)
@@ -129,7 +129,7 @@ def test_a_kept_differing_rerun_is_matched_by_its_base_key(tmp_path):
 
 def test_a_document_from_a_newer_ymf_is_refused(tmp_path):
     path = tmp_path / "future.ymf"
-    path.write_text("ymf: 999.0.0\nProblem: {name: x}\n", encoding="utf-8")
+    path.write_text("ymf: 999.0.0\nmodel: {name: x}\n", encoding="utf-8")
     with pytest.raises(YmfArchiveError, match="newer than this ymf"):
         read_document(path)
 
@@ -150,13 +150,13 @@ def test_ymf2xmf_writes_one_xmf_per_output(tmp_path):
 
 
 def test_inherited_outputs_still_point_at_their_files(tmp_path):
-    from ymf.archive import canonicalize_domain
+    from ymf.archive import canonicalize_approximation
     base = tmp_path / "base"
     base.mkdir()
     spec, _, _ = closure.load(spec_with_mesh(base, mesh="      mesh: {cells: 4}\n"))
     (key, _, r), = closure.planned_outputs(spec)
     output = fake_output(r)
-    domain = canonicalize_domain(output["approximation"])
+    domain = canonicalize_approximation(output["approximation"])
     time_collections(domain)[0]["data"][0]["geometry"]["data_item"] = data_item(
         [2, 2], "poisson_x.h5:/nodes")
     output["approximation"] = domain

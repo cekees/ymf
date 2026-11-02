@@ -41,7 +41,7 @@ was realized, then what was computed from it.
 
 ```yaml
 ymf: 0.2.1                      # the ymf that wrote it; a newer one is refused on read
-Problem: {...}                  # the spec, composed and as realized: no extends,
+model: {...}                    # the spec, composed and as realized: no extends,
 solution_paths: {...}           #   every override listed under composition
 vvuq: {...}
 composition: {sources: [...], overrides: [...]}
@@ -166,7 +166,7 @@ ymf_archive_version: 2        # refused on read if it isn't a version this ymf k
 domain:                       # the time/space/field tree -- see below
   times: [...]
 extra:                        # optional: anything with no XDMF equivalent
-  Problem: {...}              #   typically the problem spec that produced the run
+  model: {...}                #   typically the problem spec that produced the run
   solution_paths: {...}
 ```
 
@@ -210,7 +210,7 @@ domain:
   - time: 10.0
     ...
 extra:
-  Problem:
+  model:
     name: Transient heat conduction, unit square
     ...
 ```
@@ -219,6 +219,15 @@ extra:
 only to keep the listing short.)
 
 ## The domain model
+
+The functions that build and check this tree are named for what it is in
+the archive of a spec, an *approximation*: `new_approximation`,
+`validate_approximation`, `canonicalize_approximation`,
+`select_approximation`, `inline_approximation`, `rebase_approximation`,
+`approximation_arrays`. The names they had before 2026-11 (`new_domain`,
+...) are aliases, kept for one release, so that `domain` can mean the region
+a problem is posed on. The solver file's `domain:` key is unchanged: it is
+part of `ymf_archive_version: 2`.
 
 A domain is plain dicts and lists — no classes — so it costs nothing to
 build, gathers across MPI natively, and serializes directly.
@@ -275,7 +284,7 @@ of a domain, `space_names(domain)` and `series(domain, name)`;
 (`transpose_collections`): steps of different spaces are joined on exact
 time, a repeated time pairs up by occurrence, and a space missing at a time
 is omitted from that instant. Nothing is rewritten on disk. Code that built
-a domain with `new_domain(name)` / `add_collection` / `add_uniform_step(...,
+a domain with `new_approximation(name)` / `add_collection` / `add_uniform_step(...,
 collection=)` keeps working and is upgraded when the domain is validated or
 written; `{"time_collection": {...}}` (singular) is accepted as before.
 
@@ -291,7 +300,7 @@ is rejected when the archive is written:
 | `data_type` | `Float Int UInt Char UChar` |
 | `format` | `HDF XML Binary` |
 
-**Defaults.** `canonicalize_domain()` fills every defaultable field
+**Defaults.** `canonicalize_approximation()` fills every defaultable field
 explicitly, and the file on disk is always canonical. The one default worth
 knowing is that XDMF's default `Precision` is **4** bytes, which is wrong
 for `float64`. Use `data_item_for()`, which reads the precision off the
@@ -306,10 +315,10 @@ disagree with what's in the file.
 
 ```python
 import h5py, numpy as np
-from ymf.archive import (new_domain, add_instant, uniform_grid, topology, geometry,
+from ymf.archive import (new_approximation, add_instant, uniform_grid, topology, geometry,
                          attribute, data_item_for, write_ymf)
 
-domain = new_domain()
+domain = new_approximation()
 with h5py.File("heat.h5", "w") as h5:
     h5["nodes"], h5["elements"] = nodes, elements          # mesh written once
     topo = topology("Triangle", len(elements), data_item_for(elements, "heat.h5:/elements"))
@@ -320,7 +329,7 @@ with h5py.File("heat.h5", "w") as h5:
             attribute("T", data_item_for(T, "heat.h5:/T_t%d" % k)),
         ])})
 
-write_ymf(domain, "heat.ymf", extra={"Problem": problem})
+write_ymf(domain, "heat.ymf", extra=problem)    # the spec: model, solution_paths, ...
 ```
 
 [`examples/write_archive.py`](../examples/write_archive.py) is the
@@ -400,7 +409,7 @@ YMF splits checking across a trust boundary:
 - A **solver** trusts the validated input and writes the archive. On that
   path the checks are only structural and cost O(1) per field.
 
-`write_ymf()` runs `validate_domain()` by default. It checks required keys,
+`write_ymf()` runs `validate_approximation()` by default. It checks required keys,
 the closed sets above, and that no grid has two fields with the same name
 and centering (viewers key fields by name within point data and within
 cell data, so a duplicate silently hides the first; the same name cell-
@@ -441,7 +450,7 @@ wrote view.xmf
 `-c/--collection` (a name or part of one), `-f/--field` and `-s/--steps`
 (Python indices and slices: `-1`, `0:10`, `::5`) cherry-pick what the `.xmf`
 describes; the `.ymf` is never changed. In code the same selection is
-`ymf.archive.select_domain(domain, collections=, fields=, steps=)`.
+`ymf.archive.select_approximation(domain, collections=, fields=, steps=)`.
 
 ParaView and VisIt open the `.xmf` directly. `extra` is carried into it as
 a base64-encoded JSON `<Information Name="YMF" Value="..."/>` element, a

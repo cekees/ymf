@@ -3,7 +3,7 @@ from xml.etree.ElementTree import parse
 
 import pytest
 
-from ymf.archive import canonicalize_domain, time_collections  # noqa: E402
+from ymf.archive import canonicalize_approximation, time_collections  # noqa: E402
 from ymf.archive import (
     YmfArchiveError,
     add_spatial_step,
@@ -12,9 +12,9 @@ from ymf.archive import (
     data_item,
     geometry,
     grid,
-    new_domain,
+    new_approximation,
     read_ymf,
-    select_domain,
+    select_approximation,
     step_indices,
     topology,
     write_ymf,
@@ -24,7 +24,7 @@ from ymf.cli import describe, interactive_selection, ymf2xmf, ymf2xmf_main
 
 def two_spaces(n_steps=4, spatial=False):
     """Two collections, several fields, n_steps instants; a Proteus-shaped archive."""
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_approximation("Mesh Spatial_Domain")
     quadratic = {"name": "Mesh_c0p2_Lagrange", "data": []}
     domain["time_collections"].append(quadratic)
     for i in range(n_steps):
@@ -79,25 +79,25 @@ def test_a_step_the_archive_does_not_have_is_refused():
 
 
 # --------------------------------------------------------------------------
-# select_domain
+# select_approximation
 # --------------------------------------------------------------------------
 
 
 def test_everything_is_kept_by_default():
     domain = two_spaces()
-    assert select_domain(domain) == canonicalize_domain(domain)
+    assert select_approximation(domain) == canonicalize_approximation(domain)
 
 
 def test_a_collection_is_picked_by_name_or_part_of_it():
     domain = two_spaces()
-    assert names_of(select_domain(domain, collections=["Mesh Spatial_Domain"])) == ["Mesh Spatial_Domain"]
-    assert names_of(select_domain(domain, collections=["c0p2"])) == ["Mesh_c0p2_Lagrange"]
+    assert names_of(select_approximation(domain, collections=["Mesh Spatial_Domain"])) == ["Mesh Spatial_Domain"]
+    assert names_of(select_approximation(domain, collections=["c0p2"])) == ["Mesh_c0p2_Lagrange"]
     with pytest.raises(YmfArchiveError, match="no collection matches 'dgp1'"):
-        select_domain(domain, collections=["dgp1"])
+        select_approximation(domain, collections=["dgp1"])
 
 
 def test_fields_are_picked_on_every_grid():
-    picked = select_domain(two_spaces(), fields=["p"])
+    picked = select_approximation(two_spaces(), fields=["p"])
     base, quadratic = time_collections(picked)
     assert all(fields_of(step) == ["p"] for step in base["data"])
     # the quadratic space has no p: its grids keep their mesh and lose their fields
@@ -106,27 +106,27 @@ def test_fields_are_picked_on_every_grid():
 
 
 def test_fields_are_picked_inside_spatial_collections():
-    picked = select_domain(two_spaces(spatial=True), fields=["u"], collections=["Spatial"])
+    picked = select_approximation(two_spaces(spatial=True), fields=["u"], collections=["Spatial"])
     for step in time_collections(picked)[0]["data"]:
         assert [fields_of(g) for g in step["spatial_collection"]] == [["u"], ["u"]]
 
 
 def test_an_unknown_field_is_refused_with_what_there_is():
     with pytest.raises(YmfArchiveError, match="no field named 'phi'.*'p', 'u', 'u2', 'vof'"):
-        select_domain(two_spaces(), fields=["phi"])
+        select_approximation(two_spaces(), fields=["phi"])
 
 
 def test_steps_apply_to_every_collection():
-    picked = select_domain(two_spaces(), steps="-1")
+    picked = select_approximation(two_spaces(), steps="-1")
     for c in time_collections(picked):
         assert [s["time"] for s in c["data"]] == [pytest.approx(0.3)]
-    picked = select_domain(two_spaces(), steps="::2")
+    picked = select_approximation(two_spaces(), steps="::2")
     assert [s["time"] for s in time_collections(picked)[0]["data"]] == [0.0, pytest.approx(0.2)]
 
 
 def test_the_source_is_not_modified():
     domain = two_spaces()
-    select_domain(domain, collections=["c0p2"], fields=["u2"], steps="0")
+    select_approximation(domain, collections=["c0p2"], fields=["u2"], steps="0")
     assert names_of(domain) == ["Mesh Spatial_Domain", "Mesh_c0p2_Lagrange"]
     assert fields_of(time_collections(domain)[0]["data"][3]) == ["u", "p", "vof"]
 

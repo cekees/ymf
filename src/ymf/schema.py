@@ -417,7 +417,7 @@ StrongFormDef = Map(
 )
 
 # ---------------------------------------------------------------------------
-# Problem (updated: + characteristic_scales, units, mesh_generation)
+# model (updated: + characteristic_scales, units, mesh_generation)
 # ---------------------------------------------------------------------------
 
 ModelDef = Map(
@@ -461,7 +461,7 @@ YMF_SCHEMA = Map(
         }),
         Optional("composition"): Any(),
         # "remove" lists paths this file drops from what it extends --
-        # "Problem.physical_model.assumptions[incompressible]". Composition
+        # "model.physical_model.assumptions[incompressible]". Composition
         # could only add and change before, so dropping an assumption or a
         # field took a new model file even when the change was one line.
         Optional("remove"): Seq(Str()),

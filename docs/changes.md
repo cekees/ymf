@@ -7,6 +7,23 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-01: one name per thing: `model` and `approximation`.** The spec's
+  top-level key has been `model` since a66ea1c, and the archive of a spec
+  stores the realized spec under the key the spec uses, so it has written
+  `model` since then too. The README, the archive guide and several
+  docstrings still showed `Problem:`; they now say `model:`. `Problem:` and
+  `problem:` still read as `model:`.
+  The functions that build and check the tree a solver writes were named
+  for a *domain*, which is also the region a problem is posed on
+  (`model.strong_form.domain`, `ymf.domain`). They are now named for an
+  *approximation*, which is what the archive of a spec already called that
+  tree (`outputs[key].approximation`): `new_approximation`,
+  `validate_approximation`, `canonicalize_approximation`,
+  `select_approximation`, `rebase_approximation`, `inline_approximation`,
+  `approximation_arrays`. The old names are the same functions, kept for one
+  release; a release should warn before they go. The solver file's
+  `domain:` key and the functions' parameter names are unchanged: the key
+  is part of `ymf_archive_version: 2`.
 - **2026-11-01: eight keys that nothing read are refused.** The schema
   accepted them from the v0.1 and v0.2 drafts, and no code in ymf or
   Proteus read or wrote them, so a document carrying one said something

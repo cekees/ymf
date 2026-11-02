@@ -4,7 +4,7 @@ import pytest
 
 from ymf.xdmf import (
     build_xdmf_tree,
-    canonicalize_domain,
+    canonicalize_approximation,
     parse_xdmf_domain,
     parse_xdmf_extra,
     read_xdmf,
@@ -88,26 +88,26 @@ def test_build_xdmf_tree_basic_structure():
 def test_domain_round_trips_via_parse_xdmf_domain():
     tree = build_xdmf_tree(SAMPLE_DOMAIN)
     parsed = parse_xdmf_domain(tree.getroot())
-    assert parsed == canonicalize_domain(SAMPLE_DOMAIN)
+    assert parsed == canonicalize_approximation(SAMPLE_DOMAIN)
 
 
 def test_write_then_read_xdmf_domain_only(tmp_path):
     path = tmp_path / "test.xmf"
     write_xdmf(SAMPLE_DOMAIN, path)
     domain, ymf_extra = read_xdmf(path)
-    assert domain == canonicalize_domain(SAMPLE_DOMAIN)
+    assert domain == canonicalize_approximation(SAMPLE_DOMAIN)
     assert ymf_extra is None
 
 
 def test_canonicalize_domain_is_idempotent():
-    once = canonicalize_domain(SAMPLE_DOMAIN)
-    twice = canonicalize_domain(once)
+    once = canonicalize_approximation(SAMPLE_DOMAIN)
+    twice = canonicalize_approximation(once)
     assert once == twice
 
 
 def test_canonicalize_domain_fills_precision_default():
     # SAMPLE_DOMAIN's Topology DataItem has no explicit Precision.
-    canonical = canonicalize_domain(SAMPLE_DOMAIN)
+    canonical = canonicalize_approximation(SAMPLE_DOMAIN)
     topo_data_item = time_collections(canonical)[0]["data"][0]["topology"]["data_item"]
     assert topo_data_item["precision"] == 4  # XDMF default for Int
 
@@ -176,7 +176,7 @@ def test_write_then_read_xdmf_with_ymf_extra(tmp_path):
     path = tmp_path / "test.xmf"
     write_xdmf(SAMPLE_DOMAIN, path, ymf_extra=SAMPLE_YMF_EXTRA)
     domain, ymf_extra = read_xdmf(path)
-    assert domain == canonicalize_domain(SAMPLE_DOMAIN)
+    assert domain == canonicalize_approximation(SAMPLE_DOMAIN)
     assert ymf_extra == SAMPLE_YMF_EXTRA
 
 
@@ -222,7 +222,7 @@ def test_ymf_extra_with_special_xml_chars_survives_round_trip(tmp_path):
 
 
 def test_full_notebook_example_round_trips(tmp_path):
-    """End-to-end: the same Problem doc used in YMF-updated.ipynb, plus the
+    """End-to-end: the same spec used in YMF-updated.ipynb, plus the
     mesh archive, written and read back through write_xdmf/read_xdmf."""
     pytest.importorskip("strictyaml")
     from ymf import validate_ymf
@@ -264,7 +264,7 @@ solution_paths:
     write_xdmf(SAMPLE_DOMAIN, path, ymf_extra=problem_doc)
     domain, ymf_extra = read_xdmf(path)
 
-    assert domain == canonicalize_domain(SAMPLE_DOMAIN)
+    assert domain == canonicalize_approximation(SAMPLE_DOMAIN)
     assert ymf_extra == problem_doc
     assert ymf_extra["model"]["name"] == "Poisson 3D (unit cube, tetrahedral mesh)"
 
@@ -283,13 +283,13 @@ from ymf.archive import (  # noqa: E402  (grouped with the tests that use it)
     data_item,
     geometry,
     grid,
-    new_domain,
+    new_approximation,
     topology,
 )
 
 
 def _uniform_with_attributes():
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_approximation("Mesh Spatial_Domain")
     add_uniform_step(
         domain,
         0.0,
@@ -313,7 +313,7 @@ def _uniform_with_attributes():
 
 
 def _spatial(n_ranks=3):
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_approximation("Mesh Spatial_Domain")
     grids = [
         grid(
             topology("Triangle", 10 + r, data_item([10 + r, 3], f"out.h5:/e_p{r}", data_type="Int")),
@@ -341,7 +341,7 @@ def test_attributes_are_written_as_xdmf_attribute_elements():
 
 def test_attributes_round_trip():
     domain = _uniform_with_attributes()
-    assert parse_xdmf_domain(build_xdmf_tree(domain).getroot()) == canonicalize_domain(domain)
+    assert parse_xdmf_domain(build_xdmf_tree(domain).getroot()) == canonicalize_approximation(domain)
 
 
 def test_attributes_round_trip_through_a_file():
@@ -366,7 +366,7 @@ def test_spatial_collection_is_written_as_a_nested_collection_grid():
 
 def test_spatial_collection_round_trips():
     domain = _spatial()
-    assert parse_xdmf_domain(build_xdmf_tree(domain).getroot()) == canonicalize_domain(domain)
+    assert parse_xdmf_domain(build_xdmf_tree(domain).getroot()) == canonicalize_approximation(domain)
 
 
 def test_spatial_collection_round_trips_through_a_file():
@@ -374,7 +374,7 @@ def test_spatial_collection_round_trips_through_a_file():
 
 
 def test_nodes_per_element_is_written_and_round_trips():
-    domain = new_domain()
+    domain = new_approximation()
     add_uniform_step(
         domain,
         0.0,
@@ -384,11 +384,11 @@ def test_nodes_per_element_is_written_and_round_trips():
     root = build_xdmf_tree(domain).getroot()
     topo_elem = root.find("Domain").find("Grid").find("Grid").find("Topology")
     assert topo_elem.attrib["NodesPerElement"] == "2"
-    assert parse_xdmf_domain(root) == canonicalize_domain(domain)
+    assert parse_xdmf_domain(root) == canonicalize_approximation(domain)
 
 
 def test_absent_nodes_per_element_stays_absent():
-    domain = new_domain()
+    domain = new_approximation()
     add_uniform_step(
         domain,
         0.0,
@@ -402,7 +402,7 @@ def test_absent_nodes_per_element_stays_absent():
 
 
 def _text_include_domain():
-    domain = new_domain()
+    domain = new_approximation()
     add_uniform_step(
         domain,
         0.0,
@@ -450,7 +450,7 @@ def test_each_text_include_attaches_to_its_own_data_item():
 
 def test_text_include_data_items_round_trip():
     domain = _text_include_domain()
-    assert parse_xdmf_domain(build_xdmf_tree(domain).getroot()) == canonicalize_domain(domain)
+    assert parse_xdmf_domain(build_xdmf_tree(domain).getroot()) == canonicalize_approximation(domain)
 
 
 def test_text_include_round_trips_through_a_file():
@@ -458,7 +458,7 @@ def test_text_include_round_trips_through_a_file():
 
 
 def test_mixed_hdf_and_text_data_items_in_one_grid_round_trip():
-    domain = new_domain()
+    domain = new_approximation()
     add_uniform_step(
         domain,
         0.0,
@@ -476,7 +476,7 @@ def test_mixed_hdf_and_text_data_items_in_one_grid_round_trip():
 
 from xml.etree.ElementTree import fromstring
 
-from ymf.archive import YmfArchiveError, validate_domain
+from ymf.archive import YmfArchiveError, validate_approximation
 
 #: An XDMF 3 file in the most basic layout: one uniform grid directly in the
 #: Domain, XDMF 3 attribute names, HDF5 data.
@@ -527,7 +527,7 @@ def test_a_bare_uniform_grid_reads_as_a_one_step_collection(tmp_path):
     # XDMF defaults: Scalar, Float
     assert step["attributes"][0]["attribute_type"] == "Scalar"
     assert step["attributes"][0]["data_item"]["data_type"] == "Float"
-    validate_domain(domain)
+    validate_approximation(domain)
 
 
 def test_a_bare_uniform_grid_keeps_its_time():
@@ -540,7 +540,7 @@ def test_unnamed_top_level_grids_are_numbered_so_names_stay_unique():
         "<Grid>" + TRIANGLE + XYZ + "</Grid>", "<Grid>" + TRIANGLE + XYZ + "</Grid>")
     domain = _read(text)
     assert [c["name"] for c in time_collections(domain)] == ["Grid 0", "Grid 1"]
-    validate_domain(domain)
+    validate_approximation(domain)
 
 
 def test_a_top_level_spatial_collection_reads_as_one_spatial_step():
@@ -591,7 +591,7 @@ def test_inline_values_must_be_numbers_of_the_declared_type():
 
 def test_a_self_contained_domain_round_trips_through_xmf_exactly():
     from ymf.archive import data_item as di
-    domain = new_domain("mesh")
+    domain = new_approximation("mesh")
     add_uniform_step(
         domain, 0.5,
         topology("Triangle", 2, di([2, 3], values=[[0, 1, 3], [0, 3, 2]], data_type="Int")),
@@ -605,7 +605,7 @@ def test_a_self_contained_domain_round_trips_through_xmf_exactly():
 
 def test_inline_values_are_written_as_rows(tmp_path):
     from ymf.archive import data_item as di
-    domain = new_domain("mesh")
+    domain = new_approximation("mesh")
     add_uniform_step(
         domain, 0.0,
         topology("Triangle", 2, di([2, 3], values=[0, 1, 3, 0, 3, 2], data_type="Int")),

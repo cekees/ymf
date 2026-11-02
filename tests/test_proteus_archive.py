@@ -40,9 +40,9 @@ import pytest
 
 from ymf.archive import time_collections  # noqa: E402
 from ymf.archive import (
-    canonicalize_domain,
+    canonicalize_approximation,
     read_ymf,
-    validate_domain,
+    validate_approximation,
     write_ymf,
 )
 from ymf.xdmf import parse_xdmf_domain, write_xdmf
@@ -99,7 +99,7 @@ def test_real_proteus_archive_parses_into_the_domain_model(path):
 def test_real_proteus_archive_passes_structural_validation(path):
     # If Proteus's own output fails YMF's structural checks, the checks are
     # wrong -- Proteus's archives are the ground truth here.
-    validate_domain(_parse(path))
+    validate_approximation(_parse(path))
 
 
 @pytest.mark.parametrize("path", FIXTURES, ids=lambda p: p.stem)
@@ -107,7 +107,7 @@ def test_real_proteus_archive_round_trips_through_yaml(path, tmp_path):
     domain = _parse(path)
     ymf_path = tmp_path / "archive.ymf"
     write_ymf(domain, ymf_path)
-    assert read_ymf(ymf_path)[0] == canonicalize_domain(domain)
+    assert read_ymf(ymf_path)[0] == canonicalize_approximation(domain)
 
 
 @pytest.mark.parametrize("path", FIXTURES, ids=lambda p: p.stem)
@@ -116,7 +116,7 @@ def test_real_proteus_archive_survives_the_full_pipeline(path, tmp_path):
 
     This is the Phase 0 exit criterion.
     """
-    original = canonicalize_domain(_parse(path))
+    original = canonicalize_approximation(_parse(path))
 
     ymf_path = tmp_path / "archive.ymf"
     write_ymf(original, ymf_path)
@@ -153,7 +153,7 @@ def test_reemitted_xmf_preserves_every_hdf5_dataset_reference(path, tmp_path):
 
     original = _parse(path)
     xmf_path = tmp_path / "reemitted.xmf"
-    write_xdmf(canonicalize_domain(original), xmf_path)
+    write_xdmf(canonicalize_approximation(original), xmf_path)
     assert references(_parse(xmf_path)) == references(original)
 
 
@@ -170,7 +170,7 @@ def test_reemitted_xmf_differs_from_proteus_only_in_explicit_defaults(path, tmp_
         elem.attrib for elem in et_parse(path).getroot().iter("DataItem")
     ]
     xmf_path = tmp_path / "reemitted.xmf"
-    write_xdmf(canonicalize_domain(_parse(path)), xmf_path)
+    write_xdmf(canonicalize_approximation(_parse(path)), xmf_path)
     reemitted_items = [
         elem.attrib for elem in et_parse(xmf_path).getroot().iter("DataItem")
     ]

@@ -1,4 +1,4 @@
-"""The YMF archive core: the domain data model, plus YAML read/write.
+"""The YMF archive core: the approximation data model, plus YAML read/write.
 
 This is the module simulation codes depend on. Its **only** third-party
 dependency is ``pyyaml`` -- deliberately, so that a solver like Proteus can
@@ -48,6 +48,19 @@ between ``CSafeDumper`` and the pure-Python fallback is large enough to be
 worth knowing about, so :func:`require_libyaml` is provided for callers on
 a hot path to assert on it rather than silently degrade.
 
+The approximation tree
+----------------------
+The tree a solver writes is an *approximation*: the name the archive of a
+spec gives it (``outputs[key].approximation``), and the name of the
+functions that build and check it (:func:`new_approximation`,
+:func:`validate_approximation`, ...). ``domain`` is left meaning the region
+a problem is posed on, ``model.strong_form.domain`` (see ``ymf.domain``).
+The older names (``new_domain``, ``validate_domain``, ...) are aliases of
+the new ones, kept for one release. A solver's own ``.ymf`` file still
+stores the tree under its ``domain:`` key; that is the file format, and it
+changes only with ``ymf_archive_version``. Below, and in parameter names,
+"domain" still means this tree.
+
 The domain model
 ----------------
 A *domain* is a plain dict -- no classes, no schema objects, so it costs
@@ -65,7 +78,7 @@ order of the names is the order they were first archived in.
 
 Format 1 nested the other way, ``{"time_collections": [{"name": str, "data":
 [step, ...]}, ...]}``; it is still accepted everywhere and
-:func:`canonicalize_domain` upgrades it. See
+:func:`canonicalize_approximation` upgrades it. See
 docs/design/time-outside-space.md.
 
 A space at an instant takes exactly one of two forms:
@@ -98,9 +111,9 @@ dependency. ``ymf2xmf`` writes them as the DataItem's text, as XDMF does.
 
 Build these with the constructor helpers below (:func:`data_item`,
 :func:`attribute`, :func:`topology`, :func:`geometry`, :func:`grid`,
-:func:`new_domain`, :func:`add_uniform_step`, :func:`add_spatial_step`)
+:func:`new_approximation`, :func:`add_uniform_step`, :func:`add_spatial_step`)
 rather than by hand -- they apply defaults consistently, which is what
-makes :func:`canonicalize_domain` able to state a complete list of
+makes :func:`canonicalize_approximation` able to state a complete list of
 defaultable fields instead of guessing.
 
 ``ymf.xdmf`` converts a domain built here into an ``.xmf`` file that
@@ -144,7 +157,7 @@ __all__ = [
     "topology",
     "geometry",
     "grid",
-    "new_domain",
+    "new_approximation",
     "add_instant",
     "uniform_grid",
     "spatial_grid",
@@ -155,9 +168,9 @@ __all__ = [
     "add_collection",
     "add_uniform_step",
     "add_spatial_step",
-    "canonicalize_domain",
+    "canonicalize_approximation",
     "fold_archive_keys",
-    "validate_domain",
+    "validate_approximation",
     "check_dimensions",
     "write_ymf",
     "is_archive_text",
@@ -166,22 +179,30 @@ __all__ = [
     "check_version",
     "package_version",
     "load_array",
-    "inline_domain",
-    "domain_arrays",
-    "rebase_domain",
-    "select_domain",
+    "inline_approximation",
+    "approximation_arrays",
+    "rebase_approximation",
+    "select_approximation",
     "step_indices",
     "read_ymf",
     "dump_grid",
     "load_grid",
     "ARCHIVE_FORMAT_VERSION",
+    # the names before 2026-11, kept for one release (see the module docstring)
+    "new_domain",
+    "validate_domain",
+    "canonicalize_domain",
+    "select_domain",
+    "rebase_domain",
+    "inline_domain",
+    "domain_arrays",
 ]
 
 
 class YmfArchiveError(ValueError):
     """A YMF archive document is structurally invalid.
 
-    Raised by :func:`validate_domain` and :func:`check_dimensions`. The
+    Raised by :func:`validate_approximation` and :func:`check_dimensions`. The
     message always names the offending path within the document (e.g.
     ``TimeCollections[0].Data[3].Attributes[1].Center``) so a failure points at
     the field that caused it rather than at the serializer.
@@ -294,7 +315,7 @@ def require_libyaml() -> None:
 # constructors
 #
 # These exist so that defaults are applied in exactly one place. That is
-# what lets canonicalize_domain() enumerate every defaultable field rather
+# what lets canonicalize_approximation() enumerate every defaultable field rather
 # than covering only the ones that happened to surface in a test.
 # ---------------------------------------------------------------------------
 
@@ -544,13 +565,13 @@ def grid(
     return g
 
 
-def new_domain(name: Optional[str] = None) -> Dict[str, Any]:
+def new_approximation(name: Optional[str] = None) -> Dict[str, Any]:
     """Create an empty domain.
 
     The domain is ``{"times": []}``: add instants with :func:`add_instant`.
     ``name`` is the format 1 spelling, which started a domain with one named
     time collection; given, it still does, and :func:`add_uniform_step` and
-    friends then keep building format 1 (which :func:`canonicalize_domain`
+    friends then keep building format 1 (which :func:`canonicalize_approximation`
     upgrades). New code should not pass it.
     """
     if name is None:
@@ -585,7 +606,7 @@ def add_instant(
     if "time_collections" in domain:
         raise YmfArchiveError(
             "domain is in format 1 (time_collections); add_instant needs a "
-            "format 2 domain, from new_domain() with no name")
+            "format 2 domain, from new_approximation() with no name")
     instant = {"time": float(time), "spaces": dict(spaces)}
     domain.setdefault("times", []).append(instant)
     return instant
@@ -615,7 +636,7 @@ def _resolve_collection(domain: Dict[str, Any], collection: Any) -> Dict[str, An
     collections = domain.get("time_collections")
     if not collections:
         raise YmfArchiveError(
-            "domain has no time collections; build it with new_domain(name)"
+            "domain has no time collections; build it with new_approximation(name)"
         )
     if isinstance(collection, int):
         try:
@@ -963,7 +984,7 @@ def fold_archive_keys(obj: Any) -> Any:
     return obj
 
 
-def canonicalize_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
+def canonicalize_approximation(domain: Dict[str, Any]) -> Dict[str, Any]:
     """Return ``domain`` in format 2, with every defaultable field filled in.
 
     Accepts both shapes and always returns ``{"times": [...]}``: a format 1
@@ -1112,7 +1133,7 @@ def _validate_grid_like(g: Dict[str, Any], where: str) -> None:
         _validate_data_item(attr["data_item"], f"{at}.data_item")
 
 
-def validate_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
+def validate_approximation(domain: Dict[str, Any]) -> Dict[str, Any]:
     """Check ``domain`` is structurally sound; return it canonicalized.
 
     This is the solver-side half of the trust boundary: it verifies
@@ -1124,7 +1145,7 @@ def validate_domain(domain: Dict[str, Any]) -> Dict[str, Any]:
 
     Raises :class:`YmfArchiveError` naming the offending path.
     """
-    canonical = canonicalize_domain(domain)
+    canonical = canonicalize_approximation(domain)
     for i, instant in enumerate(canonical.get("times", [])):
         for name, space in instant["spaces"].items():
             where = f"times[{i}].spaces[{name}]"
@@ -1266,15 +1287,15 @@ def write_ymf(
         The domain dict. Canonicalized on the way out, so the file always
         has every defaultable field explicit.
     extra:
-        Optional non-archive YMF content (``Problem``, ``solution_paths``,
+        Optional non-archive YMF content (``model``, ``solution_paths``,
         ``vvuq``, ...) to carry alongside. Unlike the XDMF path, which has
         to base64 it into an ``<Information>`` element, YAML holds it
         directly and readably.
     validate:
-        Run :func:`validate_domain` first. Leave this on unless you are
+        Run :func:`validate_approximation` first. Leave this on unless you are
         deliberately writing a document you know to be partial.
     """
-    checked = validate_domain(domain) if validate else canonicalize_domain(domain)
+    checked = validate_approximation(domain) if validate else canonicalize_approximation(domain)
     document: Dict[str, Any] = {"ymf_archive_version": ARCHIVE_FORMAT_VERSION, "domain": checked}
     if extra is not None:
         document["extra"] = extra
@@ -1400,7 +1421,7 @@ def read_ymf(path: str | Path) -> Tuple[Dict[str, Any], Optional[Any]]:
 def _upgrade_domain(domain: Any) -> Dict[str, Any]:
     """A domain in format 2 shape, without canonicalizing it.
 
-    Cheaper than :func:`canonicalize_domain`, which :func:`read_ymf` leaves
+    Cheaper than :func:`canonicalize_approximation`, which :func:`read_ymf` leaves
     to the caller as it always has: this only moves format 1's steps into
     instants.
     """
@@ -1527,7 +1548,7 @@ def step_indices(spec: Any, n: int) -> List[int]:
     return chosen
 
 
-def select_domain(
+def select_approximation(
     domain: Dict[str, Any],
     *,
     collections: Optional[Sequence[str]] = None,
@@ -1550,7 +1571,7 @@ def select_domain(
     """
     import copy
 
-    domain = canonicalize_domain(domain)
+    domain = canonicalize_approximation(domain)
     names = space_names(domain)
     chosen_names = names
     if collections is not None:
@@ -1606,24 +1627,24 @@ def select_domain(
     return dict(domain, times=new_times)
 
 
-def inline_domain(domain: Dict[str, Any], base_dir: str | Path = ".") -> Dict[str, Any]:
+def inline_approximation(domain: Dict[str, Any], base_dir: str | Path = ".") -> Dict[str, Any]:
     """A copy of ``domain`` with every referenced array copied in as ``Values``.
 
     The result needs no HDF5 file or sidecar: the ``.ymf`` (and the ``.xmf``
     derived from it) is self-contained.
     """
     import copy
-    out = copy.deepcopy(canonicalize_domain(domain))
+    out = copy.deepcopy(canonicalize_approximation(domain))
     for _, owner in _data_items(out):
         item = owner["data_item"]
         if "values" in item:
             continue
         array = load_array(item, base_dir)
         owner["data_item"] = data_item_for(array, inline=True, dimensions=item["dimensions"])
-    return validate_domain(out)
+    return validate_approximation(out)
 
 
-def rebase_domain(domain: Dict[str, Any], from_dir: str | Path,
+def rebase_approximation(domain: Dict[str, Any], from_dir: str | Path,
                   to_dir: str | Path) -> Dict[str, Any]:
     """A copy of ``domain`` whose HDF5 references resolve from ``to_dir``.
 
@@ -1633,7 +1654,7 @@ def rebase_domain(domain: Dict[str, Any], from_dir: str | Path,
     """
     import copy
     import os
-    out = copy.deepcopy(canonicalize_domain(domain))
+    out = copy.deepcopy(canonicalize_approximation(domain))
     if Path(from_dir).resolve() == Path(to_dir).resolve():
         return out
     for _, owner in _data_items(out):
@@ -1646,10 +1667,10 @@ def rebase_domain(domain: Dict[str, Any], from_dir: str | Path,
     return out
 
 
-def domain_arrays(domain: Dict[str, Any], base_dir: str | Path = "."):
+def approximation_arrays(domain: Dict[str, Any], base_dir: str | Path = "."):
     """{path: array} for every DataItem, however each is stored."""
     return {where: load_array(owner["data_item"], base_dir)
-            for where, owner in _data_items(canonicalize_domain(domain))}
+            for where, owner in _data_items(canonicalize_approximation(domain))}
 
 
 # ---------------------------------------------------------------------------
@@ -1740,7 +1761,7 @@ def _canonical_output(key: str, output: Dict[str, Any]) -> Dict[str, Any]:
     output = dict(output)
     if "approximation" in output:
         try:
-            output["approximation"] = validate_domain(output["approximation"])
+            output["approximation"] = validate_approximation(output["approximation"])
         except YmfArchiveError as exc:
             raise YmfArchiveError("outputs[%s].approximation: %s" % (key, exc)) from exc
     return output
@@ -1759,3 +1780,17 @@ def dump_grid(g: Dict[str, Any]) -> str:
 def load_grid(text: str) -> Dict[str, Any]:
     """Inverse of :func:`dump_grid`."""
     return _load(text)
+
+
+# ---------------------------------------------------------------------------
+# The names before 2026-11 (docs/changes.md), kept for one release. They are
+# the same function objects, so a caller sees no difference, keyword
+# arguments included; a release should warn before they go.
+# ---------------------------------------------------------------------------
+new_domain = new_approximation
+validate_domain = validate_approximation
+canonicalize_domain = canonicalize_approximation
+select_domain = select_approximation
+rebase_domain = rebase_approximation
+inline_domain = inline_approximation
+domain_arrays = approximation_arrays
