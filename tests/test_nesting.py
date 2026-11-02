@@ -1,6 +1,6 @@
 """Time outside, space inside: format 2 of the archive domain.
 
-See docs/design-time-outside-space.md. The format 1 fixture was written by
+See docs/design/time-outside-space.md. The format 1 fixture was written by
 ymf before the change (two spaces, three instants), with the .xmf it gave.
 """
 
@@ -10,10 +10,10 @@ import pytest
 
 from ymf.archive import (
     ARCHIVE_FORMAT_VERSION, YmfArchiveError, add_collection, add_instant,
-    add_uniform_step, append_step, attribute, canonicalize_domain, data_item,
-    geometry, new_domain, read_ymf, select_domain, series, space_names,
+    add_uniform_step, append_step, attribute, canonicalize_approximation, data_item,
+    geometry, new_approximation, read_ymf, select_approximation, series, space_names,
     spatial_grid, time_collections, topology, transpose_collections,
-    uniform_grid, validate_domain, write_ymf,
+    uniform_grid, validate_approximation, write_ymf,
 )
 from ymf.xdmf import build_xdmf_tree, parse_xdmf_domain, write_xdmf
 
@@ -85,7 +85,7 @@ def test_xmf_round_trips_through_the_transpose(tmp_path):
     write_xdmf(domain, tmp_path / "a.xmf")
     from ymf.xdmf import read_xdmf
     again, _ = read_xdmf(tmp_path / "a.xmf")
-    assert again == canonicalize_domain(domain)
+    assert again == canonicalize_approximation(domain)
 
 
 def test_write_then_read_is_format_2_and_equal(tmp_path):
@@ -93,23 +93,23 @@ def test_write_then_read_is_format_2_and_equal(tmp_path):
     write_ymf(domain, tmp_path / "x.ymf")
     assert (tmp_path / "x.ymf").read_text().startswith("ymf_archive_version: 2\n")
     again, _ = read_ymf(tmp_path / "x.ymf")
-    assert again == canonicalize_domain(domain)
+    assert again == canonicalize_approximation(domain)
 
 
 def test_the_format_1_api_still_builds_something_that_upgrades():
-    d = new_domain("A")
+    d = new_approximation("A")
     add_collection(d, "B")
     for t in (0.0, 1.0):
         for name in ("A", "B"):
             add_uniform_step(d, t, **{"topo": grid_at(name, t)["topology"], "geom": grid_at(name, t)["geometry"]},
                              collection=name)
     assert "time_collections" in d
-    c = canonicalize_domain(d)
+    c = canonicalize_approximation(d)
     assert [list(i["spaces"]) for i in c["times"]] == [["A", "B"], ["A", "B"]]
 
 
 def test_format_2_steps_join_the_instant_at_their_time():
-    d = new_domain()
+    d = new_approximation()
     for t in (0.0, 1.0):
         for name in ("A", "B"):
             add_uniform_step(d, t, grid_at(name, t)["topology"], grid_at(name, t)["geometry"],
@@ -119,21 +119,21 @@ def test_format_2_steps_join_the_instant_at_their_time():
 
 def test_an_instant_with_no_spaces_is_refused():
     with pytest.raises(YmfArchiveError, match=r"times\[0\]\.spaces"):
-        canonicalize_domain({"times": [{"time": 0.0, "spaces": {}}]})
+        canonicalize_approximation({"times": [{"time": 0.0, "spaces": {}}]})
 
 
 def test_errors_name_the_space_and_instant():
     bad = grid_at("A", 0.0)
     bad["topology"]["type"] = "Dodecahedron"
-    d = new_domain()
+    d = new_approximation()
     add_instant(d, 0.0, {"A": bad})
     with pytest.raises(YmfArchiveError, match=r"times\[0\]\.spaces\[A\]\.topology"):
-        validate_domain(d)
+        validate_approximation(d)
 
 
 def test_both_formats_in_one_domain_is_refused():
     with pytest.raises(YmfArchiveError, match="both"):
-        canonicalize_domain({"times": [], "time_collections": []})
+        canonicalize_approximation({"times": [], "time_collections": []})
 
 
 # --- append_step ---------------------------------------------------------
@@ -141,7 +141,7 @@ def test_both_formats_in_one_domain_is_refused():
 
 def header(tmp_path):
     path = tmp_path / "run.ymf"
-    write_ymf(new_domain(), path)
+    write_ymf(new_approximation(), path)
     return path
 
 
@@ -216,30 +216,30 @@ def test_a_future_format_is_refused(tmp_path):
 
 
 def three_by_two():
-    d = new_domain()
+    d = new_approximation()
     for t in (0.0, 1.0, 2.0):
         add_instant(d, t, {"A": grid_at("A", t), "B": grid_at("B", t)})
     return d
 
 
 def test_steps_index_instants_across_spaces():
-    picked = select_domain(three_by_two(), steps="-1")
+    picked = select_approximation(three_by_two(), steps="-1")
     assert [i["time"] for i in picked["times"]] == [2.0]
     assert list(picked["times"][0]["spaces"]) == ["A", "B"]
 
 
 def test_collections_filter_spaces_and_keep_archive_order():
-    picked = select_domain(three_by_two(), collections=["B", "A"])
+    picked = select_approximation(three_by_two(), collections=["B", "A"])
     assert space_names(picked) == ["A", "B"]
-    only = select_domain(three_by_two(), collections=["B"])
+    only = select_approximation(three_by_two(), collections=["B"])
     assert space_names(only) == ["B"] and len(only["times"]) == 3
 
 
 def test_instants_without_a_chosen_space_are_dropped_before_steps_count():
-    d = new_domain()
+    d = new_approximation()
     add_instant(d, 0.0, {"A": grid_at("A", 0.0)})
     add_instant(d, 1.0, {"A": grid_at("A", 1.0), "B": grid_at("B", 1.0)})
-    picked = select_domain(d, collections=["B"], steps="0")
+    picked = select_approximation(d, collections=["B"], steps="0")
     assert [i["time"] for i in picked["times"]] == [1.0]
 
 
@@ -252,10 +252,10 @@ def test_series_and_the_format_1_view_agree():
 
 
 def test_a_spatial_space_survives():
-    d = new_domain()
+    d = new_approximation()
     g = grid_at("A", 0.0)
     add_instant(d, 0.0, {"A": spatial_grid([dict(g, name="r0"), dict(g, name="r1")])})
-    c = validate_domain(d)
+    c = validate_approximation(d)
     assert len(c["times"][0]["spaces"]["A"]["spatial_collection"]) == 2
 
 

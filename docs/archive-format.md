@@ -4,7 +4,7 @@ A YMF archive is how a simulation records its output: the heavy arrays go
 in HDF5, and a small YAML document (`.ymf`) says what each array is — which
 mesh, which time, which field, what shape and type. This half of YMF is
 implemented, tested against real solver output, and is what Proteus writes
-on its `ymf_io` branch.
+on its 2.0 line (`main`).
 
 The code is `ymf.archive` (data model and YAML I/O), `ymf.xdmf` (conversion
 to XDMF), and the `ymf2xmf` command. All three depend on `pyyaml` alone.
@@ -16,8 +16,10 @@ which parts a `.ymf` archive represents.
 An archive takes two forms. **The archive of a spec** is the problem
 specification as realized, followed by every output computed from it;
 `ymf.closure` reads and writes it, and Proteus's `ymf_run` produces it.
-Its outputs each hold an approximation in **the solver's form**, the
-`domain` tree a solver writes and the rest of this page describes.
+Its outputs each hold an approximation in **the solver's form**: the
+time/space/field tree a solver writes, which the rest of this page describes.
+The same tree is called `domain` at the top of a solver's own document and
+`approximation` inside an output of the archive of a spec.
 
 - [The archive of a spec](#the-archive-of-a-spec)
 - [Files on disk](#files-on-disk)
@@ -39,7 +41,7 @@ was realized, then what was computed from it.
 
 ```yaml
 ymf: 0.2.1                      # the ymf that wrote it; a newer one is refused on read
-Problem: {...}                  # the spec, composed and as realized: no extends,
+model: {...}                    # the spec, composed and as realized: no extends,
 solution_paths: {...}           #   every override listed under composition
 vvuq: {...}
 composition: {sources: [...], overrides: [...]}
@@ -60,7 +62,7 @@ outputs:
       solve: {by: {ymf: ..., proteus_git: ..., numpy: ..., platform: ...}, created: ...}
     storage: poisson_2365d177bb1f.h5        # or: inline
     verification: {l2_errors: {u: 0.0105...}}
-    approximation: {times: [...]}           # the solver's domain tree
+    approximation: {times: [...]}           # the solver's time/space/field tree
     reproduced: [{created: ..., by: {...}}] # each rerun that matched, bitwise
 ```
 
@@ -164,7 +166,7 @@ ymf_archive_version: 2        # refused on read if it isn't a version this ymf k
 domain:                       # the time/space/field tree -- see below
   times: [...]
 extra:                        # optional: anything with no XDMF equivalent
-  Problem: {...}              #   typically the problem spec that produced the run
+  model: {...}                #   typically the problem spec that produced the run
   solution_paths: {...}
 ```
 
@@ -208,7 +210,7 @@ domain:
   - time: 10.0
     ...
 extra:
-  Problem:
+  model:
     name: Transient heat conduction, unit square
     ...
 ```
@@ -217,6 +219,15 @@ extra:
 only to keep the listing short.)
 
 ## The domain model
+
+The functions that build and check this tree are named for what it is in
+the archive of a spec, an *approximation*: `new_approximation`,
+`validate_approximation`, `canonicalize_approximation`,
+`select_approximation`, `inline_approximation`, `rebase_approximation`,
+`approximation_arrays`. The names they had before 2026-11 (`new_domain`,
+...) are aliases, kept for one release, so that `domain` can mean the region
+a problem is posed on. The solver file's `domain:` key is unchanged: it is
+part of `ymf_archive_version: 2`.
 
 A domain is plain dicts and lists — no classes — so it costs nothing to
 build, gathers across MPI natively, and serializes directly.
@@ -273,7 +284,7 @@ of a domain, `space_names(domain)` and `series(domain, name)`;
 (`transpose_collections`): steps of different spaces are joined on exact
 time, a repeated time pairs up by occurrence, and a space missing at a time
 is omitted from that instant. Nothing is rewritten on disk. Code that built
-a domain with `new_domain(name)` / `add_collection` / `add_uniform_step(...,
+a domain with `new_approximation(name)` / `add_collection` / `add_uniform_step(...,
 collection=)` keeps working and is upgraded when the domain is validated or
 written; `{"time_collection": {...}}` (singular) is accepted as before.
 
@@ -289,7 +300,7 @@ is rejected when the archive is written:
 | `data_type` | `Float Int UInt Char UChar` |
 | `format` | `HDF XML Binary` |
 
-**Defaults.** `canonicalize_domain()` fills every defaultable field
+**Defaults.** `canonicalize_approximation()` fills every defaultable field
 explicitly, and the file on disk is always canonical. The one default worth
 knowing is that XDMF's default `Precision` is **4** bytes, which is wrong
 for `float64`. Use `data_item_for()`, which reads the precision off the
@@ -304,10 +315,10 @@ disagree with what's in the file.
 
 ```python
 import h5py, numpy as np
-from ymf.archive import (new_domain, add_instant, uniform_grid, topology, geometry,
+from ymf.archive import (new_approximation, add_instant, uniform_grid, topology, geometry,
                          attribute, data_item_for, write_ymf)
 
-domain = new_domain()
+domain = new_approximation()
 with h5py.File("heat.h5", "w") as h5:
     h5["nodes"], h5["elements"] = nodes, elements          # mesh written once
     topo = topology("Triangle", len(elements), data_item_for(elements, "heat.h5:/elements"))
@@ -318,7 +329,7 @@ with h5py.File("heat.h5", "w") as h5:
             attribute("T", data_item_for(T, "heat.h5:/T_t%d" % k)),
         ])})
 
-write_ymf(domain, "heat.ymf", extra={"Problem": problem})
+write_ymf(domain, "heat.ymf", extra=problem)    # the spec: model, solution_paths, ...
 ```
 
 [`examples/write_archive.py`](../examples/write_archive.py) is the
@@ -398,7 +409,7 @@ YMF splits checking across a trust boundary:
 - A **solver** trusts the validated input and writes the archive. On that
   path the checks are only structural and cost O(1) per field.
 
-`write_ymf()` runs `validate_domain()` by default. It checks required keys,
+`write_ymf()` runs `validate_approximation()` by default. It checks required keys,
 the closed sets above, and that no grid has two fields with the same name
 and centering (viewers key fields by name within point data and within
 cell data, so a duplicate silently hides the first; the same name cell-
@@ -439,7 +450,7 @@ wrote view.xmf
 `-c/--collection` (a name or part of one), `-f/--field` and `-s/--steps`
 (Python indices and slices: `-1`, `0:10`, `::5`) cherry-pick what the `.xmf`
 describes; the `.ymf` is never changed. In code the same selection is
-`ymf.archive.select_domain(domain, collections=, fields=, steps=)`.
+`ymf.archive.select_approximation(domain, collections=, fields=, steps=)`.
 
 ParaView and VisIt open the `.xmf` directly. `extra` is carried into it as
 a base64-encoded JSON `<Information Name="YMF" Value="..."/>` element, a
@@ -472,8 +483,8 @@ as they are written and the full document once, at close.
 
 ## Use in Proteus
 
-Proteus's `ymf_io` branch (aimed at the 2.0 line) replaces its hand-built
-XDMF XML with this model:
+Proteus's 2.0 line (`main`, since the `ymf_io` branch merged) replaces its
+hand-built XDMF XML with this model:
 
 - Every field goes through one `write_field` call, which builds its
   `Attribute` + `DataItem`. Fields beyond the solution itself are declared
@@ -497,7 +508,7 @@ domain used to hold one temporal collection per function space, each with
 its own list of instants, because XDMF does; it now holds one list of
 instants with the spaces inside each. The reasons, the migration and the
 Proteus changes are in
-[design-time-outside-space.md](design-time-outside-space.md). In short:
+[design/time-outside-space.md](design/time-outside-space.md). In short:
 the Proteus writer already refused a space missing at an instant; an
 instant is now the unit of an appended record, so a killed run loses a whole
 instant and never one space of it; and `append_step` no longer names

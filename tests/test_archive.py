@@ -7,8 +7,8 @@ import pytest
 
 from ymf.archive import time_collections  # noqa: E402
 from ymf.archive import (
-    domain_arrays,
-    inline_domain,
+    approximation_arrays,
+    inline_approximation,
     ARCHIVE_FORMAT_VERSION,
     HAVE_LIBYAML,
     YmfArchiveError,
@@ -17,7 +17,7 @@ from ymf.archive import (
     add_uniform_step,
     append_step,
     attribute,
-    canonicalize_domain,
+    canonicalize_approximation,
     check_dimensions,
     data_item,
     data_item_for,
@@ -25,11 +25,11 @@ from ymf.archive import (
     geometry,
     grid,
     load_grid,
-    new_domain,
+    new_approximation,
     read_ymf,
     require_libyaml,
     topology,
-    validate_domain,
+    validate_approximation,
     write_ymf,
 )
 
@@ -41,7 +41,7 @@ from ymf.archive import (
 
 def make_uniform_domain():
     """A single-grid archive -- what a serial run produces."""
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_approximation("Mesh Spatial_Domain")
     for t in (0.0, 1.0):
         add_uniform_step(
             domain,
@@ -66,7 +66,7 @@ def make_uniform_domain():
 
 def make_spatial_domain(n_ranks=3):
     """A subdomain-per-rank archive -- what a parallel run produces."""
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_approximation("Mesh Spatial_Domain")
     for t in (0.0, 0.5):
         grids = []
         for r in range(n_ranks):
@@ -205,13 +205,13 @@ def test_check_dimensions_rejects_a_mismatch_and_names_the_field():
 
 
 def test_canonicalize_is_idempotent():
-    once = canonicalize_domain(make_uniform_domain())
-    assert canonicalize_domain(once) == once
+    once = canonicalize_approximation(make_uniform_domain())
+    assert canonicalize_approximation(once) == once
 
 
 def test_canonicalize_is_idempotent_for_spatial_domains():
-    once = canonicalize_domain(make_spatial_domain())
-    assert canonicalize_domain(once) == once
+    once = canonicalize_approximation(make_spatial_domain())
+    assert canonicalize_approximation(once) == once
 
 
 def test_canonicalize_fills_every_documented_default():
@@ -231,7 +231,7 @@ def test_canonicalize_fills_every_documented_default():
             ]
         }
     }
-    c = canonicalize_domain(sparse)
+    c = canonicalize_approximation(sparse)
     # the singular format 1 input form is upgraded to format 2
     assert list(c) == ["times"]
     assert len(time_collections(c)) == 1
@@ -248,17 +248,17 @@ def test_canonicalize_fills_every_documented_default():
 
 
 def test_canonicalize_supplies_an_empty_attributes_list():
-    domain = new_domain()
+    domain = new_approximation()
     add_uniform_step(
         domain, 0.0,
         topology("Triangle", 1, data_item([1, 3], "f.h5:/e")),
         geometry(data_item([3, 2], "f.h5:/n")),
     )
-    assert time_collections(canonicalize_domain(domain))[0]["data"][0]["attributes"] == []
+    assert time_collections(canonicalize_approximation(domain))[0]["data"][0]["attributes"] == []
 
 
 def test_canonicalize_of_an_empty_domain_is_empty():
-    assert canonicalize_domain({}) == {}
+    assert canonicalize_approximation({}) == {}
 
 
 def test_step_cannot_be_both_uniform_and_spatial():
@@ -275,12 +275,12 @@ def test_step_cannot_be_both_uniform_and_spatial():
         }
     }
     with pytest.raises(YmfArchiveError, match="not both"):
-        canonicalize_domain(domain)
+        canonicalize_approximation(domain)
 
 
 def test_step_must_be_either_uniform_or_spatial():
     with pytest.raises(YmfArchiveError, match="neither"):
-        canonicalize_domain({"time_collection": {"data": [{"time": 0.0}]}})
+        canonicalize_approximation({"time_collection": {"data": [{"time": 0.0}]}})
 
 
 @pytest.mark.parametrize("missing", ["type", "number_of_elements", "data_item"])
@@ -294,7 +294,7 @@ def test_canonicalize_reports_a_missing_topology_key_by_path(missing):
         }
     }
     with pytest.raises(YmfArchiveError, match=rf"time_collections\[0\]\.data\[0\]\.topology.*{missing}"):
-        canonicalize_domain(domain)
+        canonicalize_approximation(domain)
 
 
 # --------------------------------------------------------------------------
@@ -303,19 +303,19 @@ def test_canonicalize_reports_a_missing_topology_key_by_path(missing):
 
 
 def test_validate_accepts_the_uniform_and_spatial_fixtures():
-    validate_domain(make_uniform_domain())
-    validate_domain(make_spatial_domain())
+    validate_approximation(make_uniform_domain())
+    validate_approximation(make_spatial_domain())
 
 
 def test_validate_returns_the_canonicalized_document():
-    assert validate_domain(make_uniform_domain()) == canonicalize_domain(make_uniform_domain())
+    assert validate_approximation(make_uniform_domain()) == canonicalize_approximation(make_uniform_domain())
 
 
 def test_validate_rejects_an_unknown_topology_type():
     domain = make_uniform_domain()
     time_collections(domain)[0]["data"][0]["topology"]["type"] = "Dodecahedron"
     with pytest.raises(YmfArchiveError, match="not a known XDMF topology type"):
-        validate_domain(domain)
+        validate_approximation(domain)
 
 
 def test_validate_accepts_every_topology_type_proteus_emits():
@@ -335,21 +335,21 @@ def test_validate_rejects_a_bad_centering():
     domain = make_uniform_domain()
     time_collections(domain)[0]["data"][0]["attributes"][0]["center"] = "Vertex"
     with pytest.raises(YmfArchiveError, match=r"attributes\[0\]\.center"):
-        validate_domain(domain)
+        validate_approximation(domain)
 
 
 def test_validate_rejects_a_bad_attribute_type():
     domain = make_uniform_domain()
     time_collections(domain)[0]["data"][0]["attributes"][0]["attribute_type"] = "Scalarr"
     with pytest.raises(YmfArchiveError, match=r"attributes\[0\]\.attribute_type"):
-        validate_domain(domain)
+        validate_approximation(domain)
 
 
 def test_validate_rejects_a_bad_data_type():
     domain = make_uniform_domain()
     time_collections(domain)[0]["data"][0]["attributes"][0]["data_item"]["data_type"] = "Double"
     with pytest.raises(YmfArchiveError, match="data_type"):
-        validate_domain(domain)
+        validate_approximation(domain)
 
 
 def test_validate_rejects_duplicate_attribute_names_within_one_grid():
@@ -360,7 +360,7 @@ def test_validate_rejects_duplicate_attribute_names_within_one_grid():
     attrs[1]["name"] = attrs[0]["name"]
     attrs[1]["center"] = attrs[0]["center"]
     with pytest.raises(YmfArchiveError, match="duplicate .*-centred attribute name"):
-        validate_domain(domain)
+        validate_approximation(domain)
 
 
 def test_validate_allows_the_same_name_on_different_centerings():
@@ -370,37 +370,37 @@ def test_validate_allows_the_same_name_on_different_centerings():
     attrs = time_collections(domain)[0]["data"][0]["attributes"]
     attrs[1]["name"] = attrs[0]["name"]
     attrs[0]["center"], attrs[1]["center"] = "Cell", "Node"
-    validate_domain(domain)
+    validate_approximation(domain)
 
 
 def test_validate_allows_the_same_attribute_name_in_different_subdomains():
     # Each rank writes its own 'p'; that is correct, not a duplicate.
-    validate_domain(make_spatial_domain(n_ranks=4))
+    validate_approximation(make_spatial_domain(n_ranks=4))
 
 
 def test_validate_rejects_an_empty_spatial_collection():
-    domain = new_domain()
+    domain = new_approximation()
     add_spatial_step(domain, 0.0, [])
     with pytest.raises(YmfArchiveError, match="must not be empty"):
-        validate_domain(domain)
+        validate_approximation(domain)
 
 
 def test_validate_rejects_empty_dimensions():
     domain = make_uniform_domain()
     time_collections(domain)[0]["data"][0]["attributes"][0]["data_item"]["dimensions"] = []
     with pytest.raises(YmfArchiveError, match="must not be empty"):
-        validate_domain(domain)
+        validate_approximation(domain)
 
 
 def test_validate_rejects_a_negative_dimension():
     domain = make_uniform_domain()
     time_collections(domain)[0]["data"][0]["attributes"][0]["data_item"]["dimensions"] = [-1]
     with pytest.raises(YmfArchiveError, match="non-negative"):
-        validate_domain(domain)
+        validate_approximation(domain)
 
 
 def test_validate_of_an_empty_domain_is_empty():
-    assert validate_domain({}) == {}
+    assert validate_approximation({}) == {}
 
 
 # --------------------------------------------------------------------------
@@ -413,7 +413,7 @@ def test_uniform_domain_round_trips_through_yaml(tmp_path):
     path = tmp_path / "archive.ymf"
     write_ymf(domain, path)
     read_domain, extra = read_ymf(path)
-    assert read_domain == canonicalize_domain(domain)
+    assert read_domain == canonicalize_approximation(domain)
     assert extra is None
 
 
@@ -422,11 +422,11 @@ def test_spatial_domain_round_trips_through_yaml(tmp_path):
     path = tmp_path / "archive.ymf"
     write_ymf(domain, path)
     read_domain, _ = read_ymf(path)
-    assert read_domain == canonicalize_domain(domain)
+    assert read_domain == canonicalize_approximation(domain)
 
 
 def test_text_include_data_items_round_trip_through_yaml(tmp_path):
-    domain = new_domain()
+    domain = new_approximation()
     add_uniform_step(
         domain, 0.0,
         topology("Triangle", 2, data_item([2, 3], include="./d/elements.txt", data_type="Int")),
@@ -436,7 +436,7 @@ def test_text_include_data_items_round_trip_through_yaml(tmp_path):
     path = tmp_path / "archive.ymf"
     write_ymf(domain, path)
     read_domain, _ = read_ymf(path)
-    assert read_domain == canonicalize_domain(domain)
+    assert read_domain == canonicalize_approximation(domain)
     assert time_collections(read_domain)[0]["data"][0]["attributes"][0]["data_item"]["include"] == "./d/u.txt"
 
 
@@ -516,11 +516,11 @@ def test_grid_fragments_reassemble_into_a_spatial_step():
     fragments = [
         dump_grid(g) for g in time_collections(original)[0]["data"][0]["spatial_collection"]
     ]
-    rebuilt = new_domain(time_collections(original)[0]["name"])
+    rebuilt = new_approximation(time_collections(original)[0]["name"])
     add_spatial_step(rebuilt, 0.0, [load_grid(f) for f in fragments])
     assert (
-        time_collections(canonicalize_domain(rebuilt))[0]["data"][0]
-        == time_collections(canonicalize_domain(original))[0]["data"][0]
+        time_collections(canonicalize_approximation(rebuilt))[0]["data"][0]
+        == time_collections(canonicalize_approximation(original))[0]["data"][0]
     )
 
 
@@ -547,7 +547,7 @@ def test_require_libyaml_raises_when_the_c_extension_is_missing():  # pragma: no
 
 def _two_space_domain():
     """The shape a real Proteus archive has: linear mesh + quadratic space."""
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_approximation("Mesh Spatial_Domain")
     add_collection(domain, "Mesh_c0p2_Lagrange")
     for t in (0.0, 1.0):
         add_uniform_step(
@@ -567,7 +567,7 @@ def _two_space_domain():
 
 
 def test_new_domain_starts_with_one_named_collection():
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_approximation("Mesh Spatial_Domain")
     assert [c["name"] for c in time_collections(domain)] == ["Mesh Spatial_Domain"]
 
 
@@ -579,7 +579,7 @@ def test_add_collection_appends_a_second_mesh():
 
 
 def test_add_collection_rejects_a_duplicate_name():
-    domain = new_domain("Mesh Spatial_Domain")
+    domain = new_approximation("Mesh Spatial_Domain")
     with pytest.raises(YmfArchiveError, match="already has a time collection"):
         add_collection(domain, "Mesh Spatial_Domain")
 
@@ -619,16 +619,16 @@ def test_targeting_an_out_of_range_collection_index_reports_the_count():
 
 def test_a_two_space_domain_validates_and_round_trips(tmp_path):
     domain = _two_space_domain()
-    validate_domain(domain)
+    validate_approximation(domain)
     path = tmp_path / "archive.ymf"
     write_ymf(domain, path)
-    assert read_ymf(path)[0] == canonicalize_domain(domain)
+    assert read_ymf(path)[0] == canonicalize_approximation(domain)
 
 
 def test_the_same_attribute_name_may_appear_in_different_collections():
     # 'u' on the linear mesh and 'u' on the quadratic space are different
     # fields on different meshes, not a duplicate.
-    validate_domain(_two_space_domain())
+    validate_approximation(_two_space_domain())
 
 
 def test_duplicate_collection_names_are_rejected_at_canonicalization():
@@ -639,13 +639,13 @@ def test_duplicate_collection_names_are_rejected_at_canonicalization():
         ]
     }
     with pytest.raises(YmfArchiveError, match="duplicate collection name"):
-        canonicalize_domain(domain)
+        canonicalize_approximation(domain)
 
 
 def test_singular_time_collection_is_accepted_as_input_sugar():
     singular = {"time_collection": {"name": "Mesh", "data": []}}
     plural = {"time_collections": [{"name": "Mesh", "data": []}]}
-    assert canonicalize_domain(singular) == canonicalize_domain(plural)
+    assert canonicalize_approximation(singular) == canonicalize_approximation(plural)
 
 
 # ---------------------------------------------------------------------------
@@ -690,18 +690,18 @@ def test_inline_values_are_checked(values, data_type, message):
 
 
 def test_validate_refuses_inline_values_under_another_format():
-    domain = new_domain()
+    domain = new_approximation()
     add_uniform_step(domain, 0.0,
                      topology("Polyvertex", 1, data_item([1], values=[0], data_type="Int"),
                               nodes_per_element=1),
                      geometry(data_item([1, 3], values=[0.0, 0.0, 0.0])))
     time_collections(domain)[0]["data"][0]["geometry"]["data_item"]["format"] = "HDF"
     with pytest.raises(YmfArchiveError, match=r"geometry\.data_item: inline 'values' need format='XML'"):
-        validate_domain(domain)
+        validate_approximation(domain)
 
 
 def test_an_inline_archive_round_trips_and_writes_each_array_on_few_lines(tmp_path):
-    domain = new_domain("mesh")
+    domain = new_approximation("mesh")
     add_uniform_step(
         domain, 0.0,
         topology("Triangle", 2, data_item([2, 3], values=[0, 1, 3, 0, 3, 2], data_type="Int")),
@@ -712,7 +712,7 @@ def test_an_inline_archive_round_trips_and_writes_each_array_on_few_lines(tmp_pa
     text = path.read_text()
     assert "values: [0, 1, 3, 0, 3, 2]" in text
     read_back, _ = read_ymf(path)
-    assert read_back == validate_domain(domain)
+    assert read_back == validate_approximation(domain)
 
 
 # ---------------------------------------------------------------------------
@@ -721,7 +721,7 @@ def test_an_inline_archive_round_trips_and_writes_each_array_on_few_lines(tmp_pa
 
 
 def test_dimensions_are_written_on_one_line(tmp_path):
-    domain = new_domain("mesh")
+    domain = new_approximation("mesh")
     add_uniform_step(domain, 0.0,
                      topology("Triangle", 8, data_item([8, 3], "m.h5:/e", data_type="Int")),
                      geometry(data_item([9, 3], "m.h5:/n", precision=8)))
@@ -738,14 +738,14 @@ def test_inline_domain_copies_hdf5_arrays_in_exactly(tmp_path):
     u = np.linspace(0, 1, 4, dtype=np.float32)
     with h5py.File(tmp_path / "m.h5", "w") as f:
         f["e"], f["n"], f["u"] = cells, nodes, u
-    domain = new_domain("mesh")
+    domain = new_approximation("mesh")
     add_uniform_step(domain, 0.0, topology("Triangle", 2, data_item_for(cells, "m.h5:/e")),
                      geometry(data_item_for(nodes, "m.h5:/n")),
                      [attribute("u", data_item_for(u, "m.h5:/u"))])
-    referenced = domain_arrays(domain, tmp_path)
-    inline = inline_domain(domain, tmp_path)
+    referenced = approximation_arrays(domain, tmp_path)
+    inline = inline_approximation(domain, tmp_path)
     assert all("values" in a["data_item"] for a in time_collections(inline)[0]["data"][0]["attributes"])
-    copied = domain_arrays(inline)            # no base directory needed any more
+    copied = approximation_arrays(inline)            # no base directory needed any more
     assert set(copied) == set(referenced)
     for key in referenced:
         assert copied[key].dtype == referenced[key].dtype
@@ -759,7 +759,7 @@ def test_inline_domain_copies_hdf5_arrays_in_exactly(tmp_path):
 
 def _one_step(time):
     """A step dict, built the way a writer builds one."""
-    domain = new_domain("scratch")
+    domain = new_approximation("scratch")
     add_uniform_step(
         domain, time,
         {"type": "Triangle", "number_of_elements": 4,
@@ -771,7 +771,7 @@ def _one_step(time):
 
 def _archive(tmp_path, name="a.ymf"):
     path = tmp_path / name
-    write_ymf(new_domain("Mesh Spatial_Domain"), path)
+    write_ymf(new_approximation("Mesh Spatial_Domain"), path)
     return path
 
 
@@ -812,7 +812,7 @@ def test_appending_matches_writing_the_whole_document(tmp_path):
     introduce.
     """
     appended = _archive(tmp_path, "appended.ymf")
-    whole = new_domain("Mesh Spatial_Domain")
+    whole = new_approximation("Mesh Spatial_Domain")
     for t in (0.0, 0.5):
         step = _one_step(t)
         append_step(appended, "Mesh Spatial_Domain", step)
@@ -904,3 +904,24 @@ def test_appending_is_constant_work_per_step(tmp_path):
     # magnitude above the first.
     assert max(sizes) - min(sizes) <= 8, sizes
     assert path.stat().st_size > 10 * max(sizes)   # the file grew; the write did not
+
+
+def test_the_archive_tree_functions_keep_their_old_names():
+    """Renamed 2026-11 (``domain`` is the region); the old names stay a release."""
+    import ymf
+    import ymf.archive as archive
+
+    renamed = {
+        "new_domain": "new_approximation",
+        "validate_domain": "validate_approximation",
+        "canonicalize_domain": "canonicalize_approximation",
+        "select_domain": "select_approximation",
+        "rebase_domain": "rebase_approximation",
+        "inline_domain": "inline_approximation",
+        "domain_arrays": "approximation_arrays",
+    }
+    for old, new in renamed.items():
+        assert getattr(archive, old) is getattr(archive, new)
+        assert old in archive.__all__ and new in archive.__all__
+    for old in ("new_domain", "validate_domain", "canonicalize_domain"):
+        assert getattr(ymf, old) is getattr(ymf, renamed[old])

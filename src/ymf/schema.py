@@ -1,8 +1,8 @@
 """strictyaml schema validators for YMF v0.2.
 
 This module implements the schema described in
-``docs/ymf-schema-v0.2-delta.md``, merged on top of the v0.1 schema in
-``docs/ymf-schema.md``. Relative to v0.1, ``unknowns`` widens its
+``docs/history/schema-v0.2-delta.md``, merged on top of the v0.1 schema in
+``docs/history/schema-v0.1.md``. Relative to v0.1, ``unknowns`` widens its
 accepted type (bare string OR structured map), and the strong form's
 ``unknown_provenance`` is replaced by ``provenance``, the key every other
 block uses; a structured unknown may carry its own ``provenance`` to
@@ -27,6 +27,7 @@ from strictyaml import (
     Seq,
     Str,
 )
+from strictyaml.validators import OrValidator
 
 from ymf.discretizations import METHODS
 from ymf.state import STATES
@@ -53,7 +54,6 @@ ICTypeEnum = Enum(["constant", "function", "data_source"])
 
 UnitConventionEnum = Enum(["SI", "CGS", "US", "dimensionless"])
 
-DimCheckMethodEnum = Enum(["automatic", "manual", "off"])
 
 # ---------------------------------------------------------------------------
 # v0.1 building blocks (unchanged)
@@ -139,7 +139,6 @@ DiscretizationEntry = Map(
         Optional("discretization_details"): Str(),
         Optional("proteus_modules"): Map({"physics": Str(), "numerics": Str()}),
         # --- v0.2 additions ---
-        Optional("bmi_interface"): Bool(),
         # How the model is reduced to a computable problem, and so which of
         # the blocks below this entry needs: mesh (the default), neural, or
         # particle. See ymf.discretizations, which also says what each
@@ -361,23 +360,6 @@ CharacteristicScalesDef = MapPattern(Str(), ScaleDef)
 
 DimensionlessNumberDef = Map({"formula": Str(), Optional("value"): Float()})
 
-DimensionalCheckDef = Map(
-    {
-        Optional("enabled"): Bool(),
-        Optional("method"): DimCheckMethodEnum,
-        Optional("tolerance"): Float(),
-    }
-)
-
-UnitSystemDef = Map(
-    {
-        Optional("length"): Str(),
-        Optional("mass"): Str(),
-        Optional("time"): Str(),
-        Optional("temperature"): Str(),
-    }
-)
-
 UnitsDef = Map(
     {
         Optional("convention"): UnitConventionEnum,
@@ -405,7 +387,7 @@ MeshGenerationDef = Map(
 )
 
 # ---------------------------------------------------------------------------
-# StrongFormDef (updated: widened unknowns + new IC/BC/dimensional_check)
+# StrongFormDef (updated: widened unknowns + new IC/BC)
 # ---------------------------------------------------------------------------
 
 StrongFormDef = Map(
@@ -415,9 +397,6 @@ StrongFormDef = Map(
         "provenance": ProvenanceEnum,
         "unknowns": Seq(UnknownDef),  # CHANGED in v0.2: was Seq(Str())
         "equation_formulation": Str(),
-        # Superseded by ``equations``, which is written in the same notation
-        # and read by ymf.symbolic; kept so older documents still validate.
-        Optional("strong_form_expression"): Str(),
         # "Ω = [0, 1] × [0, 1]", optionally ", t ∈ (0, 50]" for the time
         # interval of a transient problem.
         "domain": DomainDef,
@@ -429,11 +408,7 @@ StrongFormDef = Map(
         "boundary_regions": Seq(Map({"name": Str(), "where": Str()})),
         Optional("initial_conditions"): Seq(InitialConditionDef),
         Optional("boundary_conditions"): Seq(BoundaryConditionDef),
-        Optional("known_analytical_solution"): Map(
-            {"formula": Str(), "reference": Str()}
-        ),
         Optional("coefficients"): MapPattern(Str(), CoefficientDef),
-        Optional("dimensional_check"): DimensionalCheckDef,
         # The equations, one string per (vector or scalar) equation, in the
         # notation of ymf.symbolic.notation -- "∂T/∂t = ∇·(κ∇T)  in Ω",
         # "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f" -- ordered like the unknowns.
@@ -442,7 +417,7 @@ StrongFormDef = Map(
 )
 
 # ---------------------------------------------------------------------------
-# Problem (updated: + characteristic_scales, units, unit_systems, mesh_generation)
+# model (updated: + characteristic_scales, units, mesh_generation)
 # ---------------------------------------------------------------------------
 
 ModelDef = Map(
@@ -454,7 +429,6 @@ ModelDef = Map(
         Optional("characteristic_scales"): CharacteristicScalesDef,
         Optional("dimensionless_numbers"): MapPattern(Str(), DimensionlessNumberDef),
         Optional("units"): UnitsDef,
-        Optional("unit_systems"): MapPattern(Str(), UnitSystemDef),
         Optional("mesh_generation"): MeshGenerationDef,
     }
 )
@@ -470,8 +444,6 @@ YMF_SCHEMA = Map(
         Optional("vvuq"): Map(
             {Optional("verification"): Any(), Optional("validation"): Any()}
         ),
-        Optional("archive"): Any(),
-        Optional("xdmf"): Any(),
         # File-level keys, see ymf.compose. "extends" names the document
         # this one builds on; "ymf_state" says how far the document has got
         # (abstract, well-posed, discretized, closed: see ymf.state), and is
@@ -489,7 +461,7 @@ YMF_SCHEMA = Map(
         }),
         Optional("composition"): Any(),
         # "remove" lists paths this file drops from what it extends --
-        # "Problem.physical_model.assumptions[incompressible]". Composition
+        # "model.physical_model.assumptions[incompressible]". Composition
         # could only add and change before, so dropping an assumption or a
         # field took a new model file even when the change was one line.
         Optional("remove"): Seq(Str()),
@@ -506,7 +478,15 @@ def _partial(validator, keep=()):
     an inherited discretization by naming it and giving only that field.
     The composed document is validated in full, so an entry that is new
     and incomplete is still caught there.
+
+    Both sides of an alternative are relaxed too: the domain is the notation
+    string or a mapping, and a file that tags an inherited region writes
+    ``boundary_tags`` without restating its ``kind``. The composed domain
+    is checked against its kind by ymf.domain.
     """
+    if isinstance(validator, OrValidator):
+        return OrValidator(_partial(validator._validator_a, keep),
+                           _partial(validator._validator_b, keep))
     if isinstance(validator, Map):
         return Map({
             (key if isinstance(key, Optional) or key in keep else Optional(key)):

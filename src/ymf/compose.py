@@ -43,7 +43,7 @@ and it is recorded rather than refused. The composed document gets a
     composition:
       sources: [navier_stokes_model.ymf, plane_poiseuille.ymf, ...]
       overrides:
-        - path: Problem.characteristic_scales.viscosity.value
+        - path: model.characteristic_scales.viscosity.value
           was: 1.0
           now: 0.01
           set_by: plane_poiseuille_re100.ymf
@@ -383,15 +383,15 @@ _is_archive_text = is_archive_text
 
 #: Spellings accepted on input and folded to the canonical one as the file is
 #: read. Keys are lower_case_with_underscores (see "Naming" in
-#: docs/problem-specification.md); these two were capitalized before that rule
-#: was written down.
+#: docs/problem-specification.md). "Problem" was capitalized before that rule
+#: was written down, and "problem" is the key's name before it became "model".
 #:
 #: Folding happens before anything is merged, deliberately. Composition pairs
 #: keys by exact match, so a model writing "Problem:" and a variant writing
 #: "problem:" would not merge -- they would become siblings, and the result
 #: would be a document with two problems. An alias eases a rename; it is not
 #: a standing second spelling.
-_KEY_ALIASES = {"Problem": "model", "problem": "model", "Xdmf": "xdmf"}
+_KEY_ALIASES = {"Problem": "model", "problem": "model"}
 
 
 def _read_text(path: Path) -> str:
@@ -399,7 +399,7 @@ def _read_text(path: Path) -> str:
     text = path.read_text(encoding="utf-8")
     for old, new in _KEY_ALIASES.items():
         # top level only: a nested key is indented, and a path inside a
-        # string value ("Problem.strong_form...") never starts a line
+        # string value ("model.strong_form...") never starts a line
         text = re.sub(r"^%s:" % old, "%s:" % new, text, flags=re.M)
     return text
 
@@ -442,8 +442,8 @@ def _compose(path: Path, chain: Tuple[Path, ...]):
     data, outputs = _read(path)
     if outputs and chain:
         # an inherited output's files are relative to its own archive
-        from ymf.archive import rebase_domain
-        outputs = {k: dict(v, approximation=rebase_domain(
+        from ymf.archive import rebase_approximation
+        outputs = {k: dict(v, approximation=rebase_approximation(
                        v["approximation"], path.parent, chain[0].parent))
                    if v.get("approximation") else v for k, v in outputs.items()}
     own = {k: v for k, v in data.items() if k not in _FILE_KEYS}

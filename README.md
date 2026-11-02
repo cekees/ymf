@@ -51,7 +51,7 @@ ymf version that wrote it (`ymf:`), and a reader refuses one from a newer ymf.
 
 | Piece | State |
 |---|---|
-| Archive data model, YAML I/O, structural checks (`ymf.archive`) | **Implemented.** Tested against real Proteus output; used by Proteus's `ymf_io` branch, aimed at Proteus 2.0 |
+| Archive data model, YAML I/O, structural checks (`ymf.archive`) | **Implemented.** Tested against real Proteus output; used by Proteus 2.0 (its `main` line) |
 | `.ymf` → `.xmf` conversion (`ymf2xmf`, `ymf.xdmf`) | **Implemented.** Lossless round trip; output opens in ParaView. Reads XDMF from other tools too, refusing by name what the model can't hold ([docs/xdmf-model.yaml](docs/xdmf-model.yaml)) |
 | Self-contained archives: arrays inline, no HDF5 | **Implemented.** `data_item_for(array, inline=True)`; `write_archive.py --inline` |
 | Problem-spec schema v0.2 (`ymf.schema`) | **Implemented.** See the [known gaps](docs/problem-specification.md#known-gaps) |
@@ -87,7 +87,7 @@ A specification, abridged from
 [examples/kovasznay_flow.ymf](examples/kovasznay_flow.ymf):
 
 ```yaml
-Problem:
+model:
   name: "Kovasznay flow, Re = 40"
   physical_model:
     provenance: llm_derived
@@ -132,16 +132,16 @@ Writing an archive, from
 [examples/write_archive.py](examples/write_archive.py):
 
 ```python
-from ymf.archive import (new_domain, add_uniform_step, topology, geometry,
+from ymf.archive import (new_approximation, add_uniform_step, topology, geometry,
                          attribute, data_item_for, write_ymf)
 
-domain = new_domain("Mesh Spatial_Domain")
+domain = new_approximation("Mesh Spatial_Domain")
 topo = topology("Triangle", len(elements), data_item_for(elements, "heat.h5:/elements"))
 geom = geometry(data_item_for(nodes, "heat.h5:/nodes"))
 for k, t in enumerate(times):
     add_uniform_step(domain, t, topo, geom,
                      [attribute("T", data_item_for(T[k], "heat.h5:/T_t%d" % k))])
-write_ymf(domain, "heat.ymf", extra={"Problem": problem})
+write_ymf(domain, "heat.ymf", extra=problem)    # the spec: model, solution_paths, ...
 ```
 
 `data_item_for` reads shape, type and precision off the array, so the

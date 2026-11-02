@@ -21,9 +21,9 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from ymf.archive import (YmfArchiveError, canonicalize_domain, read_ymf, select_domain,
+from ymf.archive import (YmfArchiveError, canonicalize_approximation, read_ymf, select_approximation,
                          space_names, time_collections,
-                         validate_domain)
+                         validate_approximation)
 from ymf.xdmf import write_xdmf
 
 __all__ = ["archive2xmf", "describe", "ymf2xmf", "ymf2xmf_main"]
@@ -56,12 +56,12 @@ def ymf2xmf(
         malformed archive is better reported here, with the offending
         field named, than as a file a viewer silently mis-draws.
     collections, fields, steps:
-        Convert only these: see :func:`ymf.archive.select_domain`. The
+        Convert only these: see :func:`ymf.archive.select_approximation`. The
         ``.xmf`` then describes a part of the archive, which is what a
         viewer opening one space, one field or one instant of a long run
         wants; the ``.ymf`` is untouched.
 
-    The archive's ``extra`` payload -- ``Problem``, ``solution_paths``,
+    The archive's ``extra`` payload -- ``model``, ``solution_paths``,
     ``vvuq`` and anything else with no XDMF equivalent -- is carried into
     the ``.xmf`` as the base64 ``<Information Name="YMF">`` element that
     :func:`ymf.xdmf.read_xdmf` can recover. Generic XDMF consumers parse
@@ -73,9 +73,9 @@ def ymf2xmf(
     if not domain:
         raise YmfArchiveError(
             "%s holds no domain, so there is nothing to convert" % (source,))
-    domain = validate_domain(domain) if validate else canonicalize_domain(domain)
+    domain = validate_approximation(domain) if validate else canonicalize_approximation(domain)
     if collections is not None or fields is not None or steps is not None:
-        domain = select_domain(domain, collections=collections, fields=fields, steps=steps)
+        domain = select_approximation(domain, collections=collections, fields=fields, steps=steps)
     destination = Path(output) if output is not None else _default_output(source)
     write_xdmf(domain, destination, ymf_extra=extra)
     return destination
@@ -113,7 +113,7 @@ def archive2xmf(
         domain = output.get("approximation")
         if not domain:
             continue
-        domain = validate_domain(domain) if validate else canonicalize_domain(domain)
+        domain = validate_approximation(domain) if validate else canonicalize_approximation(domain)
         record = {k: v for k, v in output.items() if k != "approximation"}
         destination = outdir / (file_stem(archive_stem(source), key) + ".xmf")
         write_xdmf(domain, destination, ymf_extra=dict(spec, output=key, record=record))
@@ -151,7 +151,7 @@ def describe(domain) -> List[str]:
     Each collection is numbered so the interactive prompt can refer to it.
     """
     lines = []
-    for i, collection in enumerate(time_collections(canonicalize_domain(domain)), start=1):
+    for i, collection in enumerate(time_collections(canonicalize_approximation(domain)), start=1):
         steps = collection["data"]
         times = [step["time"] for step in steps]
         span = ("no steps" if not times
@@ -204,7 +204,7 @@ def interactive_selection(domain, ask=None):
     pass their own.
     """
     ask = ask or input
-    collections = time_collections(canonicalize_domain(domain))
+    collections = time_collections(canonicalize_approximation(domain))
     names = [c["name"] for c in collections]
     print("Collections (blank for all):")
     chosen_names = _pick("collections> ", names, ask)
@@ -272,7 +272,7 @@ def ymf2xmf_main(argv: Optional[Sequence[str]] = None) -> int:
         collections, fields, steps = args.collection, args.field, args.steps
         if args.verbose or args.show or args.interactive:
             domain, _ = read_ymf(source)
-            domain = canonicalize_domain(domain)
+            domain = canonicalize_approximation(domain)
             print("%s" % (source,))
             if not args.interactive:
                 times = [i["time"] for i in domain.get("times", [])]

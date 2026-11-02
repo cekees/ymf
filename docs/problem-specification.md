@@ -5,8 +5,9 @@ from its physics down to a solver configuration, so that a person, an LLM
 and a solver can all work from the same record. This guide covers the
 current schema (v0.2) as `ymf.schema` implements it, using the documents in
 [`examples/`](../examples/) to illustrate. For the design history and
-rationale, see [ymf-schema.md](ymf-schema.md) (v0.1) and
-[ymf-schema-v0.2-delta.md](ymf-schema-v0.2-delta.md).
+rationale, see [history/schema-v0.1.md](history/schema-v0.1.md) and
+[history/schema-v0.2-delta.md](history/schema-v0.2-delta.md); for the gaps
+that have been closed and why, [changes.md](changes.md).
 
 - [The idea](#the-idea)
 - [Document structure](#document-structure)
@@ -52,7 +53,6 @@ model:                     # required
   characteristic_scales: ... # optional: for non-dimensionalization
   dimensionless_numbers: ... # optional: formulas over the scales
   units: ...                 # optional: {convention: SI|CGS|US|dimensionless}
-  unit_systems: ...          # optional
   mesh_generation: ...       # optional: where a mesh comes from (DEM, filters)
 
 solution_paths:              # required
@@ -60,8 +60,6 @@ solution_paths:              # required
   discretizations: [...]     # stages 4-5, possibly empty
 
 vvuq: ...                    # optional, free-form: verification/validation plans and results
-archive: ...                 # optional, free-form: reserved for output configuration
-Xdmf: ...                    # optional, free-form: legacy, from the v0.1 draft
 
 extends: model.ymf          # optional: the document this one builds on
 ymf_state: abstract          # optional: abstract | well-posed | discretized | closed
@@ -84,11 +82,10 @@ equations themselves, in the [notation](#writing-it-once-the-notation).
 Unknowns are either bare names (`[u, p]`) or structured entries with
 `units`, an optional `std_name`, `provenance`, and `rank` (1 for a vector).
 `ymf.normalize_unknowns()` turns either form into the structured one.
-Optional: `initial_conditions`, `boundary_conditions`, `coefficients`,
-`dimensional_check`. (`strong_form_expression` and
-`known_analytical_solution` are accepted from older documents; they
-duplicate `equations` and the analytical solution path, so new documents
-leave them out.)
+Optional: `initial_conditions`, `boundary_conditions`, `coefficients`.
+(`strong_form_expression`, `known_analytical_solution` and
+`dimensional_check` used to be accepted and are refused now; see
+[changes.md](changes.md).)
 
 ```yaml
 initial_conditions:
@@ -103,6 +100,30 @@ boundary_conditions:
     value: 300.0
     units: K
 ```
+
+**Boundary conditions** of all four types run. A `neumann` condition gives
+the **outward** diffusive flux `q·n` with `q = -a∇u`, which is the sign
+Proteus's `diffusiveFluxBoundaryConditions` wants; where no condition claims
+a face, the natural condition applies, which for a diffusion term is zero
+flux. A Neumann-only problem is detected as determined up to a constant,
+like any other with no Dirichlet condition. A `robin` condition is
+`αu + β q·n = g`, with `alpha` and `beta` beside the condition and `g` given
+as `value` or `formula` like any other right-hand side. All three are
+expressions, so they may vary along the boundary. It is one relation, so a
+vector unknown wants one condition per component. `beta: 0` is refused:
+that is a Dirichlet condition, and belongs where it can be imposed strongly.
+`periodic` conditions need a box (see [The domain](#the-domain)).
+
+A value is given as a number (`value`), an expression (`formula`), or a
+table, `series: [[t, value], ...]` with `t` ascending: a measured or design
+record, which is the one thing an expression cannot be. A series is linear
+between samples; outside its range the first and last values are held,
+because extrapolating a record past its end is not something to do quietly.
+It is a **value form**, not a kind of condition, orthogonal to `type`
+exactly as `value` and `formula` are. Under `neumann` it is a discharge
+hydrograph; under `dirichlet` a stage hydrograph, a gauge reading against
+time, or a measured inlet temperature. A series is one number per time, so
+it is refused on a vector unknown: give one condition per component.
 
 **`weak_forms`**: each has a `label`, `provenance`, a `derivation`, the
 trial and test `solution_spaces`, and the `bilinear` and `linear` forms.
@@ -684,7 +705,7 @@ strong_form:
 `normalize_unknowns(unknowns, provenance=strong_form["provenance"])` fills
 in each unknown's effective provenance.
 
-Earlier drafts, including [ymf-schema.md](ymf-schema.md), called the
+Earlier drafts, including [schema v0.1](history/schema-v0.1.md), called the
 strong form's key `unknown_provenance`. It was renamed because it read as
 "the provenance is unknown", and the old key is now rejected.
 
@@ -812,123 +833,36 @@ solver derives the weak form from the strong one (Proteus integrates the
 flux terms by parts), and the weak form's `stabilization_method` selects
 what the solver adds.
 
-`vvuq`, `archive` and `Xdmf` are accepted with any content. The intended
-shape of `vvuq` is in [ymf-schema.md §3](ymf-schema.md#3-vvuq-results).
-`archive` is reserved for output configuration. The archive format itself
-is implemented separately; see [archive-format.md](archive-format.md).
+`vvuq` takes `verification` and `validation`, each with any content; the
+reference graph checks `vvuq.verification.reference`. The intended shape of
+the rest is in [schema v0.1 § 3](history/schema-v0.1.md#3-vvuq-results). The
+top-level `archive` and `Xdmf` keys of the v0.1 draft are refused now: the
+archive is its own format, [archive-format.md](archive-format.md).
 
 ## Known gaps
 
 These are real limitations of the current schema and code, recorded here so
-nobody has to rediscover them:
+nobody has to rediscover them. Gaps that have been closed, and how, are in
+[changes.md](changes.md).
 
-- *(Closed.)* Branch references were not resolved: a `from_weak_form` or a
-  `branch_ref` that named nothing still validated. All four edges of the
-  reference graph are now checked, `branch_ref` has become
-  `reference.analytical`, integer indices into `weak_forms` are gone, and a
-  single-valued reference may be omitted where the graph does not branch.
-  See [Branching](#branching-one-problem-several-solution-paths).
-- *(Closed.)* `coefficients` was untyped, so every scalar arrived as a
-  string, and a coefficient written as an expression
-  (`λ: "ρ/(2μ) - sqrt(ρ²/(4μ²) + 4π²)"`, `Q: "π²"`) was dropped from
-  formula scope, silently taking any number that referred to it. Numbers
-  are now typed in the schema, and expressions are evaluated by the one
-  resolver `adr_problem` uses, so `ymf.units` and the solver give the same
-  answer for the same coefficient. `sympy` moved into the `frontend` extra
-  for this: a front-end that cannot evaluate an expression would report
-  different numbers from the solver reading the same file. A bare
-  `ymf[units]` install still works, and still sees only the coefficients
-  that are already numbers.
-- *(Closed.)* A boundary condition's units were compared with its
-  unknown's whatever its type, which is right only for `dirichlet`: a
-  `neumann` flux in W/m² failed and one in K passed. Each type now has its
-  own rule (see [Units](#units-scales-and-dimensionless-numbers)). What is
-  left: `neumann` and `robin` see the diffusive flux only, and `t` has no
-  declared units anywhere, so an `α` or `β` that depends on time is never
-  decided.
-- **Dirichlet, Neumann, Robin and periodic conditions run**, with values
-  given as a number, a formula or a table, and only on a box.
-  A `neumann` condition gives the **outward** diffusive flux `q·n` with
-  `q = -a∇u`, which is the sign Proteus's
-  `diffusiveFluxBoundaryConditions` wants; where no condition claims a
-  face, the natural condition applies, which for a diffusion term is zero
-  flux. A Neumann-only problem is detected as determined up to a constant,
-  like any other with no Dirichlet condition.
-- **A value may be given as a table**, `series: [[t, value], ...]` with `t`
-  ascending — a measured or design record, which is the one thing an
-  expression cannot be. Linear between samples; outside the range the first
-  and last values are held, because extrapolating a record past its end is
-  not something to do quietly.
-
-  This is a **value form**, not a kind of condition: it is orthogonal to
-  `type`, exactly as `value` and `formula` are. Under `neumann` it is a
-  discharge hydrograph; under `dirichlet` a stage hydrograph — a gauge
-  reading against time — or a measured inlet temperature. `hydrograph` used
-  to be a `type`, which tangled the two and made the Dirichlet case
-  impossible to write. A series is one number per time, so it is refused on
-  a vector unknown: give one condition per component.
-- **`robin` runs too**, `αu + β q·n = g`, with `alpha` and `beta` beside
-  the condition and `g` given as `value` or `formula` like any other
-  right-hand side. All three are expressions, so they may vary along the
-  boundary. It is one relation, so a vector unknown wants one condition per
-  component. `beta: 0` is refused — that is a Dirichlet condition, and
-  belongs where it can be imposed strongly.
-
-  This needed a numerical flux written for Proteus
-  (`NumericalFlux.RobinFactory`), not wiring: the flux depends on the
-  solution's trace, and a Proteus flux boundary condition is a function of
-  `(x, t)` alone. That the *dependency set* of a boundary expression is the
-  thing to get right, rather than the list of condition types, is the point
-  taken up in `YMF_TAG_PROPAGATION.md`.
 - **Only `box` and `piecewise_linear` domains are solved.** A domain of any
-  kind validates and is carried — see [The domain](#the-domain) — but
+  kind validates and is carried (see [The domain](#the-domain)), but
   `adr_problem` refuses `discrete` and `file`, saying which kind it was
   given rather than failing obscurely.
-- **The notation's limits**, each of which now reports the fix as well as
-  the fault. Functions need parentheses — `sin πx` says to write `sin(x)`,
-  not `sin x`. There are no subscripts — `p₀` says to write `p0` and declare
-  it, since the superscripts `² ³ ⁴` *are* notation (powers) and a subscript
-  is a reasonable guess. And a multi-letter name must be declared to be a
-  name rather than a product — `Re` says to declare it, and that it is not
-  read as `R·e` because `R` and `e` are not names.
-- **SUPG/PSPG with equal-order P1 on Kovasznay flow is pre-asymptotic at
-  reachable mesh sizes**, not wrong. Measured rates sit below the a priori
-  values on coarse meshes and climb towards them as the mesh refines (1.88
-  for velocity at 512 cells). This was investigated and closed: it is a
-  resolution limit, not a defect in `NavierStokesASGS_velocity_pressure`.
-  Taylor-Hood on the same problem reaches its rates sooner, so a
-  side-by-side comparison at one mesh size misleads. Reaching the
-  asymptotic range needs an iterative solver (512 cells is already 24 GB
-  with MUMPS) or a lower-Reynolds companion case.
-- *(Closed.)* `1e-10` used to be a string to PyYAML and a number to
-  strictyaml, so a spec meant different things read as a file and read
-  inside an archive. The archive reader now resolves YAML 1.2 scientific
-  notation, so `1e-10`, `1E-10`, `1e+10`, `-1e-10` and `1.5e3` are all
-  numbers to both. The resolver is registered on a subclass, so pyyaml's own
-  loaders are unchanged for anything else in the process.
-- *(Closed.)* Composition could add and change but not remove, so dropping
-  an assumption or a field a model stated took a whole new model file.
-  `remove:` now does it, recorded in `composition.removals`. See
-  [Composing documents](#composing-documents-models-and-problems).
-- *(Closed.)* An error that no single file holds -- a required key none of
-  them sets -- was reported against a line of the merged document, which
-  exists nowhere on disk. The message now also names the path and the files
-  that write it: *no file in the chain sets `equation_formulation` under
-  `model.strong_form`; `model.strong_form` is written by
-  `model.ymf`, `model.ymf`*. Where one file added an incomplete entry,
-  only that file is named. The path is the same shape `remove:` and the
-  override log use, so it can be pasted between them.
-- *(Mostly closed.)* Duplicated values were caught by name only, so a
-  coefficient called `nu` or `eta`, or any scale outside the conventional
-  six, was invisible. A scale whose value *and dimension* match a
-  coefficient's is now reported whatever either is called. Dimension is what
-  separates a duplicate from a coincidence: in a non-dimensionalized problem
-  half the quantities are 1.0, and 1.0 kg/m3 beside 1.0 m is not one value
-  written twice. Where either side states no units, nothing is said, because
-  there is no way to tell. Still unchecked: a velocity scale that restates a
-  boundary speed, which would need the boundary condition's expression
-  evaluated. Derive scales from coefficients wherever possible.
-- *(Closed.)* `characteristic_scales` was a fixed set of six, with no slot
-  for a diffusivity or a pressure scale. It now takes any name. The
-  original six keep their aliases (`L`, `U`, `rho`, `mu`, `T`) in formula
-  scope; any other name resolves under itself.
+- **Periodic conditions only on a box.** A periodic region must name two
+  opposite faces of the box; on a `piecewise_linear` domain the condition is
+  refused.
+- **The units of a flux condition are partly checked.** `neumann` and
+  `robin` see the diffusive flux only, and `t` has no declared units
+  anywhere, so an `α` or `β` that depends on time is never decided.
+- **A duplicated value is found only between a scale and a coefficient.** A
+  velocity scale that restates a boundary speed is not caught, because that
+  would need the boundary condition's expression evaluated. Derive scales
+  from coefficients wherever possible.
+- **The notation's limits**, each of which reports the fix as well as the
+  fault. Functions need parentheses: `sin πx` says to write `sin(x)`, not
+  `sin x`. There are no subscripts: `p₀` says to write `p0` and declare it,
+  since the superscripts `² ³ ⁴` *are* notation (powers) and a subscript is
+  a reasonable guess. And a multi-letter name must be declared to be a name
+  rather than a product: `Re` says to declare it, and that it is not read as
+  `R·e` because `R` and `e` are not names.

@@ -331,3 +331,74 @@ def test_strong_form_equations_are_what_adr_problem_classifies():
     assert len(residuals) == 3
     assert [e["component"] for e in adr_problem(doc)["adr"]["equations"]] == space.components
     assert to_notation(residuals[2]) == "∂v_0/∂x + ∂v_1/∂y"
+
+
+# --- classify, directly, on a coupled system ---------------------------------
+#
+# adr_form exports plain data; classify is the step before it, still in sympy,
+# and the one a model family (a level set advected by a flow, a density that
+# depends on the level set) builds on. These pin down where each kind of
+# coupling term lands, one scalar residual at a time.
+
+
+def _classified(lines, unknowns, coefficients=None, dim=2, **kwargs):
+    from ymf.symbolic.adr import classify as classify_residual
+    space = Space(dim, unknowns, coefficients or {})
+    residuals = []
+    for line in lines:
+        residuals.extend(parse_equation(line, space))
+    return space, [classify_residual(r, space, **kwargs) for r in residuals]
+
+
+def _symbols(space):
+    """The space's own symbols, by component name (they carry assumptions,
+    so a bare sympy.Symbol of the same name is a different symbol)."""
+    return dict(zip(space.components, space.component_symbols))
+
+
+def test_classify_keys_cross_diffusion_by_the_other_unknown():
+    """-div(phi grad phi) in u's equation is diffusion of phi, not of u."""
+    space, (eq_u, eq_phi) = _classified(
+        ["dt(u) - div(k*grad(u)) - div(phi*grad(phi)) + u*phi = 0",
+         "dt(phi) + div(phi*(u, 0)) = 0"],
+        {"u": 0, "phi": 0}, {"k": 2.0})
+    u, phi = _symbols(space)["u"], _symbols(space)["phi"]
+    assert eq_u.mass == u
+    assert set(eq_u.diffusion) == {"u", "phi"}
+    assert eq_u.diffusion["u"] == 2.0 * sympy.eye(2)
+    assert eq_u.diffusion["phi"] == phi * sympy.eye(2)
+    assert sympy.simplify(eq_u.reaction - u * phi) == 0
+    assert eq_u.advection == [0, 0] and eq_u.hamiltonian == 0
+    # phi advected by a flux that depends on u: advection, nothing else
+    assert eq_phi.mass == phi
+    assert eq_phi.advection == [phi * u, 0]
+    assert eq_phi.diffusion == {} and eq_phi.reaction == 0 and eq_phi.hamiltonian == 0
+
+
+def test_classify_puts_a_nonlinear_gradient_term_in_the_hamiltonian():
+    """|grad phi|^2 is not a divergence: it cannot be a flux."""
+    space, (eq,) = _classified(["dt(phi) + dx(phi)**2 + dy(phi)**2 = 1"], {"phi": 0})
+    assert eq.mass == _symbols(space)["phi"]
+    assert eq.advection == [0, 0] and eq.diffusion == {}
+    assert eq.reaction == -1
+    assert eq.hamiltonian != 0
+
+
+def test_classify_moves_a_named_gradient_from_the_flux_to_the_hamiltonian():
+    """grad(p) is div(p I) or H = dp/dx_j: one strong form, two weak forms."""
+    lines = ["rho*dt(v) + div(rho*outer(v, v)) - div(mu*grad(v)) + grad(p) = 0"]
+    unknowns, coefficients = {"v": 1, "p": 0}, {"rho": 1.0, "mu": 1.0}
+    space, as_flux = _classified(lines, unknowns, coefficients)
+    _, as_h = _classified(lines, unknowns, coefficients, hamiltonian_gradients=("p",))
+    p = _symbols(space)["p"]
+    for axis, (flux, h) in enumerate(zip(as_flux, as_h)):
+        assert flux.advection[axis].has(p) and flux.hamiltonian == 0
+        assert not any(f.has(p) for f in h.advection)
+        assert h.hamiltonian.has(p)
+
+
+def test_classify_refuses_a_name_that_is_not_declared():
+    from ymf.symbolic.adr import classify as classify_residual
+    space = Space(2, {"u": 0}, {})
+    with pytest.raises(SymbolicError, match="undefined names q"):
+        classify_residual(sympy.Symbol("q") * _symbols(space)["u"], space)

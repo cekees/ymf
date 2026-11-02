@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip("strictyaml")
 
 from ymf import closure  # noqa: E402
-from ymf.archive import add_uniform_step, data_item, geometry, new_domain, topology  # noqa: E402
+from ymf.archive import add_uniform_step, data_item, geometry, new_approximation, topology  # noqa: E402
 from ymf.compose import YmfCompositionError, load_composed  # noqa: E402
 from ymf.state import STATES, YmfStateError, reached  # noqa: E402
 
@@ -16,7 +16,7 @@ POISSON = (Path(__file__).parent.parent / "examples" / "poisson.ymf").read_text(
 
 
 def _output(realization):
-    domain = new_domain()
+    domain = new_approximation()
     nodes = data_item([2, 2], values=[0.0, 0.0, 1.0, 1.0])
     vertices = data_item([2], values=[0, 1], data_type="Int", precision=4)
     add_uniform_step(domain, 0.0, topology("Polyvertex", 2, vertices, nodes_per_element=1),

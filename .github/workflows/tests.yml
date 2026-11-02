@@ -85,3 +85,53 @@ jobs:
           if [ -n "$unexpected" ]; then
             echo "unexpected skips:"; echo "$unexpected"; exit 1
           fi
+
+  one-extra:
+    # The leg above installs the core alone and then everything. These install
+    # one extra each, so the extras' boundaries are tested in both directions:
+    # the extra's own modules import without the others, and every test that
+    # needs another extra skips rather than erroring at collection.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {extra: spec, modules: "ymf.schema, ymf.compose, ymf.generated"}
+          - {extra: units, modules: "ymf.units"}
+          - {extra: symbolic, modules: "ymf.symbolic, ymf.schema"}
+    name: linux-64 / py3.12 / ymf[${{ matrix.extra }}] alone
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sdist
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --sdist
+
+      - name: Install ymf[${{ matrix.extra }}] alone
+        shell: bash
+        run: |
+          python -m venv /tmp/one
+          /tmp/one/bin/pip install "$(ls dist/ymf-*.tar.gz)[${{ matrix.extra }}]" pytest
+
+      - name: Its modules import without the other extras
+        shell: bash
+        run: |
+          cd /tmp
+          /tmp/one/bin/python -c "import ymf, ${{ matrix.modules }}; print('ymf', ymf.__version__, 'imports ${{ matrix.modules }}')"
+
+      - name: Run test suite
+        shell: bash
+        run: |
+          # The tests that need another extra skip themselves; a collection
+          # error or a failure here is a test, or a module, that assumes an
+          # extra it does not declare.
+          export PATH=/tmp/one/bin:$PATH
+          python -c "import ymf; print(ymf.__file__)" | grep -v "/src/ymf/"
+          python -m pytest tests -q -rs -p no:cacheprovider

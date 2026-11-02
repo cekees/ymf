@@ -1,5 +1,8 @@
 # Geospatial and Environmental Data Sources for Physical Modeling
 
+> **Background research.** Drafted with an LLM research agent and not all checked against its sources. Treat specific numbers and API names as leads to verify, not facts.
+> It is the basis for `ymf.data_sources`; the dataset details were not re-verified.
+
 A report on available data sources for topography, bathymetry, vegetation, roughness, and remote sensing — both free and commercial — relevant to physical modeling workflows.
 
 ---

@@ -1,7 +1,7 @@
 """Unit handling, dimensional consistency checking, and non-dimensionalization.
 
 Implements the "immediate"/"short-term" recommendations from
-``docs/ymf-units-report.md``:
+``docs/research/units.md``:
 
 - pint-backed unit string parsing (report §1.1, §6.2), tolerant of the
   bare-exponent (``m2/s``), unicode-superscript (``m²``), caret (``m^2``),
@@ -15,11 +15,11 @@ Deliberately **non-intrusive** (report §2.1): every function accepts YMF
 documents with no units at all and simply reports "nothing to check" rather
 than raising. Units are an enhancement, never a requirement.
 
-Symbolic parsing of ``strong_form_expression`` term-by-term (report §4.2) is
-explicitly **out of scope** here — it needs a real expression parser and is
-deferred to the ibvp/sympy language layer per the v0.2 delta doc §7. What
-*is* implemented is everything checkable from unit strings already present
-on the parsed document.
+Reading the ``equations`` is ymf.symbolic's job, not this module's. With
+ymf[symbolic] installed, the boundary-condition check uses it to find each
+equation's diffusive flux; without it, those comparisons are reported as
+not checked. Everything else here is checkable from the unit strings
+already present on the parsed document.
 """
 
 from __future__ import annotations
@@ -722,7 +722,7 @@ def _eval_notation(formula: str, scope: Dict[str, float]) -> Optional[float]:
 
 
 def characteristic_scale_values(problem: Dict[str, Any]) -> Dict[str, float]:
-    """Resolve ``Problem.characteristic_scales`` to a flat ``{name: value}`` dict.
+    """Resolve ``model.characteristic_scales`` to a flat ``{name: value}`` dict.
 
     Direct (``value:``) scales are taken as-is. ``derived: true`` scales
     (e.g. ``time: {derived: true, formula: "L_char / U_char"}``, report
@@ -831,7 +831,7 @@ def _coefficient_values(problem: Dict[str, Any]) -> Dict[str, float]:
 
 
 def compute_dimensionless_numbers(problem: Dict[str, Any]) -> Dict[str, float]:
-    """Evaluate ``Problem.dimensionless_numbers[].formula`` (report §5.2).
+    """Evaluate ``model.dimensionless_numbers[].formula`` (report §5.2).
 
     Formulas are evaluated against a scope built from
     :func:`characteristic_scale_values` (using bare names ``L``, ``U``,
@@ -882,7 +882,7 @@ _PRESSURE_DIM = _UREG.get_dimensionality("Pa")
 def non_dimensionalize(doc: Dict[str, Any]) -> Dict[str, Any]:
     """Build the non-dimensionalization block described in report §5.2/§5.3.
 
-    Given a document with ``Problem.characteristic_scales`` and
+    Given a document with ``model.characteristic_scales`` and
     units-annotated ``unknowns``, returns:
 
     - ``characteristic_scales``: resolved numeric values (incl. derived ones)
@@ -892,7 +892,7 @@ def non_dimensionalize(doc: Dict[str, Any]) -> Dict[str, Any]:
       pressure), mirroring the report's worked examples (§5.4)
 
     This produces the substitution *relations*, not a symbolic substitution
-    into ``strong_form_expression`` — doing that requires a full sympy-based
+    into the ``equations`` — doing that requires a full sympy-based
     PDE parser and is explicitly deferred (v0.2 delta doc §7: "automatic
     non-dimensionalization pipeline").
     """

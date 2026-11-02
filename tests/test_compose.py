@@ -3,7 +3,8 @@
 from pathlib import Path
 
 import pytest
-import strictyaml
+
+strictyaml = pytest.importorskip("strictyaml")
 
 from ymf.compose import YmfCompositionError
 from ymf.schema import load_ymf
@@ -22,7 +23,6 @@ model:
       - name: u
         units: m/s
     equation_formulation: "model"
-    strong_form_expression: "x"
     coefficients:
       mu: {units: Pa*s}
 """
@@ -184,7 +184,7 @@ def test_an_error_in_a_parent_is_reported_against_the_parent(tmp_path):
 
 def test_an_error_in_a_single_file_is_reported_against_it(tmp_path):
     path = tmp_path / "bad.ymf"
-    path.write_text("Problem:\n  name: x\n  nonsense: 1\nsolution_paths:\n"
+    path.write_text("model:\n  name: x\n  nonsense: 1\nsolution_paths:\n"
                     "  analytical: []\n  discretizations: []\n", encoding="utf-8")
     with pytest.raises(strictyaml.YAMLValidationError, match=r"bad\.ymf"):
         load_ymf(path)
@@ -313,3 +313,12 @@ model:
     message = str(caught.value)
     assert "problem.ymf" in message
     assert "composed from" not in message
+
+
+@pytest.mark.parametrize("old", ["Problem", "problem"])
+def test_the_old_top_level_key_still_reads_as_model(tmp_path, old):
+    """An archive written before the key was renamed keeps loading."""
+    path = tmp_path / "old.ymf"
+    path.write_text(BASE.replace("model:", old + ":", 1), encoding="utf-8")
+    doc = load_ymf(path)
+    assert doc["model"]["name"] == "flow" and old not in doc

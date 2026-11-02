@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ymf.archive import canonicalize_domain, read_ymf, series, space_names
+from ymf.archive import canonicalize_approximation, read_ymf, series, space_names
 from ymf.xdmf import read_xdmf
 
 
@@ -105,7 +105,7 @@ def main(argv=None) -> int:
     xmf_path = args.archive.with_suffix(".xmf")
     if xmf_path.exists():
         xmf_domain, xmf_extra = read_xdmf(xmf_path)
-        same = (canonicalize_domain(xmf_domain) == canonicalize_domain(domain)
+        same = (canonicalize_approximation(xmf_domain) == canonicalize_approximation(domain)
                 and xmf_extra == extra)
         print("\n%s holds the same domain and problem: %s" % (xmf_path.name, same))
         if not same:
