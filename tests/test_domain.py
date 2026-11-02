@@ -192,9 +192,6 @@ def compose(tmp_path, child):
     return load_ymf(tmp_path / "child.ymf")
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "the partial schema does not relax a Str() | Map() validator, so every "
-    "file in a chain must restate the domain's kind"))
 def test_a_child_may_tag_the_region_its_parent_states(tmp_path):
     """The region in the model, the names of its boundaries in the problem."""
     doc = compose(tmp_path, """\
