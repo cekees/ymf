@@ -7,6 +7,14 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-04: boundary conditions in `split_problem`.** Each sub-problem
+  carries the conditions it imposes, in `adr_problem`'s plain-data shape
+  (`where` code, per-component values, series, robin parts, periodic axes),
+  for every kind: those on its own unknowns, and those on a coefficient its
+  introduced unknown carries. In the dam break: flow gets the free-slip
+  walls, `p = 0` and an open `v` on top; VOF gets air flowing in through
+  `χh`; the level-set solves get none, as Proteus's `setAtmosphere` sets
+  none for them.
 - **2026-11-03: gauges.** `model.gauges` in the shape the force-history
   plan (C22, step 4) set out: `point`, `line` and `line_integral` gauges of
   named fields, and `boundary_integral` gauges of wetted area, forces and

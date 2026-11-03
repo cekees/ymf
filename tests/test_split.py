@@ -223,3 +223,40 @@ def test_the_rate_of_a_known_field_has_no_name():
 def test_a_name_is_an_unknown_or_a_known_field_not_both():
     with pytest.raises(SymbolicError, match="both an unknown and a known field"):
         Space(2, {"v": 1}, {}, fields={"v": 1})
+
+
+# --- boundary conditions, per sub-problem -----------------------------------------------
+
+
+def test_each_sub_problem_imposes_the_conditions_on_what_it_solves(split):
+    flow = [(c["type"], c["variable"], c["region"], c.get("set"))
+            for c in _sub(split, "flow")["boundary_conditions"]]
+    assert flow == [("slip", "v", "walls", "free_slip"),
+                    ("dirichlet", "p", "top", "atmosphere"),
+                    ("open", "v", "top", "atmosphere")]
+    slip = _sub(split, "flow")["boundary_conditions"][0]
+    assert slip["components"] == ["v_0", "v_1"] and slip["value"] == "0.0"
+    assert _sub(split, "ncls")["boundary_conditions"] == []
+
+
+def test_a_condition_on_a_coefficient_goes_to_its_carrier(split):
+    (inflow,) = _sub(split, "vof")["boundary_conditions"]
+    assert inflow == {"type": "inflow", "variable": "χ", "region": "top",
+                      "where": "(abs(y - 1.8) <= tol)", "carried_by": "χh",
+                      "set": "atmosphere", "components": ["χh"], "value": "1.0"}
+
+
+def test_a_condition_reaches_every_sub_problem_that_solves_for_its_variable(dambreak):
+    doc = copy.deepcopy(dambreak)
+    doc["model"]["strong_form"]["boundary_conditions"] = [
+        {"region": "top", "variable": "φ", "type": "dirichlet", "value": 1.0},
+        {"region": "top", "variable": "v", "type": "inflow", "formula": "(0, -t)"},
+        {"region": "walls", "variable": "p", "type": "characteristic",
+         "series": [[0.0, 0.0], [1.0, 2.0]]}]
+    split = split_problem(doc, "level_set_five")
+    on_phi = [s["name"] for s in split["subproblems"]
+              if any(c["variable"] == "φ" for c in s["boundary_conditions"])]
+    assert on_phi == ["ncls", "rdls"]                 # not mcorr, which only reads φ
+    flow = {(c["variable"], c["region"]): c for c in _sub(split, "flow")["boundary_conditions"]}
+    assert flow[("v", "top")]["value"] == {"v_0": "0", "v_1": "-t"}   # replaces open
+    assert flow[("p", "walls")]["series"] == [[0.0, 0.0], [1.0, 2.0]]

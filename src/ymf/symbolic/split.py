@@ -70,7 +70,8 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
          "bound": {symbol: meaning or code},
          "initial": {component: code},          # the model unknowns'
          "subproblems": [{"name", "unknowns", "adr", "reads", "coefficients",
-                          "regularized", "initial", ...}, ...]}
+                          "regularized", "initial", "boundary_conditions",
+                          ...}, ...]}
 
     A sub-problem that solves nothing it can classify (one that only spins
     the run up, or enforces a constraint it gives no equation for) has
@@ -96,6 +97,17 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
                     for s in subproblems if (s.get("introduces") or {}).get("approximates")}
     entry_bound = _bind(entry.get("binds") or {}, {}, dim, "the discretization's binds")
 
+    numbers = _coefficients(spec, dim, strict=False)
+    domain = strong["domain"]
+    time = None
+    if box is not None:
+        lower, upper = box
+        if isinstance(domain, dict) and domain.get("time"):
+            time = list(domain["time"])
+    else:
+        from ymf.symbolic.notation import Parser
+        lower, upper, interval = Parser(Space(dim, {}, numbers)).domain(domain)
+        time = list(interval) if interval else None
     out_subs = []
     for sub in subproblems:
         where = "sub-problem %s" % (sub["name"],)
@@ -204,19 +216,12 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
                 parse_equation(sub["enforces"], space)
             except SymbolicError as exc:
                 raise SymbolicError("%s, enforces: %s" % (where, exc)) from exc
+        carried = {(s.get("introduces") or {}).get("approximates"): sub["introduces"]["name"]
+                   for s in [sub] if (s.get("introduces") or {}).get("approximates")}
+        record["boundary_conditions"] = _conditions(strong, own, carried, space, dim,
+                                                    lower, upper, where)
         out_subs.append(record)
 
-    numbers = _coefficients(spec, dim, strict=False)
-    domain = strong["domain"]
-    time = None
-    if box is not None:
-        lower, upper = box
-        if isinstance(domain, dict) and domain.get("time"):
-            time = list(domain["time"])
-    else:
-        from ymf.symbolic.notation import Parser
-        lower, upper, interval = Parser(Space(dim, {}, numbers)).domain(domain)
-        time = list(interval) if interval else None
     initial = {}
     for ic in strong.get("initial_conditions") or []:
         name = ic["field"]
@@ -236,6 +241,71 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
             "bound": {k: (v if isinstance(v, str) else to_code(v))
                       for k, v in _describe_bound(entry.get("binds") or {}, entry_bound).items()},
             "initial": initial, "subproblems": out_subs}
+
+
+def _conditions(strong, own, carried, space, dim, lower, upper, where) -> List[Dict[str, Any]]:
+    """The boundary conditions one sub-problem imposes, as plain data.
+
+    Those on its own unknowns, and those on a coefficient its introduced
+    unknown carries (atmosphere's χ inflow is VOF's χh inflow). Conditions on
+    what it only reads are another sub-problem's. Each entry has ``type``,
+    ``variable``, ``region``, ``where`` (boolean code using ``tol``, None for
+    the whole boundary), ``set`` if it came from one, the ``components`` it
+    acts on, and its data: ``value`` (code; per component for a vector,
+    except slip's normal component), ``series``, robin's ``alpha``/``beta``/
+    ``g``, or periodic's ``axes``.
+    """
+    from ymf.normalize import boundary_conditions
+    from ymf.symbolic.problem import (_components, _given, _number, _periodic_axes,
+                                      _robin_part, _robin_rhs, _series, _where)
+    regions = {r["name"]: r["where"] for r in strong.get("boundary_regions") or []}
+    out = []
+    try:
+        conditions = boundary_conditions(strong)
+    except ValueError as exc:
+        raise SymbolicError("%s: %s" % (where, exc)) from exc
+    for bc in conditions:
+        variable = bc["variable"]
+        if variable in own:
+            target, rank = variable, own[variable]
+        elif variable in carried:
+            target, rank = carried[variable], 0
+        else:
+            continue
+        here = "%s, boundary condition %s on %s" % (where, bc["type"], bc["region"])
+        entry: Dict[str, Any] = {"type": bc["type"], "variable": variable,
+                                 "region": bc["region"],
+                                 "where": _where(regions[bc["region"]], space)}
+        if target != variable:
+            entry["carried_by"] = target
+        if bc.get("set"):
+            entry["set"] = bc["set"]
+        entry["components"] = ([target] if rank == 0 else
+                               ["%s_%d" % (target, i) for i in range(dim)])
+        kind = bc["type"]
+        if kind == "periodic":
+            if lower is None:
+                raise SymbolicError("%s: periodic faces are a box's" % (here,))
+            entry["axes"] = _periodic_axes(regions[bc["region"]], lower, upper, space,
+                                           bc["region"])
+        elif kind == "robin":
+            entry.update(alpha=_robin_part(bc, "alpha", space),
+                         beta=_robin_part(bc, "beta", space), g=_robin_rhs(bc, space))
+        elif bc.get("series") is not None:
+            entry["series"] = _series(bc, target, 0 if kind == "slip" else rank)
+        elif bc.get("formula") is not None or bc.get("value") is not None:
+            value = (parse_expression(bc["formula"], space) if bc.get("formula") is not None
+                     else _number(bc["value"]))
+            if kind == "slip" or rank == 0:
+                entry["value"] = to_code(_given(value, space, here))
+            else:
+                if not isinstance(value, sympy.MatrixBase):
+                    value = sympy.Matrix([value] * dim)
+                entry["value"] = _components(value, target, rank, space, here)
+        elif kind == "slip":
+            entry["value"] = "0.0"
+        out.append(entry)
+    return out
 
 
 def _bind(binds: Dict[str, Any], outer: Dict[str, Any], dim: int, where: str) -> Dict[str, Any]:

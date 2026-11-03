@@ -719,8 +719,11 @@ substituted, and the sharp functions are smoothed as Proteus smooths them:
 `heaviside` becomes `gf.H` of `equivalent_polynomials.h`, whose derivative
 is its `gf.D`, and `sign` becomes `2 H_ε − 1`. Each sub-problem also
 carries what it reads and when, its named coefficients, the
-regularizations it used, an introduced unknown's initial condition, and
-its effective solver. A solver maps a sub-problem onto its own modules (a
+regularizations it used, an introduced unknown's initial condition, its
+effective solver, and its **boundary conditions**: those on the unknowns it
+solves for, and those on a coefficient its introduced unknown carries
+(atmosphere's `χ` inflow is VOF's `χh` inflow), with condition sets
+expanded. A condition on a field a sub-problem only reads is another's. A solver maps a sub-problem onto its own modules (a
 dispatcher); `proteus:` blocks are interim hints for it, carried as text.
 
 ## Document state
