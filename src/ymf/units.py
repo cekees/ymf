@@ -295,7 +295,58 @@ def check(doc: Dict[str, Any], missing_units: str = "skip") -> UnitCheckResult:
                 f"are {dimensionality(scale_units)}; state it once with "
                 f"{{derived: true, formula: \"{name}\"}}"))
 
+    _check_state_coefficients_in_scales(problem, strong_form, result)
     return result
+
+
+def _check_state_coefficients_in_scales(problem, strong_form, result) -> None:
+    """A scale or a dimensionless number named after a coefficient that is a
+    function of the state.
+
+    A coefficient may name the unknowns (a density ``ρw (1 - χ) + ρa χ``).
+    It then has no single value, so a ``density: {derived: true, formula:
+    "ρ"}`` scale, or an ``Re`` built on it, cannot be evaluated and would
+    drop out of ``non_dimensionalize`` without a word. Say which, and how to
+    fix it: derive it from a constant coefficient instead.
+    """
+    try:
+        from ymf.symbolic.notation import tokens
+        from ymf.symbolic.problem import state_coefficients
+    except ImportError:            # no sympy: no formulas are read at all
+        return
+    try:
+        dim = _space_dimension(strong_form.get("domain"))
+    except _Undetermined:
+        dim = 3
+    try:
+        state = state_coefficients(strong_form, dim)
+    except Exception:              # an unreadable spec is reported elsewhere
+        return
+    if not state:
+        return
+    formulas = []
+    for name, spec in (problem.get("characteristic_scales") or {}).items():
+        if isinstance(spec, dict) and spec.get("formula"):
+            formulas.append((f"characteristic_scales[{name}]", spec["formula"]))
+    for name, spec in (problem.get("dimensionless_numbers") or {}).items():
+        if isinstance(spec, dict) and spec.get("formula"):
+            formulas.append((f"dimensionless_numbers[{name}]", spec["formula"]))
+    for location, formula in formulas:
+        try:
+            words = [value for kind, value, _ in tokens(str(formula)) if kind == "NAME"]
+        except Exception:
+            continue
+        named = []
+        for word in words:
+            # "ρU" is ρ·U when it is not itself a name, as in the notation
+            parts = [word] if word in state or len(word) == 1 else list(word)
+            named.extend(p for p in parts if p in state and p not in named)
+        for coefficient in named:
+            result.issues.append(UnitIssue(
+                "warning", location,
+                f"coefficients[{coefficient}] depends on the unknowns "
+                f"({', '.join(state[coefficient])}), so this has no value; derive it "
+                f"from a constant coefficient instead"))
 
 
 #: What :func:`check` does with a boundary condition it cannot check for

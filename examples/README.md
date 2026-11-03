@@ -17,6 +17,7 @@ python examples/read_archive.py /tmp/ymf-demo/heat.ymf    # read one back
 | [poisson.ymf](poisson.ymf) | The smallest complete spec: one weak form, one discretization, an exact solution. v0.1-style bare unknowns. |
 | [poisson_v02_enriched.ymf](poisson_v02_enriched.ymf) | The same problem with v0.2 additions: units, a standard name, characteristic scales, a typed boundary condition. |
 | [heat_equation.ymf](heat_equation.ymf) | A time-dependent problem: initial and boundary conditions with units, a time integrator, an analytical solution. The archive examples embed this spec. |
+| [nonlinear_diffusion.ymf](nonlinear_diffusion.ymf) | A coefficient that is a function of the state: the conductivity `k = 1 + u²` names the unknown, so the problem is nonlinear and solved by Newton. Manufactured exact solution; P1 and P2 rates 2 and 3. |
 | [kovasznay_flow.ymf](kovasznay_flow.ymf) | Branching: Navier–Stokes with two weak forms (Taylor–Hood, stabilized equal-order), a discretization for each, a Reynolds number computed from the scales, and a verification plan against the exact solution. |
 
 ### Composed from several files: [navier_stokes/](navier_stokes/)

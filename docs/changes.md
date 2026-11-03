@@ -7,6 +7,23 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-03: a coefficient's formula may name the unknowns.** A
+  coefficient could be a formula in the coordinates, time and the other
+  coefficients; one that named an unknown was "could not be resolved". Now
+  it may: a state-dependent density, conductivity or friction law is a
+  coefficient whose formula names the unknowns, substituted into the
+  equations so the ADR form carries the dependence and its derivatives.
+  Decided by cekees for the model-family work (two-phase level-set flow:
+  `χ = heaviside(φ)`, `ρ(χ)`, `μ(χ)`; shallow water: Manning friction,
+  canopy drag), in place of a separate `relations:` block: one kind of
+  thing, a coefficient, whether it is constant, varies in space or follows
+  the state. What came with it: boundary data, initial conditions and exact
+  solutions that lean on such a coefficient are refused (they are evaluated
+  at points in x, y, z, t); `ymf.units` warns when a characteristic scale or
+  a dimensionless number is built on one; a coefficient may not take an
+  unknown's name; a formula may not take a derivative of an unknown (yet).
+  `ymf.symbolic.state_coefficients` lists which coefficients follow the
+  state, and on what.
 - **2026-11-01: one name per thing: `model` and `approximation`.** The spec's
   top-level key has been `model` since a66ea1c, and the archive of a spec
   stores the realized spec under the key the spec uses, so it has written

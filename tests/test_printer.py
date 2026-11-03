@@ -64,7 +64,8 @@ def _space_of(doc):
     ranks = {(u if isinstance(u, str) else u["name"]):
              (0 if isinstance(u, str) else int(u.get("rank", 0)))
              for u in strong["unknowns"]}
-    return Space(dim, ranks, _coefficients(strong.get("coefficients") or {}, dim))
+    return Space(dim, ranks, _coefficients(strong.get("coefficients") or {}, dim,
+                                           unknowns=ranks))
 
 
 def _loadable(path):

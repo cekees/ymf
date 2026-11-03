@@ -30,9 +30,10 @@ import sympy
 
 from ymf.domain import box_bounds
 from ymf.symbolic.adr import adr_form, to_code
-from ymf.symbolic.language import Space, SymbolicError, parse_equation, parse_expression
+from ymf.symbolic.language import (D, Dt, Space, SymbolicError, parse_equation,
+                                   parse_expression)
 
-__all__ = ["adr_problem", "strong_form_equations"]
+__all__ = ["adr_problem", "strong_form_equations", "state_coefficients"]
 
 
 def _number(value):
@@ -48,8 +49,8 @@ def _number(value):
     return None
 
 
-def _coefficients(spec: Dict[str, Any], dim: int,
-                  strict: bool = True) -> Dict[str, sympy.Expr]:
+def _coefficients(spec: Dict[str, Any], dim: int, strict: bool = True,
+                  unknowns: Optional[Dict[str, int]] = None) -> Dict[str, sympy.Expr]:
     """Resolve coefficient values and formulas; formulas may use each other.
 
     ``strict`` decides what an unresolvable formula means. Building a problem
@@ -57,7 +58,22 @@ def _coefficients(spec: Dict[str, Any], dim: int,
     defines cannot be run. Reading the same spec to report on it -- which is
     what :func:`coefficient_numbers` does for ``ymf.units`` -- it is not, and
     the entry is simply left out.
+
+    ``unknowns`` (name -> rank) lets a formula name the unknowns too: a
+    density ``ρw (1 - χ) + ρa χ`` with ``χ`` an unknown, a conductivity
+    ``1 + u²``. Such a coefficient is a function of the state, substituted
+    into the equations like any other, so its dependence on the unknowns
+    shows up in the ADR form's ``depends_on`` and derivatives. Without
+    ``unknowns`` it is left unresolved, which is what a reader that wants
+    numbers needs. A formula may name the unknowns, not their derivatives.
     """
+    unknowns = dict(unknowns or {})
+    clash = sorted(set(unknowns) & set(spec))
+    if clash:
+        raise SymbolicError("coefficient %s has the name of an unknown; a name is one "
+                            "or the other" % ", ".join(clash))
+    state = Space(dim, unknowns)
+    allowed = {"x", "y", "z", "t"} | set(state.components)
     values: Dict[str, sympy.Expr] = {}
     formulas: Dict[str, str] = {}
     for name, entry in spec.items():
@@ -81,13 +97,18 @@ def _coefficients(spec: Dict[str, Any], dim: int,
         progressed = False
         for name, text in list(formulas.items()):
             try:
-                value = parse_expression(text, Space(dim, {}, values))
+                value = parse_expression(text, Space(dim, unknowns, values))
             except SymbolicError:
                 continue
-            stray = (value.free_symbols if not isinstance(value, sympy.MatrixBase)
-                     else set().union(*[e.free_symbols for e in value]))
-            if {s.name for s in stray} - {"x", "y", "z", "t"}:
+            entries = list(value) if isinstance(value, sympy.MatrixBase) else [value]
+            stray = set().union(*[sympy.sympify(e).free_symbols for e in entries])
+            if {s.name for s in stray} - allowed:
                 continue          # depends on a coefficient not resolved yet
+            if any(sympy.sympify(e).has(D, Dt) for e in entries):
+                raise SymbolicError(
+                    "coefficient %s: %r takes a derivative of an unknown; a coefficient "
+                    "may depend on the unknowns, not (yet) on their derivatives"
+                    % (name, text))
             values[name] = value
             del formulas[name]
             progressed = True
@@ -127,8 +148,55 @@ def coefficient_numbers(spec: Dict[str, Any], dim: int = 3) -> Dict[str, float]:
     return numbers
 
 
+def _given(value, space: Space, where: str):
+    """``value``, refused if it depends on the unknowns.
+
+    Boundary data, initial conditions and exact solutions are evaluated by
+    the solver at points, in x, y, z and t alone. Since a coefficient may now
+    be a function of the state, naming one there could slip an unknown in.
+    """
+    entries = list(value) if isinstance(value, sympy.MatrixBase) else [value]
+    named = set().union(*[sympy.sympify(e).free_symbols for e in entries])
+    state = sorted(s.name for s in named & set(space.component_symbols))
+    if state:
+        raise SymbolicError("%s depends on the unknowns (%s), directly or through a "
+                            "coefficient; give it in x, y, z and t"
+                            % (where, ", ".join(state)))
+    return value
+
+
+def state_coefficients(strong_form: Dict[str, Any], dim: int = 3) -> Dict[str, List[str]]:
+    """The coefficients that are functions of the state, and of what.
+
+    ``{coefficient: [component, ...]}`` for every coefficient whose formula
+    names an unknown, directly or through another coefficient. Such a
+    coefficient is not a number, so a scale or a dimensionless number built
+    on it has no value; ``ymf.units`` says so rather than leave it out
+    silently. Coefficients that do not resolve are left out, as in
+    :func:`coefficient_numbers`.
+    """
+    ranks = {}
+    for u in strong_form.get("unknowns") or []:
+        if isinstance(u, str):
+            ranks[u] = 0
+        else:
+            ranks[u["name"]] = int(u.get("rank", 0))
+    values = _coefficients(strong_form.get("coefficients") or {}, dim, strict=False,
+                           unknowns=ranks)
+    components = {s.name: s for s in Space(dim, ranks).component_symbols}
+    out = {}
+    for name, value in values.items():
+        entries = list(value) if isinstance(value, sympy.MatrixBase) else [value]
+        named = set().union(*[sympy.sympify(e).free_symbols for e in entries])
+        state = sorted(s.name for s in named if s.name in components)
+        if state:
+            out[name] = state
+    return out
+
+
 def _components(value, name: str, rank: int, space: Space, where: str) -> Dict[str, str]:
     """Per-component code strings for a scalar or vector value."""
+    _given(value, space, where)
     if rank == 0:
         if isinstance(value, sympy.MatrixBase):
             raise SymbolicError("%s: %s is a scalar but got a vector" % (where, name))
@@ -147,13 +215,15 @@ def _robin_part(bc, key, space):
             "robin condition on %s: give alpha and beta, the coefficients of "
             "u and of the outward flux in alpha u + beta (q.n) = g"
             % (bc["region"],))
-    return to_code(parse_expression(str(text), space))
+    return to_code(_given(parse_expression(str(text), space), space,
+                          "robin condition on %s: %s" % (bc["region"], key)))
 
 
 def _robin_rhs(bc, space):
     """g, from formula or value like any other right-hand side."""
     if bc.get("formula") is not None:
-        return to_code(parse_expression(bc["formula"], space))
+        return to_code(_given(parse_expression(bc["formula"], space), space,
+                              "robin condition on %s: g" % (bc["region"],)))
     if bc.get("value") is not None:
         return to_code(_number(bc["value"]))
     raise SymbolicError(
@@ -280,7 +350,7 @@ def _posed(doc: Dict[str, Any]):
             ranks[u] = 0
         else:
             ranks[u["name"]] = int(u.get("rank", 0))
-    coefficients = _coefficients(strong.get("coefficients") or {}, dim)
+    coefficients = _coefficients(strong.get("coefficients") or {}, dim, unknowns=ranks)
     space = Space(dim, ranks, coefficients)
     residuals: List[sympy.Expr] = []
     for text in strong["equations"]:

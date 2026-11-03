@@ -277,6 +277,37 @@ unknown name 'kapa' (not a coefficient, an unknown, a coordinate, t, π or a
 function, nor a product of single-letter names) at position 2 in '2 kapa T'
 ```
 
+**A coefficient may be a function of the state.** Its formula may name the
+unknowns as well: a conductivity that grows with temperature, a density
+that follows a phase indicator, a friction law in the depth and discharge.
+
+```yaml
+strong_form:
+  unknowns: [T]
+  equations:
+    - "∂T/∂t = ∇·(κ∇T)  in Ω"
+  coefficients:
+    κ: {formula: "κ0 (1 + T²)", units: m2/s}
+    κ0: {value: 1.0e-3, units: m2/s}
+```
+
+It is substituted into the equations like any other coefficient, so the ADR
+form carries the dependence: `κ` here makes the diffusion of `T` nonlinear
+in `T`, with its derivative, exactly as if `κ0 (1 + T²)` were written in the
+equation. Write a variable coefficient inside the divergence (`∇·(κ∇T)`,
+`∇·(μ∇v)`); `κΔT` is the divergence form only while `κ` is constant, and is
+refused otherwise. A formula may name the unknowns, not their derivatives.
+
+Such a coefficient is not a number, and three things that need one say so
+rather than go quiet. Boundary data, initial conditions and exact solutions
+are evaluated at points in `x`, `y`, `z`, `t`, so one that names it is an
+error (the heat example's exact solution names `κ`, and stops being exact
+the moment `κ` depends on `T`). A characteristic scale or a dimensionless
+number built on it has no value, so `ymf.units` warns and asks for a
+constant coefficient instead (`ρw`, not `ρ = ρw (1 − χ) + ρa χ`). And
+`coefficient_numbers` leaves it out. A coefficient may not share its name
+with an unknown.
+
 Tensors follow the continuum-mechanics convention `grad(v)[i, j] =
 ∂v_j/∂x_i`, so `v·∇v` is (v·∇)v and `∇·(μ∇v)` is the vector Laplacian.
 
