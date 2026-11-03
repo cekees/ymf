@@ -39,6 +39,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import sympy
+from sympy.core.function import AppliedUndef
 from sympy.printing.numpy import NumPyPrinter
 
 from ymf.symbolic.language import D, Dt, Space, SymbolicError
@@ -63,6 +64,27 @@ class _Printer(NumPyPrinter):
     def _print_Float(self, expr):
         # repr is the shortest text that reads back to the same double
         return repr(float(expr))
+
+    # A known field (another sub-problem's unknown, lagged) is a function of
+    # the coordinates and time to sympy, and data to the solver: its name,
+    # and its gradient by grad_name, which the solver supplies the same way.
+    def _print_Function(self, expr):
+        if isinstance(expr, AppliedUndef):
+            return expr.func.__name__
+        return super()._print_Function(expr)
+
+    def _print_Derivative(self, expr):
+        field = expr.expr
+        if isinstance(field, AppliedUndef) and len(expr.variable_count) == 1:
+            variable, count = expr.variable_count[0]
+            if count == 1 and variable.name in ("x", "y", "z"):
+                return grad_name(field.func.__name__, "xyz".index(variable.name))
+            if count == 1 and variable.name == "t":
+                raise SymbolicError(
+                    "the time derivative of the known field %s: a sub-problem reads "
+                    "another's field at one time, not its rate" % (field.func.__name__,))
+        raise SymbolicError("%s: only first space derivatives of a known field have a "
+                            "name (grad_<field>_<axis>)" % (expr,))
 
     # numpy alone, nested, rather than sympy's functools.reduce: the code is
     # evaluated with numpy and nothing else in scope
@@ -146,7 +168,8 @@ def classify(residual, space: Space, where: str = "equation",
     forms.
     """
     eq = Equation(space.dim)
-    allowed = set(space.component_symbols) | set(space.x) | {space.t}
+    allowed = (set(space.component_symbols) | set(space.x) | {space.t}
+               | set(space.parameters))
     stray = sympy.sympify(residual).free_symbols - allowed
     if stray:
         raise SymbolicError("%s: undefined names %s (not a coordinate, an unknown "

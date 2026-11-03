@@ -50,7 +50,9 @@ def _number(value):
 
 
 def _coefficients(spec: Dict[str, Any], dim: int, strict: bool = True,
-                  unknowns: Optional[Dict[str, int]] = None) -> Dict[str, sympy.Expr]:
+                  unknowns: Optional[Dict[str, int]] = None,
+                  fields: Optional[Dict[str, int]] = None,
+                  preset: Optional[Dict[str, Any]] = None) -> Dict[str, sympy.Expr]:
     """Resolve coefficient values and formulas; formulas may use each other.
 
     ``strict`` decides what an unresolvable formula means. Building a problem
@@ -66,6 +68,11 @@ def _coefficients(spec: Dict[str, Any], dim: int, strict: bool = True,
     shows up in the ADR form's ``depends_on`` and derivatives. Without
     ``unknowns`` it is left unresolved, which is what a reader that wants
     numbers needs. A formula may name the unknowns, not their derivatives.
+
+    ``fields`` (name -> rank) are known fields a formula may name too (a
+    sub-problem's lagged reads, see ymf.symbolic.split), and ``preset`` gives
+    coefficients their value outright, in place of their formula (a
+    coefficient read through the sub-problem that carries it: χ -> χh).
     """
     unknowns = dict(unknowns or {})
     clash = sorted(set(unknowns) & set(spec))
@@ -74,9 +81,11 @@ def _coefficients(spec: Dict[str, Any], dim: int, strict: bool = True,
                             "or the other" % ", ".join(clash))
     state = Space(dim, unknowns)
     allowed = {"x", "y", "z", "t"} | set(state.components)
-    values: Dict[str, sympy.Expr] = {}
+    values: Dict[str, sympy.Expr] = dict(preset or {})
     formulas: Dict[str, str] = {}
     for name, entry in spec.items():
+        if name in values:
+            continue                  # preset: read from elsewhere, not computed
         if isinstance(entry, dict):
             if entry.get("value") is not None:
                 v = _number(entry["value"])
@@ -97,7 +106,7 @@ def _coefficients(spec: Dict[str, Any], dim: int, strict: bool = True,
         progressed = False
         for name, text in list(formulas.items()):
             try:
-                value = parse_expression(text, Space(dim, unknowns, values))
+                value = parse_expression(text, Space(dim, unknowns, values, fields))
             except SymbolicError:
                 continue
             entries = list(value) if isinstance(value, sympy.MatrixBase) else [value]
@@ -317,10 +326,13 @@ def _periodic_axes(where, lower, upper, space: Space, region: str) -> List[int]:
     return axes
 
 
-def _posed(doc: Dict[str, Any]):
-    """What adr_problem and strong_form_equations share.
+def _frame(doc: Dict[str, Any]):
+    """The strong form's setting, before any equation is read.
 
-    Returns ``(strong, box, region, ranks, coefficients, space, residuals)``.
+    Returns ``(strong, box, region, ranks, dim)``: the strong form, the
+    domain's box (the bounding box of a region), the region itself (None
+    for a box), each unknown's rank, and the space dimension. Shared by
+    :func:`adr_problem` and the split reader, ymf.symbolic.split.
     """
     problem = doc["model"]
     strong = problem["strong_form"]
@@ -350,6 +362,15 @@ def _posed(doc: Dict[str, Any]):
             ranks[u] = 0
         else:
             ranks[u["name"]] = int(u.get("rank", 0))
+    return strong, box, region, ranks, dim
+
+
+def _posed(doc: Dict[str, Any]):
+    """What adr_problem and strong_form_equations share.
+
+    Returns ``(strong, box, region, ranks, coefficients, space, residuals)``.
+    """
+    strong, box, region, ranks, dim = _frame(doc)
     coefficients = _coefficients(strong.get("coefficients") or {}, dim, unknowns=ranks)
     space = Space(dim, ranks, coefficients)
     residuals: List[sympy.Expr] = []
@@ -529,13 +550,15 @@ def _state_coefficient_data(coefficients, space: Space) -> Dict[str, Any]:
     point; it is marked ``sharp: true`` and its ``d`` is left out, for the
     discretization to regularize.
     """
+    from sympy.core.function import AppliedUndef
     from ymf.symbolic.adr import _flag
     unknowns = set(space.component_symbols)
     out: Dict[str, Any] = {}
     for name, value in coefficients.items():
         entries = list(value) if isinstance(value, sympy.MatrixBase) else [value]
         entries = [sympy.sympify(e) for e in entries]
-        if not set().union(*[e.free_symbols for e in entries]) & unknowns:
+        fields = sorted({f.func.__name__ for e in entries for f in e.atoms(AppliedUndef)})
+        if not (set().union(*[e.free_symbols for e in entries]) & unknowns or fields):
             continue
         flags: Dict[str, str] = {}
         for e in entries:
@@ -546,6 +569,9 @@ def _state_coefficient_data(coefficients, space: Space) -> Dict[str, Any]:
         record: Dict[str, Any] = {
             "code": [to_code(e) for e in entries] if vector else to_code(entries[0]),
             "depends_on": flags}
+        if fields:
+            # known fields it reads (a sub-problem's lagged data, ymf.symbolic.split)
+            record["reads"] = fields
         try:
             record["d"] = {
                 c: ([to_code(sympy.diff(e, s)) for e in entries] if vector

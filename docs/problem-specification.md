@@ -623,13 +623,29 @@ corrects or writes back) exists, and an introduced or bound name does not
 shadow one that does. The split is part of what an output's key covers, so
 changing a sub-problem's solver plans a new output.
 
-What is not done yet: the sub-problems' own equations and constraints are
-carried, not parsed, and `adr_problem` still classifies the whole model as
-one system, which a model like this one does not allow (`v·∇φ` is a
-Hamiltonian in another unknown); classifying each sub-problem with the
-fields it lags as coefficients is the next step. A solver maps a
-sub-problem onto its own modules (a dispatcher); `proteus:` blocks are
-interim hints for it.
+A sub-problem may give an `equation` of its own, `for` the unknown it
+determines (by default the one it introduces); a lag with `of` reads a
+copy of a field under a name of its own (redistancing reads `φs`, the
+level set before it changes `φ`); and a sub-problem's own `regularize`
+replaces the entry's (redistancing smooths its sign over `0.75 h`, the
+rest their Heaviside over `1.5 h`).
+
+**Each sub-problem is classified on its own.** `adr_problem` reads a model
+as one system, which this one is not (`v·∇φ` is a Hamiltonian in another
+unknown). `ymf.symbolic.split.split_problem(doc, "level_set_five")` gives
+each sub-problem's ADR form instead: its unknowns are those of the
+equations it solves and of its own equation; every other field it reads is
+a known field, declared in its `lags` (a read that is not is an error that
+says so), which the plain data names (`v_0`) and whose gradient it names
+`grad_v_0_0`; a coefficient lagged through the sub-problem that carries it
+(`χ` via `vof`, which introduces `χh`) is that carrier. Bound symbols are
+substituted, and the sharp functions are smoothed as Proteus smooths them:
+`heaviside` becomes `gf.H` of `equivalent_polynomials.h`, whose derivative
+is its `gf.D`, and `sign` becomes `2 H_ε − 1`. Each sub-problem also
+carries what it reads and when, its named coefficients, the
+regularizations it used, an introduced unknown's initial condition, and
+its effective solver. A solver maps a sub-problem onto its own modules (a
+dispatcher); `proteus:` blocks are interim hints for it, carried as text.
 
 ## Document state
 

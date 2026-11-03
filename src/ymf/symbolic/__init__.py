@@ -9,8 +9,9 @@ from ymf.symbolic.language import (D, Dt, Space, SymbolicError, parse_equation,
                                    parse_expression)
 from ymf.symbolic.printer import equation_notation, to_notation
 from ymf.symbolic.problem import adr_problem, state_coefficients, strong_form_equations
+from ymf.symbolic.split import split_problem
 
 __all__ = ["D", "Dt", "Space", "SymbolicError", "parse_equation", "parse_expression",
            "classify", "adr_form", "grad_name", "to_code", "adr_problem",
            "to_notation", "equation_notation", "strong_form_equations",
-           "state_coefficients"]
+           "state_coefficients", "split_problem"]

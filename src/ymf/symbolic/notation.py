@@ -170,6 +170,8 @@ class Parser:
         # works on them -- the scalarized ADR form -- can be written back
         # (ymf.symbolic.printer); the vector itself is still just "v"
         self.names.update(zip(space.components, space.component_symbols))
+        self.names.update(space.known_components)
+        self.names.update(space.known)
         self.names.update(space._fields)
         self.names.update(locals_ or {})
         self.functions = dict(_FUNCTIONS)

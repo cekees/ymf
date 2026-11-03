@@ -63,10 +63,21 @@ class Space:
     expression in the coordinates and time); they are substituted as the
     equations are parsed, so a derivative of a variable coefficient comes
     out right.
+
+    ``parameters`` are symbols the solver supplies, which an expression may
+    keep free (a discretization's element size ``h``).
+
+    ``fields`` (name -> rank) are known fields: the unknowns of another
+    sub-problem, read here as data (a velocity lagged into a transport
+    solve). Each component is an undefined function of the coordinates and
+    time, so it is differentiated as a field, not as a constant; the code
+    printer writes it by name and its gradient as ``grad_<name>_<axis>``.
     """
 
     def __init__(self, dim: int, unknowns: Dict[str, int],
-                 coefficients: Dict[str, sympy.Expr] | None = None):
+                 coefficients: Dict[str, sympy.Expr] | None = None,
+                 fields: Dict[str, int] | None = None,
+                 parameters: Iterable[sympy.Symbol] = ()):
         if dim not in (1, 2, 3):
             raise SymbolicError("space dimension must be 1, 2 or 3, not %r" % (dim,))
         self.dim = dim
@@ -89,6 +100,30 @@ class Space:
                                     % (name, rank))
         self.component_symbols = [sympy.Symbol(n, real=True) for n in self.components]
         self.coefficients = dict(coefficients or {})
+        #: symbols the solver supplies and an expression may keep free: a
+        #: split discretization's bound symbols (h, the element size)
+        self.parameters = tuple(parameters)
+        #: known fields: name -> a function of (x.., t), or a column of them
+        self.known: Dict[str, object] = {}
+        #: and their scalar components by name ("v_0" -> v_0(x, y, t))
+        self.known_components: Dict[str, object] = {}
+        args = tuple(self.x) + (self.t,)
+        for name, rank in (fields or {}).items():
+            if name in self.unknowns:
+                raise SymbolicError("%r is both an unknown and a known field" % (name,))
+            if rank == 0:
+                f = sympy.Function(name, real=True)(*args)
+                self.known[name] = f
+                self.known_components[name] = f
+            elif rank == 1:
+                parts = [sympy.Function("%s_%d" % (name, i), real=True)(*args)
+                         for i in range(dim)]
+                self.known[name] = sympy.Matrix(parts)
+                self.known_components.update(
+                    {"%s_%d" % (name, i): f for i, f in enumerate(parts)})
+            else:
+                raise SymbolicError("field %r has rank %r; only 0 and 1 are supported"
+                                    % (name, rank))
 
     # -- operators ---------------------------------------------------------
 
@@ -177,6 +212,7 @@ class Space:
             ns[name] = self.x[axis]
             ns["d" + name] = (lambda e, a=axis: self.d(e, a))
         ns.update(self.coefficients)
+        ns.update(self.known)
         ns.update(self._fields)
         return ns
 

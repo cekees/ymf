@@ -7,6 +7,22 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-03: each sub-problem classified on its own
+  (`ymf.symbolic.split.split_problem`).** The plain data of a split
+  discretization, one ADR form per sub-problem. Its own unknowns are
+  unknowns; what it reads from the others is a known field (a function of
+  the coordinates and time, written by name, its gradient
+  `grad_<field>_<axis>`), and must be declared in `lags`; a coefficient
+  lagged via the sub-problem that carries it is replaced by the carrier.
+  `binds` are substituted (a symbol with only a meaning, `h`, stays a
+  parameter the solver supplies), and `regularize` smooths `heaviside` and
+  `sign` exactly as Proteus does (`gf.H`, `gf.D`, `2 H_ε − 1`). Schema:
+  a sub-problem's `for` and `regularize`, a lag's `of`. The two-phase dam
+  break classifies in all five sub-problems: flow as variable-density
+  Navier-Stokes with ρ and μ from VOF's carrier, VOF and the level set as
+  transport in the lagged velocity (`v·∇φ` is a Hamiltonian in `φ` alone
+  there), redistancing as an eikonal Hamiltonian, mass correction as a
+  regularized reaction-diffusion.
 - **2026-11-03: coefficients of the state keep their names.**
   `adr_problem` lists each coefficient that follows the state under
   `coefficients`: its numpy code, `depends_on`, and its derivative in each
