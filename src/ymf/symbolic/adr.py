@@ -64,9 +64,29 @@ class _Printer(NumPyPrinter):
         # repr is the shortest text that reads back to the same double
         return repr(float(expr))
 
+    # numpy alone, nested, rather than sympy's functools.reduce: the code is
+    # evaluated with numpy and nothing else in scope
+    def _print_Min(self, expr):
+        return self._nest("numpy.minimum", expr.args)
+
+    def _print_Max(self, expr):
+        return self._nest("numpy.maximum", expr.args)
+
+    def _nest(self, function, args):
+        text = self._print(args[0])
+        for arg in args[1:]:
+            text = "%s(%s, %s)" % (function, text, self._print(arg))
+        return text
+
 
 def to_code(expr) -> str:
-    return _Printer().doprint(sympy.sympify(expr))
+    expr = sympy.sympify(expr)
+    if expr.has(sympy.DiracDelta):
+        raise SymbolicError(
+            "%s has no value at a point: it is the derivative of heaviside or sign. "
+            "A sharp function of an unknown needs a discretization that regularizes "
+            "it before a solver can use its derivative" % (expr,))
+    return _Printer().doprint(expr)
 
 
 class Equation:

@@ -281,6 +281,8 @@ solution_paths:
 | `x² π³ x^n x**n` | powers |
 | `2π²κt`, `κ ΔT`, `sin(πx)` | implicit multiplication |
 | `sin cos tan exp log sqrt sinh cosh tanh abs` | functions, with parentheses |
+| `heaviside(φ)`, `sign(e)`, `min(a, b, ...)`, `max(a, b, ...)` | sharp functions; a solver needs `heaviside` and `sign` of an unknown regularized, since their derivatives are Dirac deltas |
+| `norm(v)`, `sym(∇v)` | `sqrt(v·v)`, and the symmetric part `(A + Aᵀ)/2` of a square tensor |
 | `grad div lap dt dx dy dz dot outer` | the operators spelled out, for ASCII-only text |
 | `lhs = rhs  in Ω` | an equation; the `in ...` clause is ignored |
 | `y = 0 or x = 0 and y = H` | a boundary region; `∂Ω` is the whole boundary |

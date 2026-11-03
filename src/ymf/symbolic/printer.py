@@ -17,12 +17,13 @@ What can be written is what the notation can read:
   (``u``, ``v_0``), and any other symbol by its name;
 * ``+ - * /`` and powers, with ``² ³ ⁴`` for small integer exponents and
   ``^`` otherwise; ``sqrt`` for a square root;
-* the functions sin cos tan exp log sqrt sinh cosh tanh abs;
+* the functions sin cos tan exp log sqrt sinh cosh tanh abs heaviside
+  sign, and min and max of any number of arguments;
 * derivatives: ``D(e, axis)`` as ``∂e/∂x``, ``Dt(e)`` as ``∂e/∂t``;
 * a column vector as a tuple ``(a, b)``.
 
 Anything else (a tensor, an integral, a function the notation lacks, or
-what sympy forms only from complex values -- ``I``, ``sign`` -- out of a
+what sympy forms only from complex values -- ``I`` -- out of a
 root of a negative quantity) is refused with :class:`NotationError` rather
 than written in a form the parser would read differently.
 
@@ -49,8 +50,9 @@ _AXES = "xyz"
 _FUNCTIONS = {
     sympy.sin: "sin", sympy.cos: "cos", sympy.tan: "tan", sympy.exp: "exp",
     sympy.log: "log", sympy.sinh: "sinh", sympy.cosh: "cosh", sympy.tanh: "tanh",
-    sympy.Abs: "abs",
+    sympy.Abs: "abs", sympy.Heaviside: "heaviside", sympy.sign: "sign",
 }
+_VARIADIC = {sympy.Min: "min", sympy.Max: "max"}
 
 # precedence of what a printed form is, for deciding on parentheses
 _ATOM, _POWER, _PRODUCT, _SUM = 4, 3, 2, 1
@@ -115,6 +117,9 @@ def _text(e) -> tuple:
     for function, name in _FUNCTIONS.items():
         if isinstance(e, function):
             return "%s(%s)" % (name, _text(e.args[0])[0]), _ATOM
+    for function, name in _VARIADIC.items():
+        if isinstance(e, function):
+            return "%s(%s)" % (name, ", ".join(_text(a)[0] for a in e.args)), _ATOM
     raise NotationError("%s (%s) has no notation" % (e, type(e).__name__))
 
 

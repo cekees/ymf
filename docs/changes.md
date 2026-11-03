@@ -7,6 +7,15 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-03: `heaviside`, `sign`, `min`, `max`, `norm`, `sym`.** The
+  two-phase model writes `χ = heaviside(φ)`, its initial signed distance
+  with `min`, `max` and `sqrt`, its viscous stress with `sym(∇v)`;
+  shallow-water friction uses `norm(q)`. They parse, print back
+  (`to_notation`), and become numpy code (`min`/`max` as nested
+  `numpy.minimum`/`numpy.maximum`, not `functools.reduce`). The derivative
+  of `heaviside` or `sign` is a Dirac delta, which has no value at a point:
+  where the ADR form needs one (a sharp function of an unknown), it is
+  refused with a message saying the discretization must regularize it.
 - **2026-11-03: named equations.** `strong_form.equations` takes
   `{name, for, equation}` beside bare strings. Bare strings are still
   ordered like the unknowns; with `for` on every equation the order written

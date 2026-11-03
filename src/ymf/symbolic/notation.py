@@ -24,7 +24,9 @@ Expressions
     ``·`` (a dot product of vectors, a product otherwise) and ``⊗``
     (outer product, binding tighter than ``·`` and ``*``); tuples
     ``(a, b)`` are vectors; functions sin cos tan exp log sqrt sinh cosh
-    tanh abs.
+    tanh abs, the sharp ones heaviside sign min max (min and max of any
+    number of arguments), and on vectors and tensors norm(v) = sqrt(v·v)
+    and sym(A) = (A + Aᵀ)/2.
 Differential operators, each applied to the operand that follows it
     ``∇u`` gradient, ``∇·F`` divergence, ``Δu`` Laplacian,
     ``∂u/∂t`` and ``∂u/∂x`` partial derivatives; also the spelled-out
@@ -131,7 +133,28 @@ _FUNCTIONS = {
     "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan, "exp": sympy.exp,
     "log": sympy.log, "sqrt": sympy.sqrt, "sinh": sympy.sinh, "cosh": sympy.cosh,
     "tanh": sympy.tanh, "abs": sympy.Abs,
+    # sharp functions: their derivatives are Dirac deltas, so a solver needs
+    # them regularized (a discretization's business); min and max take any
+    # number of arguments
+    "heaviside": sympy.Heaviside, "sign": sympy.sign,
+    "min": sympy.Min, "max": sympy.Max,
 }
+
+
+def _norm(v):
+    """The Euclidean norm of a vector, sqrt(v·v); of a scalar, its absolute value."""
+    if isinstance(v, sympy.MatrixBase):
+        if v.shape[1] != 1:
+            raise ValueError("norm needs a vector, got a %dx%d tensor" % v.shape)
+        return sympy.sqrt(sum(e ** 2 for e in v))
+    return sympy.Abs(v)
+
+
+def _sym(a):
+    """The symmetric part of a square tensor, (A + Aᵀ)/2: sym(∇v) is the strain rate."""
+    if not isinstance(a, sympy.MatrixBase) or a.shape[0] != a.shape[1] or a.shape[1] == 1:
+        raise ValueError("sym needs a square tensor, such as ∇v")
+    return (a + a.T) / 2
 
 
 class Parser:
@@ -154,6 +177,7 @@ class Parser:
             "div": space.div, "grad": space.grad, "lap": lambda e: space.div(space.grad(e)),
             "dt": space.dt, "dot": self._dot, "outer": space.outer,
             "vec": lambda *xs: sympy.Matrix([sympy.sympify(v) for v in xs]),
+            "norm": _norm, "sym": _sym,
         })
         for axis, n in enumerate("xyz"[:space.dim]):
             self.functions["d" + n] = (lambda e, a=axis: space.d(e, a))
