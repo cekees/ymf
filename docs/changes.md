@@ -7,6 +7,14 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-03: coefficients of the state keep their names.**
+  `adr_problem` lists each coefficient that follows the state under
+  `coefficients`: its numpy code, `depends_on`, and its derivative in each
+  unknown it depends on (`sharp: true` instead, for `heaviside` or `sign`
+  of an unknown). The ADR form keeps them substituted, so a solver of one
+  system is unaffected; the names are for a generator or a dispatcher. A
+  problem without such coefficients has no `coefficients` key, so its
+  record is unchanged.
 - **2026-11-03: a discretization may be split into sub-problems.**
   `subproblems:` (solved in order each step: what each `solves`,
   `enforces`, `introduces`, `lags`, `writes_back`, with its own space,

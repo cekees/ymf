@@ -332,6 +332,13 @@ constant coefficient instead (`ρw`, not `ρ = ρw (1 − χ) + ρa χ`). And
 `coefficient_numbers` leaves it out. A coefficient may not share its name
 with an unknown.
 
+`adr_problem` substitutes such a coefficient, and also lists it by name
+under `coefficients` -- its code, what it depends on, and its derivative
+in each unknown (`sharp: true` and no derivative for `heaviside` or `sign`
+of an unknown) -- so a code generator can emit `ρ` once as a function of
+the state rather than its expansion in every term. A problem with no such
+coefficient has no `coefficients` key and reads exactly as before.
+
 Tensors follow the continuum-mechanics convention `grad(v)[i, j] =
 ∂v_j/∂x_i`, so `v·∇v` is (v·∇)v and `∇·(μ∇v)` is the vector Laplacian.
 

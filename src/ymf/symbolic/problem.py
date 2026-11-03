@@ -507,6 +507,53 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
         # operator; errors in them are measured modulo constants. Absent
         # when there are none.
         out["up_to_constant"] = up_to_constant
+    named = _state_coefficient_data(coefficients, space)
+    if named:
+        # The coefficients that follow the state, by name. The ADR form above
+        # has them substituted, which is all a solver of one system needs; a
+        # code generator or a dispatcher wants the name too, to emit rho as
+        # one inline function of the state rather than its expansion in every
+        # slot. Absent when there are none, so a problem without them reads
+        # exactly as before.
+        out["coefficients"] = named
+    return out
+
+
+def _state_coefficient_data(coefficients, space: Space) -> Dict[str, Any]:
+    """``{name: {code, depends_on, d}}`` for each coefficient of the state.
+
+    ``code`` is the numpy code of the coefficient (a list for a vector),
+    ``depends_on`` maps each component it depends on to ``linear`` or
+    ``nonlinear``, and ``d`` holds its derivative in each. A sharp function
+    of an unknown (``heaviside(φ)``) has no derivative with a value at a
+    point; it is marked ``sharp: true`` and its ``d`` is left out, for the
+    discretization to regularize.
+    """
+    from ymf.symbolic.adr import _flag
+    unknowns = set(space.component_symbols)
+    out: Dict[str, Any] = {}
+    for name, value in coefficients.items():
+        entries = list(value) if isinstance(value, sympy.MatrixBase) else [value]
+        entries = [sympy.sympify(e) for e in entries]
+        if not set().union(*[e.free_symbols for e in entries]) & unknowns:
+            continue
+        flags: Dict[str, str] = {}
+        for e in entries:
+            for component, flag in _flag(e, space).items():
+                if flags.get(component) != "nonlinear":
+                    flags[component] = flag
+        vector = isinstance(value, sympy.MatrixBase)
+        record: Dict[str, Any] = {
+            "code": [to_code(e) for e in entries] if vector else to_code(entries[0]),
+            "depends_on": flags}
+        try:
+            record["d"] = {
+                c: ([to_code(sympy.diff(e, s)) for e in entries] if vector
+                    else to_code(sympy.diff(entries[0], s)))
+                for c, s in zip(space.components, space.component_symbols) if c in flags}
+        except SymbolicError:
+            record["sharp"] = True
+        out[name] = record
     return out
 
 

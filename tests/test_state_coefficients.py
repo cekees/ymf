@@ -161,3 +161,36 @@ def test_a_model_declares_the_coefficient_and_a_case_makes_it_state_dependent(tm
                                                                  "formula": "1e-3 (1 + T²)"}
     diffusion = _equation(adr_problem(doc), "T")["diffusion"]["T"]
     assert diffusion["depends_on"] == {"T": "nonlinear"}
+
+
+# --- the names, kept beside the substituted ADR form --------------------------
+
+
+def test_a_state_coefficient_keeps_its_name_in_the_plain_data():
+    problem = adr_problem(load_ymf(EXAMPLES / "nonlinear_diffusion.ymf"))
+    assert problem["coefficients"] == {
+        "k": {"code": "u**2 + 1", "depends_on": {"u": "nonlinear"}, "d": {"u": "2*u"}}}
+
+
+def test_a_problem_without_one_reads_as_before():
+    assert "coefficients" not in adr_problem(load_ymf(EXAMPLES / "poisson.ymf"))
+
+
+def test_every_link_of_a_chain_is_named():
+    named = adr_problem(_heat(κ={"formula": "κ0 c"}, c={"formula": "1 + T²"},
+                              κ0={"value": 1e-3}))["coefficients"]
+    assert set(named) == {"κ", "c"}
+    assert named["c"]["d"] == {"T": "2*T"}
+
+
+def test_a_vector_coefficient_of_the_state():
+    named = adr_problem(_heat(w={"formula": "(T², T)"}))["coefficients"]
+    assert named["w"]["code"] == ["T**2", "T"]
+    assert named["w"]["depends_on"] == {"T": "nonlinear"}
+    assert named["w"]["d"] == {"T": ["2*T", "1"]}
+
+
+def test_a_sharp_coefficient_is_named_without_a_derivative():
+    named = adr_problem(_heat(χ={"formula": "heaviside(T − 300)"}))["coefficients"]
+    assert named["χ"]["sharp"] is True
+    assert "d" not in named["χ"]
