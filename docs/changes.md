@@ -7,6 +7,17 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-03: a discretization may be split into sub-problems.**
+  `subproblems:` (solved in order each step: what each `solves`,
+  `enforces`, `introduces`, `lags`, `writes_back`, with its own space,
+  time integration, stabilization and a `solver` that refines the
+  entry's), `binds:` (symbols such as `h` and `ε = 1.5 h` that the
+  discretization supplies), `regularize:` (sharp functions made smooth) and
+  `step_control:`. The structure and every name are checked on load
+  (`ymf.references`); `ymf.discretizations.subproblem_solver` gives a
+  sub-problem's effective solver. Classification per sub-problem is not
+  done yet. Splitting is not a new `method`: a split discretization is
+  still a mesh one, and its studies and output keys work as before.
 - **2026-11-03: `heaviside`, `sign`, `min`, `max`, `norm`, `sym`.** The
   two-phase model writes `χ = heaviside(φ)`, its initial signed distance
   with `min`, `max` and `sqrt`, its viscous stress with `sym(∇v)`;

@@ -1,0 +1,39 @@
+# Incompressible two-phase flow with a sharp interface carried by a level
+# set (C42): the model only. Phase 0 is water (φ < 0), phase 1 air (φ > 0).
+# The density and viscosity are coefficients of the state, through
+# χ = heaviside(φ). The whole model is not one ADR system (v·∇φ is a
+# Hamiltonian in another unknown); a split discretization classifies each
+# sub-problem with the others' fields lagged.
+ymf_state: abstract
+
+model:
+  physical_model:
+    provenance: human_specified
+    processes: [incompressible_flow, two_phase_flow, interface_transport, gravity]
+    assumptions: [newtonian, immiscible, isothermal, no_phase_change, no_surface_tension]
+  strong_form:
+    provenance: human_specified
+    unknowns:
+      - {name: v, units: m/s, rank: 1}
+      - {name: p, units: Pa}
+      - {name: φ, units: m}
+    equation_formulation: "variable-density incompressible Navier-Stokes, interface by a level set"
+    equations:
+      - name: momentum
+        for: v
+        equation: "∂(ρ v)/∂t + ∇·(ρ v⊗v) − ∇·(2μ sym(∇v)) + ∇p = ρ g  in Ω"
+      - name: continuity
+        for: p
+        equation: "∇·v = 0  in Ω"
+      - name: interface
+        for: φ
+        equation: "∂φ/∂t + v·∇φ = 0  in Ω"
+    coefficients:
+      χ:  {formula: "heaviside(φ)", units: "1"}
+      ρ:  {formula: "ρw (1 − χ) + ρa χ", units: kg/m3}
+      μ:  {formula: "ρw νw (1 − χ) + ρa νa χ", units: Pa*s}
+      ρw: {units: kg/m3}
+      νw: {units: m2/s}
+      ρa: {units: kg/m3}
+      νa: {units: m2/s}
+      g:  {units: m/s2}

@@ -29,7 +29,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Tuple
 
-__all__ = ["Missing", "Method", "METHODS", "DEFAULT", "method_of", "missing"]
+__all__ = ["Missing", "Method", "METHODS", "DEFAULT", "method_of", "missing",
+           "subproblem_solver"]
 
 
 @dataclass(frozen=True)
@@ -168,3 +169,21 @@ def method_of(entry: Dict[str, Any]) -> Method:
 def missing(entry: Dict[str, Any]) -> List[Missing]:
     """What ``entry`` lacks before it can plan an output (empty: nothing)."""
     return method_of(entry).missing(entry)
+
+
+def subproblem_solver(entry: Dict[str, Any], subproblem: Dict[str, Any]) -> Dict[str, Any]:
+    """A sub-problem's solver: the entry's ``solver``, refined by its own.
+
+    The entry's solver is the default every sub-problem starts from; a key a
+    sub-problem's ``solver:`` gives replaces the entry's for that sub-problem
+    alone (``max_iterations: 50`` for the transport solves, say), and
+    ``petsc_options`` merge key by key.
+    """
+    base = dict(entry.get("solver") or {})
+    own = dict(subproblem.get("solver") or {})
+    options = dict(base.get("petsc_options") or {})
+    options.update(own.pop("petsc_options", None) or {})
+    base.update(own)
+    if options:
+        base["petsc_options"] = options
+    return base

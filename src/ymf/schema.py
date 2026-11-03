@@ -121,6 +121,60 @@ AnalyticalEntry = Map(
     }
 )
 
+# --- splitting a discretization into sub-problems (C42) ---------------------
+# A split discretization solves the model as a sequence of sub-problems in
+# one time step: two-phase level-set flow as flow, VOF, level set,
+# redistancing and mass correction. Each names the model equations it
+# solves, or the constraint it enforces, the unknowns it introduces, what it
+# reads from the others and when, and how it is solved. ymf checks the
+# structure and the names (ymf.references); a solver's dispatcher maps a
+# sub-problem onto a module.
+
+#: when a sub-problem reads another's field: as the previous system step
+#: left it, or as an earlier sub-problem of this step left it
+LagAtEnum = Enum(["previous_step", "current_step"])
+
+SymbolBinding = Map({
+    Optional("meaning"): Str(),        # e.g. element_size
+    Optional("formula"): Str(),        # e.g. "1.5 h"
+    Optional("value"): Float(),
+    Optional("proteus"): Any(),        # an interim hint, see SubproblemDef
+})
+
+SubproblemDef = Map({
+    "name": Str(),
+    # model equations (by name) this sub-problem solves
+    Optional("solves"): Seq(Str()),
+    # a constraint it restores ("|∇φ| = 1", "heaviside(φ) = χh"), in the notation
+    Optional("enforces"): Str(),
+    # an unknown it adds: an auxiliary carrier of a model quantity
+    # (approximates), or a correction to a model unknown (correction_of)
+    Optional("introduces"): Map({
+        "name": Str(),
+        Optional("approximates"): Str(),
+        Optional("correction_of"): Str(),
+        Optional("units"): Str(),
+    }),
+    # the equation of an introduced unknown, or of a constraint's solve
+    Optional("equation"): Str(),
+    Optional("initial_condition"): Str(),
+    # what it reads from elsewhere: name -> when, or {via: sub-problem, at: when}
+    Optional("lags"): MapPattern(Str(), LagAtEnum | Map({
+        Optional("via"): Str(), "at": LagAtEnum})),
+    # what it hands back: name -> replace | add | mass_quadrature | ...
+    Optional("writes_back"): MapPattern(Str(), Str()),
+    Optional("pseudo_time"): Enum(["steady"]),
+    Optional("spin_up"): Bool(),
+    Optional("binds"): MapPattern(Str(), SymbolBinding),
+    Optional("finite_element"): FiniteElementDef,
+    Optional("time_integration"): Str(),
+    Optional("stabilization"): Any(),
+    Optional("solver"): SolverConfig,
+    # options a dispatcher cannot infer yet, for one solver: an interim hint
+    # it checks against what it infers, and drops once it covers them
+    Optional("proteus"): Any(),
+})
+
 DiscretizationEntry = Map(
     {
         "name": Str(),
@@ -133,7 +187,22 @@ DiscretizationEntry = Map(
         Optional("from_weak_form"): Str(),
         Optional("finite_element"): FiniteElementDef,
         Optional("discretization"): Any(),
+        # with sub-problems, the default each one's own solver: refines
         "solver": SolverConfig,
+        # split into sub-problems, solved in this order each step
+        Optional("subproblems"): Seq(SubproblemDef),
+        # symbols the discretization supplies and the model may not use:
+        # the element size h, a smoothing width ε = 1.5 h
+        Optional("binds"): MapPattern(Str(), SymbolBinding),
+        # sharp model functions replaced by smooth ones: heaviside -> a
+        # smoothed Heaviside of width ε
+        Optional("regularize"): MapPattern(Str(), Map({
+            "by": Str(), Optional("width"): Str()})),
+        Optional("step_control"): Map({
+            Optional("type"): Str(),
+            Optional("cfl"): Float(),
+            Optional("step_exact"): Bool(),
+        }),
         Optional("flux_method"): Str(),
         Optional("numerical_flux"): Str(),
         Optional("discretization_details"): Str(),

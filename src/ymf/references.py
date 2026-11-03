@@ -158,9 +158,101 @@ def _check_equations(doc: Dict[str, Any]) -> None:
             raise YmfReferenceError("model.strong_form.%s" % exc) from exc
 
 
+#: sharp functions of the notation a discretization may regularize
+SHARP_FUNCTIONS = ("heaviside", "sign")
+
+
+def _check_split(doc: Dict[str, Any], entry: Dict[str, Any]) -> None:
+    """A discretization's own names: its sub-problems, bindings and
+    regularizations, against the model and each other."""
+    from ymf.normalize import normalize_equations, normalize_unknowns
+    name = entry.get("name", "?")
+    where = "solution_paths.discretizations[%s]" % (name,)
+    subproblems = [s for s in entry.get("subproblems") or [] if isinstance(s, dict)]
+    strong = _problem(doc).get("strong_form") or {}
+    unknowns = [u["name"] for u in normalize_unknowns(strong.get("unknowns") or [])]
+    coefficients = list(strong.get("coefficients") or {})
+    model_names = set(unknowns) | set(coefficients)
+    for symbol in entry.get("binds") or {}:
+        if symbol in model_names:
+            raise YmfReferenceError(
+                "%s.binds.%s: %s is already a name in the model; a discretization "
+                "binds symbols the model leaves to it" % (where, symbol, symbol))
+    for function in entry.get("regularize") or {}:
+        if function not in SHARP_FUNCTIONS:
+            raise YmfReferenceError(
+                "%s.regularize.%s: only the sharp functions %s are regularized"
+                % (where, function, ", ".join(SHARP_FUNCTIONS)))
+    if not subproblems:
+        return
+    names = [s["name"] for s in subproblems]
+    twice = sorted({n for n in names if names.count(n) > 1})
+    if twice:
+        raise YmfReferenceError("%s.subproblems: %s named more than once"
+                                % (where, ", ".join(twice)))
+    equations = [e["name"] for e in normalize_equations(strong.get("equations") or [])]
+    introduced: Dict[str, str] = {}
+    for s in subproblems:
+        new = (s.get("introduces") or {}).get("name")
+        if new is None:
+            continue
+        if new in model_names or new in introduced:
+            raise YmfReferenceError(
+                "%s.subproblems[%s].introduces: %s is already a name (%s)"
+                % (where, s["name"], new, "in the model" if new in model_names
+                   else "introduced by %s" % introduced[new]))
+        introduced[new] = s["name"]
+    readable = model_names | set(introduced)
+    solved_by: Dict[str, str] = {}
+    for s in subproblems:
+        here = "%s.subproblems[%s]" % (where, s["name"])
+        if not (s.get("solves") or s.get("enforces") or s.get("introduces")
+                or s.get("spin_up")):
+            raise YmfReferenceError(
+                "%s neither solves a model equation, enforces a constraint, "
+                "introduces an unknown nor spins up: give one" % (here,))
+        for equation in s.get("solves") or []:
+            if None in equations:
+                raise YmfReferenceError(
+                    "%s.solves names %r, but the model's equations are not named; "
+                    "name them ({name, for, equation}) to split them" % (here, equation))
+            _check(equation, equations, here + ".solves", "model equation")
+            if equation in solved_by:
+                raise YmfReferenceError(
+                    "equation %s is solved by both %s and %s in %s"
+                    % (equation, solved_by[equation], s["name"], where))
+            solved_by[equation] = s["name"]
+        new = s.get("introduces") or {}
+        for key, candidates in (("approximates", model_names), ("correction_of", unknowns)):
+            if key in new:
+                _check(new[key], sorted(candidates), "%s.introduces.%s" % (here, key),
+                       "model unknown" if key == "correction_of" else
+                       "model unknown or coefficient")
+        for field, lag in (s.get("lags") or {}).items():
+            _check(field, sorted(readable), "%s.lags" % (here,),
+                   "model unknown, coefficient or introduced unknown")
+            if isinstance(lag, dict) and "via" in lag:
+                _check(lag["via"], names, "%s.lags.%s.via" % (here, field), "sub-problem")
+        for field in s.get("writes_back") or {}:
+            _check(field, sorted(set(unknowns) | set(introduced)),
+                   "%s.writes_back" % (here,), "model or introduced unknown")
+        for symbol in s.get("binds") or {}:
+            if symbol in readable:
+                raise YmfReferenceError(
+                    "%s.binds.%s: %s is already a name" % (here, symbol, symbol))
+    if None not in equations:
+        unsolved = [e for e in equations if e not in solved_by]
+        if unsolved:
+            raise YmfReferenceError(
+                "%s: no sub-problem solves %s" % (where, ", ".join(unsolved)))
+
+
 def resolve(doc: Dict[str, Any]) -> None:
     """Check every reference, raising :class:`YmfReferenceError` on the first bad one."""
     _check_equations(doc)
+    for entry in _paths(doc).get("discretizations") or []:
+        if isinstance(entry, dict):
+            _check_split(doc, entry)
     labels = weak_form_labels(doc)
     discretizations = discretization_names(doc)
 

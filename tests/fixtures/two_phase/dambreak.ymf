@@ -1,0 +1,76 @@
+# The 2-D dam break of test/TwoPhaseFlow/damBreakLevelSet.py, split into
+# proteus's five sub-problems (RANS2P, VOF, NCLS, RDLS, MCorr). Condition
+# sets, outputs and the stored mesh are not in the schema yet, so the
+# boundary conditions here are placeholders.
+extends: two_phase_level_set.ymf
+
+model:
+  name: "Dam break, 3.22 m × 1.8 m tank, 1.2 m × 0.6 m column (2-D)"
+  physical_model: {provenance: human_specified}
+  strong_form:
+    domain: "Ω = [0, 3.22] × [0, 1.8],  t ∈ (0, 3]"
+    boundary_regions:
+      - {name: walls, where: "x = 0 or x = 3.22 or y = 0"}
+      - {name: top, where: "y = 1.8"}
+    boundary_conditions:
+      - {region: walls, variable: v, type: dirichlet, value: 0.0}
+      - {region: top, variable: p, type: dirichlet, value: 0.0}
+    initial_conditions:
+      - {field: v, type: constant, value: 0.0}
+      - {field: p, type: constant, value: 0.0}
+      - field: φ
+        type: function
+        formula: "sqrt(max(x − 1.2, 0)² + max(y − 0.6, 0)²) + min(max(x − 1.2, y − 0.6), 0)"
+        units: m
+    coefficients:
+      ρw: {value: 998.2}
+      νw: {value: 1.004e-6}
+      ρa: {value: 1.205}
+      νa: {value: 1.5e-5}
+      g:  {formula: "(0, -9.8)"}
+
+solution_paths:
+  analytical: []
+  discretizations:
+    - name: level_set_five
+      provenance: proteus_derived
+      mesh: {h: 0.0322}
+      binds:
+        h: {meaning: element_size}
+        ε: {formula: "1.5 h"}
+      regularize:
+        heaviside: {by: smoothed_heaviside, width: ε}
+      step_control: {type: min_cfl, cfl: 0.25, step_exact: true}
+      solver: {type: nonlinear, nonlinear_solver: newton, linear_solver: petsc, max_iterations: 50}
+      subproblems:
+        - name: flow
+          solves: [momentum, continuity]
+          lags: {φ: previous_step, χ: {via: vof, at: previous_step}}
+          finite_element: {velocity: {family: CG, order: 1}, pressure: {family: CG, order: 1}}
+          time_integration: backward_euler
+          solver: {max_iterations: 100}
+          proteus: {model: RANS2P, useVF: 1.0}
+        - name: vof
+          introduces: {name: χh, approximates: χ, units: "1"}
+          equation: "∂χh/∂t + ∇·(v χh) = 0"
+          initial_condition: "heaviside(φ)"
+          lags: {v: {via: flow, at: current_step}}
+          finite_element: {fields: {family: CG, order: 1}}
+          time_integration: backward_euler
+        - name: ncls
+          solves: [interface]
+          lags: {v: {via: flow, at: current_step}}
+          finite_element: {fields: {family: CG, order: 1}}
+          time_integration: backward_euler
+        - name: rdls
+          enforces: "norm(∇φ) = 1"
+          pseudo_time: steady
+          writes_back: {φ: replace}
+          finite_element: {fields: {family: CG, order: 1}}
+        - name: mcorr
+          enforces: "heaviside(φ) = χh"
+          introduces: {name: φc, correction_of: φ, units: m}
+          equation: "heaviside(φ + φc) − χh − ∇·(εd ∇φc) = 0"
+          binds: {εd: {formula: "10 h"}}
+          writes_back: {φ: add}
+          finite_element: {fields: {family: CG, order: 1}}

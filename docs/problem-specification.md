@@ -14,6 +14,7 @@ that have been closed and why, [changes.md](changes.md).
 - [Writing it once: the notation](#writing-it-once-the-notation)
 - [Running a spec](#running-a-spec)
 - [Branching: one problem, several solution paths](#branching-one-problem-several-solution-paths)
+- [Splitting a discretization into sub-problems](#splitting-a-discretization-into-sub-problems)
 - [Document state](#document-state)
 - [Composing documents](#composing-documents)
 - [Provenance](#provenance)
@@ -547,6 +548,81 @@ later file did.
 Adding a branch adds entries; it never edits existing ones. That is what
 makes a document safe for several contributors, or an LLM and a person, to
 extend.
+
+## Splitting a discretization into sub-problems
+
+A model with several unknowns is often solved as a sequence of smaller
+problems in each time step. Two-phase level-set flow is the standard case:
+the model is momentum, continuity and the interface transport of a level
+set `φ`, with `ρ` and `μ` coefficients of `χ = heaviside(φ)`; Proteus solves
+it as flow, then a volume-of-fluid carrier of `χ`, then the level set, then
+redistancing, then a mass correction. That splitting is a property of the
+discretization, not of the model, so another discretization of the same
+model can split it differently (CLSVOF and a projection scheme) or not at
+all. [`tests/fixtures/two_phase`](../tests/fixtures/two_phase) holds the
+model and the dam break split this way.
+
+```yaml
+discretizations:
+  - name: level_set_five
+    provenance: proteus_derived
+    mesh: {h: 0.0322}
+    binds:                          # symbols the model leaves to the discretization
+      h: {meaning: element_size}
+      ε: {formula: "1.5 h"}
+    regularize:                     # sharp model functions made smooth
+      heaviside: {by: smoothed_heaviside, width: ε}
+    step_control: {type: min_cfl, cfl: 0.25}
+    solver: {type: nonlinear, nonlinear_solver: newton, linear_solver: petsc}
+    subproblems:                    # solved in this order every step
+      - name: flow
+        solves: [momentum, continuity]
+        lags: {φ: previous_step, χ: {via: vof, at: previous_step}}
+        finite_element: {velocity: {family: CG, order: 1}, pressure: {family: CG, order: 1}}
+        solver: {max_iterations: 100}           # refines the entry's solver
+      - name: vof
+        introduces: {name: χh, approximates: χ}
+        equation: "∂χh/∂t + ∇·(v χh) = 0"
+        lags: {v: {via: flow, at: current_step}}
+      - name: ncls
+        solves: [interface]
+        lags: {v: {via: flow, at: current_step}}
+      - name: rdls
+        enforces: "norm(∇φ) = 1"
+        pseudo_time: steady
+        writes_back: {φ: replace}
+      - name: mcorr
+        enforces: "heaviside(φ) = χh"
+        introduces: {name: φc, correction_of: φ}
+        writes_back: {φ: add}
+```
+
+A sub-problem **solves** model equations by name (so the model's equations
+must be [named](#document-structure)), or **enforces** a constraint the
+others lose, or **introduces** an unknown of its own (an auxiliary carrier
+of a model quantity, or a correction to a model unknown), or spins the run
+up. It says what it **lags** -- reads from elsewhere -- and when: as the
+previous step left it, or as an earlier sub-problem of this step left it
+(`via`). What it **writes back** into another field it says too. Its
+`solver` refines the entry's, which stays required as the default.
+`binds` names the symbols the discretization supplies and the model may not
+use (the element size, a smoothing width), and `regularize` the sharp
+functions it replaces with smooth ones (`heaviside`, `sign`).
+
+Checked on load: sub-problem names are unique; every model equation is
+solved by exactly one sub-problem; every name a sub-problem uses (an
+equation, a lagged field, a `via`, what it introduces, approximates,
+corrects or writes back) exists, and an introduced or bound name does not
+shadow one that does. The split is part of what an output's key covers, so
+changing a sub-problem's solver plans a new output.
+
+What is not done yet: the sub-problems' own equations and constraints are
+carried, not parsed, and `adr_problem` still classifies the whole model as
+one system, which a model like this one does not allow (`v·∇φ` is a
+Hamiltonian in another unknown); classifying each sub-problem with the
+fields it lags as coefficients is the next step. A solver maps a
+sub-problem onto its own modules (a dispatcher); `proteus:` blocks are
+interim hints for it.
 
 ## Document state
 
