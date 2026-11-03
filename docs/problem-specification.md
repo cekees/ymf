@@ -136,6 +136,22 @@ vector unknown wants one condition per component. `beta: 0` is refused:
 that is a Dirichlet condition, and belongs where it can be imposed strongly.
 `periodic` conditions need a box (see [The domain](#the-domain)).
 
+Four more kinds are for a [split discretization](#splitting-a-discretization-into-sub-problems)'s
+solver; one ADR system (`adr_problem`) runs none of them and says so:
+
+| type | means | value |
+|---|---|---|
+| `slip` | on a vector: its normal component is the value (0 if none is given), its tangential traction zero -- a free-slip wall | optional |
+| `open` | a declared open boundary: the natural flux applies, nothing is imposed | none |
+| `inflow` | the value, imposed only where the flow enters -- the phase that comes in through an open top | required |
+| `characteristic` | a state imposed through the incoming characteristics only -- a tailwater stage that a supercritical outflow ignores | required |
+
+A condition may also name a coefficient of the state rather than an
+unknown: `{variable: χ, type: inflow, value: 1.0}` says the fluid entering
+is air, whatever carries `χ` in a given discretization. Checked on load:
+the region exists, the variable is an unknown or a coefficient, `slip` is
+on a vector, and a kind gets a value exactly when it takes one.
+
 A value is given as a number (`value`), an expression (`formula`), or a
 table, `series: [[t, value], ...]` with `t` ascending: a measured or design
 record, which is the one thing an expression cannot be. A series is linear

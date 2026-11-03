@@ -426,12 +426,16 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     for bc in strong.get("boundary_conditions") or []:
         if bc["type"] not in ("dirichlet", "neumann", "periodic", "robin"):
             raise SymbolicError("boundary condition on %s: %s is not a kind of "
-                                "boundary condition that runs"
-                                % (bc["region"], bc["type"]))
+                                "boundary condition that runs in one ADR system (%s "
+                                "conditions are for a split discretization's solver)"
+                                % (bc["region"], bc["type"], bc["type"]))
         name = bc["variable"]
         if name not in ranks:
-            raise SymbolicError("boundary condition on %s: %s is not an unknown"
-                                % (bc["region"], name))
+            raise SymbolicError("boundary condition on %s: %s is not an unknown%s"
+                                % (bc["region"], name,
+                                   " (a condition on a coefficient is for a split "
+                                   "discretization's solver)"
+                                   if name in (strong.get("coefficients") or {}) else ""))
         if bc["region"] not in regions:
             raise SymbolicError("boundary condition: no boundary region named %r" % bc["region"])
         where = regions[bc["region"]]

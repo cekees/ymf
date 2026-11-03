@@ -48,7 +48,14 @@ FEFamilyEnum = Enum(["CG", "DG", "RT", "BDM", "RTF", "N1curl"])
 # discharge hydrograph is a tabulated neumann condition, and a stage
 # hydrograph a tabulated dirichlet one, which naming it as a type made
 # impossible to write.
-BCTypeEnum = Enum(["dirichlet", "neumann", "robin", "periodic"])
+# slip, open, inflow and characteristic (C42): the normal component of a
+# vector given and its tangential traction zero; a declared open boundary
+# (the natural flux, C12); a value imposed only where the flow enters; a
+# state imposed through the incoming characteristics (a tailwater stage).
+# They are for a split discretization's solver: one ADR system runs the
+# first four only (ymf.symbolic.adr_problem).
+BCTypeEnum = Enum(["dirichlet", "neumann", "robin", "periodic",
+                   "slip", "open", "inflow", "characteristic"])
 
 ICTypeEnum = Enum(["constant", "function", "data_source"])
 

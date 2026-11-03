@@ -264,9 +264,56 @@ def _check_split(doc: Dict[str, Any], entry: Dict[str, Any]) -> None:
                 "%s: no sub-problem solves %s" % (where, ", ".join(unsolved)))
 
 
+#: what each kind of condition needs: a value (value, formula or series),
+#: none, or either
+_NEEDS_VALUE = {"dirichlet": True, "neumann": True, "robin": True, "inflow": True,
+                "characteristic": True, "periodic": False, "open": False}
+
+
+def _check_conditions(doc: Dict[str, Any]) -> None:
+    """Boundary conditions: their region, their variable, and what their kind needs."""
+    strong = _problem(doc).get("strong_form") or {}
+    unknowns = {u["name"]: int(u.get("rank") or 0)
+                for u in _unknown_entries(strong.get("unknowns") or [])}
+    coefficients = set(strong.get("coefficients") or {})
+    regions = {r.get("name") for r in strong.get("boundary_regions") or []
+               if isinstance(r, dict)}
+    complete = doc.get("ymf_state") != "abstract"
+    for bc in strong.get("boundary_conditions") or []:
+        if not isinstance(bc, dict):
+            continue
+        where = "model.strong_form.boundary_conditions[region=%r, variable=%r]" % (
+            bc.get("region"), bc.get("variable"))
+        if complete and regions and bc.get("region") not in regions:
+            raise YmfReferenceError("%s: no boundary region named %r (have: %s)"
+                                    % (where, bc.get("region"), ", ".join(sorted(regions))))
+        variable, kind = bc.get("variable"), bc.get("type")
+        if unknowns and variable not in unknowns and variable not in coefficients:
+            raise YmfReferenceError("%s: %s is neither an unknown nor a coefficient"
+                                    % (where, variable))
+        given = any(bc.get(k) is not None for k in ("value", "formula", "series"))
+        if kind == "slip" and variable in unknowns and unknowns[variable] != 1:
+            raise YmfReferenceError("%s: slip gives the normal component of a vector, and "
+                                    "%s is a scalar" % (where, variable))
+        article = "an" if str(kind)[:1] in "aeiou" else "a"
+        if _NEEDS_VALUE.get(kind) and not given:
+            raise YmfReferenceError("%s: %s %s condition needs a value, formula or series"
+                                    % (where, article, kind))
+        if _NEEDS_VALUE.get(kind) is False and given:
+            raise YmfReferenceError("%s: %s %s condition takes no value"
+                                    % (where, article, kind))
+
+
+def _unknown_entries(unknowns):
+    from ymf.normalize import normalize_unknowns
+    ranks = {u["name"]: u.get("rank") for u in unknowns if isinstance(u, dict)}
+    return [dict(u, rank=ranks.get(u["name"])) for u in normalize_unknowns(unknowns)]
+
+
 def resolve(doc: Dict[str, Any]) -> None:
     """Check every reference, raising :class:`YmfReferenceError` on the first bad one."""
     _check_equations(doc)
+    _check_conditions(doc)
     for entry in _paths(doc).get("discretizations") or []:
         if isinstance(entry, dict):
             _check_split(doc, entry)

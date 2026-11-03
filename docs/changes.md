@@ -7,6 +7,16 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-03: `slip`, `open`, `inflow`, `characteristic`; conditions on
+  a coefficient.** The boundary kinds two-phase flow and shallow water need:
+  a free-slip wall, an open boundary (C12's declared open boundary), a value
+  imposed where the flow enters, a stage imposed through the incoming
+  characteristics. A condition may name a coefficient of the state (`χ`).
+  Conditions are now checked on load: the region exists, the variable is an
+  unknown or a coefficient, `slip` is on a vector, and a value is given
+  exactly when the kind takes one. `ymf.units` checks `slip`, `inflow` and
+  `characteristic` like `dirichlet`. `adr_problem` refuses the four kinds
+  and conditions on coefficients, naming the solver they are for.
 - **2026-11-03: each sub-problem classified on its own
   (`ymf.symbolic.split.split_problem`).** The plain data of a split
   discretization, one ADR form per sub-problem. Its own unknowns are
