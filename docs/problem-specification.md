@@ -152,6 +152,33 @@ is air, whatever carries `χ` in a given discretization. Checked on load:
 the region exists, the variable is an unknown or a coefficient, `slip` is
 on a vector, and a kind gets a value exactly when it takes one.
 
+**Condition sets.** What a free-slip wall or an open top means is part of
+the model: written once there, over its own unknowns and coefficients, and
+applied to regions by each problem.
+
+```yaml
+# the model
+condition_sets:
+  free_slip:
+    - {variable: v, type: slip}
+  atmosphere:
+    - {variable: p, type: dirichlet, value: 0.0}
+    - {variable: v, type: open}
+    - {variable: χ, type: inflow, value: 1.0}     # what enters is air
+# a problem extending it
+boundary_sets:
+  - {region: walls, set: free_slip}
+  - {region: top, set: atmosphere}
+```
+
+`ymf.boundary_conditions(strong_form)` is every condition with the sets
+expanded, each member carrying its region and the set it came from. A
+condition written out under `boundary_conditions` for the same region and
+variable replaces the set's member, so a case can apply `atmosphere` and
+give the pressure its own value; two sets that both decide one region's
+variable are an error, as is a set nobody defines. A set's members are
+checked where they are defined, as any condition is.
+
 A value is given as a number (`value`), an expression (`formula`), or a
 table, `series: [[t, value], ...]` with `t` ascending: a measured or design
 record, which is the one thing an expression cannot be. A series is linear

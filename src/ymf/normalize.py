@@ -129,3 +129,40 @@ def equations_in_order(strong_form: Dict[str, Any], complete: bool = True) -> Li
 
 def _listing(items: List[Any]) -> str:
     return ", ".join(str(i) for i in items)
+
+
+def boundary_conditions(strong_form: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Every boundary condition, with the condition sets expanded.
+
+    A model names sets of conditions without a region (``condition_sets:
+    {free_slip: [{variable: v, type: slip}]}``) and a problem applies them
+    to regions (``boundary_sets: [{region: walls, set: free_slip}]``). The
+    result is ``boundary_conditions`` followed by one condition per member
+    of each applied set, with the region filled in and ``set`` naming where
+    it came from. A condition written out for the same region and variable
+    as a set's member replaces it: a case can apply ``atmosphere`` and still
+    give the pressure its own value. Raises ``ValueError`` for a set nobody
+    defines, and for two sets that both give one region's variable a
+    condition, which nothing would choose between.
+    """
+    sets = strong_form.get("condition_sets") or {}
+    direct = [dict(bc) for bc in strong_form.get("boundary_conditions") or []]
+    written = {(bc.get("region"), bc.get("variable")) for bc in direct}
+    expanded: List[Dict[str, Any]] = []
+    given: Dict[Any, str] = {}
+    for applied in strong_form.get("boundary_sets") or []:
+        name, region = applied.get("set"), applied.get("region")
+        if name not in sets:
+            raise ValueError("boundary_sets[region=%r]: no condition set named %r (have: %s)"
+                             % (region, name, ", ".join(sorted(sets)) or "none"))
+        for member in sets[name]:
+            key = (region, member.get("variable"))
+            if key in written:
+                continue
+            if key in given and given[key] != name:
+                raise ValueError(
+                    "boundary_sets: sets %s and %s both give %s a condition on %s"
+                    % (given[key], name, member.get("variable"), region))
+            given[key] = name
+            expanded.append(dict(member, region=region, set=name))
+    return direct + expanded

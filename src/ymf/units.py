@@ -507,7 +507,12 @@ def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckRe
     ymf[symbolic] to read alpha, beta and the equations; without it they
     are undecided too.
     """
-    bcs = [bc for bc in (strong_form.get("boundary_conditions") or [])
+    from ymf.normalize import boundary_conditions
+    try:
+        conditions = boundary_conditions(strong_form)
+    except ValueError:
+        return                         # an undefined set: reported on load
+    bcs = [bc for bc in conditions
            if bc.get("type") in ("dirichlet", "neumann", "robin") + _VALUE_KINDS]
     if not bcs:
         return
@@ -539,6 +544,8 @@ def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckRe
     for bc in bcs:
         var, kind = bc.get("variable"), bc["type"]
         location = f"boundary_conditions[region={bc.get('region')!r}, variable={var!r}]"
+        if bc.get("set"):
+            location += f" (set {bc['set']})"
         if var not in unknown_dims:
             continue
         try:

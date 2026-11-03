@@ -279,12 +279,22 @@ def _check_conditions(doc: Dict[str, Any]) -> None:
     regions = {r.get("name") for r in strong.get("boundary_regions") or []
                if isinstance(r, dict)}
     complete = doc.get("ymf_state") != "abstract"
-    for bc in strong.get("boundary_conditions") or []:
+    from ymf.normalize import boundary_conditions
+    try:
+        conditions = boundary_conditions(strong)
+    except ValueError as exc:
+        raise YmfReferenceError("model.strong_form.%s" % exc) from exc
+    members = [dict(m, set=name) for name, entries in (strong.get("condition_sets") or {}).items()
+               for m in entries or [] if isinstance(m, dict)]
+    for bc in conditions + members:
         if not isinstance(bc, dict):
             continue
-        where = "model.strong_form.boundary_conditions[region=%r, variable=%r]" % (
-            bc.get("region"), bc.get("variable"))
-        if complete and regions and bc.get("region") not in regions:
+        where = "model.strong_form.%s[%s]" % (
+            ("condition_sets.%s" % bc["set"]) if "region" not in bc else "boundary_conditions",
+            ("variable=%r" % bc.get("variable")) if "region" not in bc else
+            "region=%r, variable=%r%s" % (bc.get("region"), bc.get("variable"),
+                                          ", set %s" % bc["set"] if bc.get("set") else ""))
+        if "region" in bc and complete and regions and bc.get("region") not in regions:
             raise YmfReferenceError("%s: no boundary region named %r (have: %s)"
                                     % (where, bc.get("region"), ", ".join(sorted(regions))))
         variable, kind = bc.get("variable"), bc.get("type")

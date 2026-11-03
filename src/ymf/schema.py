@@ -318,37 +318,41 @@ InitialConditionDef = Map(
     }
 )
 
-BoundaryConditionDef = Map(
-    {
-        "region": Str(),
-        "variable": Str(),
-        "type": BCTypeEnum,
-        Optional("value"): Float(),
-        # A value that varies along the boundary or in time: an expression
-        # in x, y, z, t and the coefficients; "(a, b)" for a vector variable.
-        Optional("formula"): Str(),
-        # The value as tabulated data rather than a formula -- a measured or
-        # design record, which is the one thing that cannot be written as an
-        # expression. Pairs of [t, value], t ascending. Linear between
-        # samples; outside the range the end value is held, because
-        # extrapolating a record past its end is not something to do
-        # quietly.
-        #
-        # Available to any type: with neumann this is a discharge
-        # hydrograph, with dirichlet a stage hydrograph or a measured inlet
-        # temperature.
-        Optional("series"): Seq(Seq(Float())),
-        # A robin condition, alpha*u + beta*(q.n) = g: alpha and beta here,
-        # g in value or formula like any other right-hand side. Expressions,
-        # so they may vary along the boundary.
-        Optional("alpha"): Str(),
-        Optional("beta"): Str(),
-        Optional("units"): Str(),
-        Optional("source"): Str(),
-        Optional("source_url"): Str(),
-        Optional("temporal"): Str(),
-    }
-)
+_CONDITION_FIELDS = {
+    "variable": Str(),
+    "type": BCTypeEnum,
+    Optional("value"): Float(),
+    # A value that varies along the boundary or in time: an expression
+    # in x, y, z, t and the coefficients; "(a, b)" for a vector variable.
+    Optional("formula"): Str(),
+    # The value as tabulated data rather than a formula -- a measured or
+    # design record, which is the one thing that cannot be written as an
+    # expression. Pairs of [t, value], t ascending. Linear between
+    # samples; outside the range the end value is held, because
+    # extrapolating a record past its end is not something to do
+    # quietly.
+    #
+    # Available to any type: with neumann this is a discharge
+    # hydrograph, with dirichlet a stage hydrograph or a measured inlet
+    # temperature.
+    Optional("series"): Seq(Seq(Float())),
+    # A robin condition, alpha*u + beta*(q.n) = g: alpha and beta here,
+    # g in value or formula like any other right-hand side. Expressions,
+    # so they may vary along the boundary.
+    Optional("alpha"): Str(),
+    Optional("beta"): Str(),
+    Optional("units"): Str(),
+    Optional("source"): Str(),
+    Optional("source_url"): Str(),
+    Optional("temporal"): Str(),
+}
+
+BoundaryConditionDef = Map({"region": Str(), **_CONDITION_FIELDS})
+
+# A condition set: conditions without a region, defined once in a model
+# (free_slip, atmosphere) and applied to regions by a problem's
+# boundary_sets. ymf.normalize.boundary_conditions expands them.
+ConditionDef = Map(dict(_CONDITION_FIELDS))
 
 # A domain is the notation short form -- "Ω = [0, 1] × [0, 1],  t ∈ (0, 50]",
 # which means a box and is parsed by ymf.symbolic -- or a mapping tagged by
@@ -490,6 +494,10 @@ StrongFormDef = Map(
         "boundary_regions": Seq(Map({"name": Str(), "where": Str()})),
         Optional("initial_conditions"): Seq(InitialConditionDef),
         Optional("boundary_conditions"): Seq(BoundaryConditionDef),
+        # named sets of conditions, and the regions they apply to: a model
+        # says what free_slip and atmosphere mean, a problem where they hold
+        Optional("condition_sets"): MapPattern(Str(), Seq(ConditionDef)),
+        Optional("boundary_sets"): Seq(Map({"region": Str(), "set": Str()})),
         Optional("coefficients"): MapPattern(Str(), CoefficientDef),
         # The equations, one string per (vector or scalar) equation, in the
         # notation of ymf.symbolic.notation -- "∂T/∂t = ∇·(κ∇T)  in Ω",

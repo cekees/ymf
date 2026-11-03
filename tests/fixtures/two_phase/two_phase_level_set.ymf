@@ -37,3 +37,12 @@ model:
       ρa: {units: kg/m3}
       νa: {units: m2/s}
       g:  {units: m/s2}
+    # what the cases' walls and tops mean, written once (Proteus's
+    # BC_RANS.setFreeSlip and setAtmosphere, for this model's unknowns)
+    condition_sets:
+      free_slip:
+        - {variable: v, type: slip}
+      atmosphere:
+        - {variable: p, type: dirichlet, value: 0.0}
+        - {variable: v, type: open}
+        - {variable: χ, type: inflow, value: 1.0}       # what enters is air

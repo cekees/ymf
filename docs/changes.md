@@ -7,6 +7,16 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-03: condition sets.** `strong_form.condition_sets` names bundles
+  of conditions without a region (a model's `free_slip`, `atmosphere`), and
+  `strong_form.boundary_sets` applies them to regions. They are a separate
+  key rather than a `set:` entry among `boundary_conditions` because
+  strictyaml cannot accept either of two mapping shapes in one list, and
+  making a condition's keys optional would lose the schema error that names
+  the file holding an incomplete one. `ymf.boundary_conditions` expands
+  them, and `adr_problem`, `ymf.units` and the load-time checks all read
+  through it; a condition written out replaces a set's member for the same
+  region and variable.
 - **2026-11-03: `slip`, `open`, `inflow`, `characteristic`; conditions on
   a coefficient.** The boundary kinds two-phase flow and shallow water need:
   a free-slip wall, an open boundary (C12's declared open boundary), a value

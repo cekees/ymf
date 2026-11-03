@@ -423,7 +423,12 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
     neumann = []
     robin = []
     periodic = []
-    for bc in strong.get("boundary_conditions") or []:
+    from ymf.normalize import boundary_conditions
+    try:
+        conditions = boundary_conditions(strong)
+    except ValueError as exc:
+        raise SymbolicError(str(exc)) from exc
+    for bc in conditions:
         if bc["type"] not in ("dirichlet", "neumann", "periodic", "robin"):
             raise SymbolicError("boundary condition on %s: %s is not a kind of "
                                 "boundary condition that runs in one ADR system (%s "

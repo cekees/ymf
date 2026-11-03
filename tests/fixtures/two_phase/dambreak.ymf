@@ -1,7 +1,6 @@
 # The 2-D dam break of test/TwoPhaseFlow/damBreakLevelSet.py, split into
-# proteus's five sub-problems (RANS2P, VOF, NCLS, RDLS, MCorr). Condition
-# sets, outputs and the stored mesh are not in the schema yet, so the
-# boundary conditions here are placeholders.
+# proteus's five sub-problems (RANS2P, VOF, NCLS, RDLS, MCorr). The stored
+# mesh (meshDambreak) waits on C7.1; this gives an element size instead.
 extends: two_phase_level_set.ymf
 
 model:
@@ -12,9 +11,9 @@ model:
     boundary_regions:
       - {name: walls, where: "x = 0 or x = 3.22 or y = 0"}
       - {name: top, where: "y = 1.8"}
-    boundary_conditions:
-      - {region: walls, variable: v, type: dirichlet, value: 0.0}
-      - {region: top, variable: p, type: dirichlet, value: 0.0}
+    boundary_sets:
+      - {region: walls, set: free_slip}
+      - {region: top, set: atmosphere}
     initial_conditions:
       - {field: v, type: constant, value: 0.0}
       - {field: p, type: constant, value: 0.0}
