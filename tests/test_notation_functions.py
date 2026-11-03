@@ -23,7 +23,7 @@ def _space(**unknowns):
 
 
 def _evaluate(code, **names):
-    import numpy
+    numpy = pytest.importorskip("numpy")       # not in ymf[symbolic] alone
     return eval(code, {"__builtins__": {}, "numpy": numpy}, names)  # noqa: S307
 
 
