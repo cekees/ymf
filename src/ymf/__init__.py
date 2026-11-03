@@ -41,7 +41,7 @@ from ymf.archive import (
     validate_domain,
     write_ymf,
 )
-from ymf.normalize import normalize_unknowns
+from ymf.normalize import equations_in_order, normalize_equations, normalize_unknowns
 from ymf.xdmf import (
     build_xdmf_tree,
     grid_element_time,
@@ -104,6 +104,8 @@ __all__ = [
     "grid_element_time",
     # --- core: stdlib helpers ---
     "normalize_unknowns",
+    "normalize_equations",
+    "equations_in_order",
     # --- lazy: front-end validation (see _LAZY_ATTRS) ---
     *_LAZY_ATTRS,
 ]

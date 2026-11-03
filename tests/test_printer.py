@@ -92,7 +92,8 @@ def test_every_example_spec_round_trips(path):
     assert strong.get("equations"), "an example spec with no equations"
     space = _space_of(doc)
     count = 0
-    for text in strong["equations"]:
+    from ymf.normalize import equations_in_order
+    for text in equations_in_order(strong):
         for residual in parse_equation(text, space):
             round_trip(residual, space)
             count += 1

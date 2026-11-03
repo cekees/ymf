@@ -51,3 +51,81 @@ def normalize_unknowns(
                 f"Unsupported unknowns entry type: {type(entry)!r} (value={entry!r})"
             )
     return result
+
+
+EquationEntry = Union[str, Dict[str, Any]]
+
+
+def normalize_equations(equations: List[EquationEntry]) -> List[Dict[str, Any]]:
+    """Normalize ``strong_form.equations`` to ``{name, for, equation}`` entries.
+
+    An equation is written either as a bare string, ordered like the
+    unknowns, or as a mapping that names it and, with ``for``, the unknown
+    it determines::
+
+        - name: momentum
+          for: v
+          equation: "ρ ∂v/∂t + ∇·(ρ v⊗v) − ∇·(μ∇v) + ∇p = ρ g  in Ω"
+
+    A name is what a discretization's sub-problem refers to (``solves:
+    [momentum]``), and what an extending file merges onto. ``name`` and
+    ``for`` are ``None`` for a bare string.
+
+    >>> normalize_equations(["-Δu = f  in Ω"])
+    [{'name': None, 'for': None, 'equation': '-Δu = f  in Ω'}]
+    """
+    result: List[Dict[str, Any]] = []
+    for entry in equations:
+        if isinstance(entry, str):
+            result.append({"name": None, "for": None, "equation": entry})
+        elif isinstance(entry, dict):
+            result.append({"name": entry.get("name"), "for": entry.get("for"),
+                           "equation": entry.get("equation")})
+        else:
+            raise TypeError(
+                f"Unsupported equations entry type: {type(entry)!r} (value={entry!r})"
+            )
+    return result
+
+
+def equations_in_order(strong_form: Dict[str, Any], complete: bool = True) -> List[str]:
+    """The equations' text, one per unknown, in the order of the unknowns.
+
+    Bare strings are taken in the order written, as they always were. When
+    every equation says which unknown it is ``for``, the order written does
+    not matter: they are put in the unknowns' order. Raises ``ValueError``
+    when some say and some do not, when one names something that is not an
+    unknown, or when two are for the same unknown -- each is a document
+    that does not say which equation determines which unknown.
+    ``complete=False`` allows unknowns no equation is for yet (an abstract
+    file the rest of the chain completes); the result then holds only the
+    equations given.
+    """
+    entries = normalize_equations(strong_form.get("equations") or [])
+    stated = [e for e in entries if e["for"] is not None]
+    if not stated:
+        return [e["equation"] for e in entries]
+    if len(stated) != len(entries):
+        raise ValueError(
+            "equations: give 'for' on every equation or on none; %s %s but %s %s not"
+            % (_listing([e["name"] for e in stated]), "says" if len(stated) == 1 else "say",
+               _listing([e["name"] or e["equation"] for e in entries if e["for"] is None]),
+               "does" if len(entries) - len(stated) == 1 else "do"))
+    names = [u["name"] for u in normalize_unknowns(strong_form.get("unknowns") or [])]
+    by_unknown: Dict[str, Dict[str, Any]] = {}
+    for e in entries:
+        if e["for"] not in names:
+            raise ValueError("equations[%s] is for %r, which is not an unknown (have: %s)"
+                             % (e["name"], e["for"], ", ".join(names)))
+        if e["for"] in by_unknown:
+            raise ValueError("equations %s and %s are both for %s"
+                             % (by_unknown[e["for"]]["name"], e["name"], e["for"]))
+        by_unknown[e["for"]] = e
+    missing = [n for n in names if n not in by_unknown]
+    if missing and complete:
+        raise ValueError("equations: none is for %s" % ", ".join(missing))
+    return [by_unknown[n]["equation"] for n in names if n in by_unknown]
+
+
+def _listing(items: List[Any]) -> str:
+    return ", ".join(str(i) for i in items)

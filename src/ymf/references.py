@@ -141,8 +141,26 @@ def _check(named: Any, candidates: List[str], path: str, what: str) -> None:
             % (path, named, what, ", ".join(candidates) or "none"))
 
 
+def _check_equations(doc: Dict[str, Any]) -> None:
+    """Named equations: each name once, and ``for`` naming the unknowns."""
+    from ymf.normalize import equations_in_order, normalize_equations
+    strong = _problem(doc).get("strong_form") or {}
+    names = [e["name"] for e in normalize_equations(strong.get("equations") or [])
+             if e["name"] is not None]
+    twice = sorted({n for n in names if names.count(n) > 1})
+    if twice:
+        raise YmfReferenceError("model.strong_form.equations: %s named more than once"
+                                % ", ".join(twice))
+    if strong.get("equations") and strong.get("unknowns"):
+        try:
+            equations_in_order(strong, complete=doc.get("ymf_state") != "abstract")
+        except ValueError as exc:
+            raise YmfReferenceError("model.strong_form.%s" % exc) from exc
+
+
 def resolve(doc: Dict[str, Any]) -> None:
     """Check every reference, raising :class:`YmfReferenceError` on the first bad one."""
+    _check_equations(doc)
     labels = weak_form_labels(doc)
     discretizations = discretization_names(doc)
 

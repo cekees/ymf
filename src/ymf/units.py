@@ -680,9 +680,10 @@ def _flux_dimension(strong_form, component, names, dims, space, cache):
     if "equations" not in cache:
         residuals = []
         try:
-            for text in strong_form.get("equations") or []:
+            from ymf.normalize import equations_in_order
+            for text in equations_in_order(strong_form):
                 residuals.extend(parse_equation(text, space))
-        except SymbolicError as exc:
+        except (SymbolicError, ValueError) as exc:
             raise _Undetermined(["the equations do not read: %s" % exc])
         cache["equations"] = residuals
     residuals = cache["equations"]

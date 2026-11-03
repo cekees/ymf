@@ -87,6 +87,27 @@ Optional: `initial_conditions`, `boundary_conditions`, `coefficients`.
 `dimensional_check` used to be accepted and are refused now; see
 [changes.md](changes.md).)
 
+An equation is a string, and the strings are taken in the order of the
+unknowns. Or it is named, and says which unknown it is `for`:
+
+```yaml
+equations:
+  - name: continuity
+    for: p
+    equation: "∇·v = 0  in Ω"
+  - name: momentum
+    for: v
+    equation: "ρ ∂v/∂t + ∇·(ρ v⊗v) − ∇·(μ∇v) + ∇p = f  in Ω"
+```
+
+With `for` on every equation the order written no longer matters (it is
+`for` on all of them or on none). A name is unique, is what a file that
+extends this one merges onto (replacing `momentum`'s text replaces that
+equation and is recorded as an override), and is how a discretization will
+say which equations each of its sub-problems solves. An abstract model may
+leave an unknown without an equation for the files that extend it to
+supply; a well-posed document may not.
+
 ```yaml
 initial_conditions:
   - field: T

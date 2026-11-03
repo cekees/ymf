@@ -412,7 +412,16 @@ StrongFormDef = Map(
         # The equations, one string per (vector or scalar) equation, in the
         # notation of ymf.symbolic.notation -- "∂T/∂t = ∇·(κ∇T)  in Ω",
         # "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f" -- ordered like the unknowns.
-        Optional("equations"): Seq(Str()),
+        # Or named, saying which unknown each determines: a sub-problem of
+        # a discretization names the equations it solves, and an extending
+        # file merges onto an equation by its name.
+        Optional("equations"): Seq(Str() | Map({
+            "name": Str(),
+            Optional("for"): Str(),
+            "equation": Str(),
+            Optional("provenance"): ProvenanceEnum,
+            Optional("notes"): Str(),
+        })),
     }
 )
 

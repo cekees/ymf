@@ -7,6 +7,15 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-03: named equations.** `strong_form.equations` takes
+  `{name, for, equation}` beside bare strings. Bare strings are still
+  ordered like the unknowns; with `for` on every equation the order written
+  stops mattering. Names merge across `extends` like every other named
+  list, and are what a discretization's sub-problems will cite. Checked on
+  load: a name used twice, `for` naming something that is not an unknown,
+  two equations for one unknown, `for` on some but not all, and (outside an
+  abstract file) an unknown no equation is for. `ymf.equations_in_order`
+  is the one reader, shared by `ymf.symbolic` and `ymf.units`.
 - **2026-11-03: a coefficient's formula may name the unknowns.** A
   coefficient could be a formula in the coordinates, time and the other
   coefficients; one that named an unknown was "could not be resolved". Now

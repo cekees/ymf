@@ -353,7 +353,12 @@ def _posed(doc: Dict[str, Any]):
     coefficients = _coefficients(strong.get("coefficients") or {}, dim, unknowns=ranks)
     space = Space(dim, ranks, coefficients)
     residuals: List[sympy.Expr] = []
-    for text in strong["equations"]:
+    from ymf.normalize import equations_in_order
+    try:
+        texts = equations_in_order(strong)
+    except ValueError as exc:
+        raise SymbolicError(str(exc)) from exc
+    for text in texts:
         residuals.extend(parse_equation(text, space))
     return strong, box, region, ranks, coefficients, space, residuals
 
