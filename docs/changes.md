@@ -7,6 +7,12 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-03: gauges.** `model.gauges` in the shape the force-history
+  plan (C22, step 4) set out: `point`, `line` and `line_integral` gauges of
+  named fields, and `boundary_integral` gauges of wetted area, forces and
+  moments per boundary region, with `sample_rate` and `file`. What each kind
+  needs is checked on load. Also: a reference error now says "an analytical
+  solution", not "a analytical solution".
 - **2026-11-03: condition sets.** `strong_form.condition_sets` names bundles
   of conditions without a region (a model's `free_slip`, `atmosphere`), and
   `strong_form.boundary_sets` applies them to regions. They are a separate

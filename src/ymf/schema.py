@@ -519,6 +519,30 @@ StrongFormDef = Map(
 # model (updated: + characteristic_scales, units, mesh_generation)
 # ---------------------------------------------------------------------------
 
+# --- gauges: what a run measures as it goes (C22) -----------------------------
+# The shape planned in FORCE_HISTORY_GAUGES_PLAN step 4: proteus's point,
+# line and line-integral gauges, and the boundary-integral gauge (forces and
+# moments per boundary region) that replaces RANS2P's and RANS3PF's history
+# files. What each kind needs is checked on load (ymf.references).
+GaugeKindEnum = Enum(["point", "line", "line_integral", "boundary_integral"])
+GaugeQuantityEnum = Enum(["wetted_area", "force_pressure", "force_viscous", "force", "moment"])
+
+GaugeDef = Map({
+    Optional("name"): Str(),
+    "kind": GaugeKindEnum,
+    # point, line, line_integral: the fields sampled (unknowns or coefficients)
+    Optional("fields"): Seq(Str()),
+    Optional("points"): Seq(Seq(Float())),
+    # each line is two points, its ends
+    Optional("lines"): Seq(Seq(Seq(Float()))),
+    # boundary_integral: boundary regions, and what is integrated over each
+    Optional("tags"): Seq(Str()),
+    Optional("quantities"): Seq(GaugeQuantityEnum),
+    Optional("moment_point"): Seq(Float()),
+    Optional("sample_rate"): Float(),
+    Optional("file"): Str(),
+})
+
 ModelDef = Map(
     {
         "name": Str(),
@@ -529,6 +553,7 @@ ModelDef = Map(
         Optional("dimensionless_numbers"): MapPattern(Str(), DimensionlessNumberDef),
         Optional("units"): UnitsDef,
         Optional("mesh_generation"): MeshGenerationDef,
+        Optional("gauges"): Seq(GaugeDef),
     }
 )
 

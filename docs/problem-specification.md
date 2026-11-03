@@ -14,6 +14,7 @@ that have been closed and why, [changes.md](changes.md).
 - [Writing it once: the notation](#writing-it-once-the-notation)
 - [Running a spec](#running-a-spec)
 - [Branching: one problem, several solution paths](#branching-one-problem-several-solution-paths)
+- [Gauges](#gauges)
 - [Splitting a discretization into sub-problems](#splitting-a-discretization-into-sub-problems)
 - [Document state](#document-state)
 - [Composing documents](#composing-documents)
@@ -598,6 +599,38 @@ later file did.
 Adding a branch adds entries; it never edits existing ones. That is what
 makes a document safe for several contributors, or an LLM and a person, to
 extend.
+
+## Gauges
+
+What a run measures as it goes is part of the problem, beside its
+conditions: `model.gauges`, one entry per gauge file.
+
+```yaml
+gauges:
+  - name: heights                   # the level set along four verticals
+    kind: line
+    fields: [φ]
+    lines: [[[2.724, 0.0], [2.724, 1.8]], [[2.228, 0.0], [2.228, 1.8]]]
+    file: height1.csv
+  - name: pressure
+    kind: point
+    fields: [p]
+    points: [[3.22, 0.16], [3.22, 0.584]]
+  - kind: boundary_integral         # forces and moments per boundary region
+    tags: [cylinder]
+    quantities: [force, moment]
+    moment_point: [0.2, 0.2, 0.0]
+    sample_rate: 0.01
+```
+
+`point`, `line` and `line_integral` gauges sample `fields` (unknowns or
+coefficients, `ρ` as well as `p`) at `points` or along `lines`, each line
+its two ends. A `boundary_integral` gauge integrates `quantities`
+(`wetted_area`, `force_pressure`, `force_viscous`, `force`, `moment`, the
+moment about `moment_point`) over each boundary region in `tags`. Checked
+on load: what each kind needs and may not have, that fields and tags
+exist, and that a gauge's points share one dimension. A solver reads them;
+Proteus's reader is C22's next step.
 
 ## Splitting a discretization into sub-problems
 

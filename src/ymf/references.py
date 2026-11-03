@@ -137,8 +137,9 @@ def _check(named: Any, candidates: List[str], path: str, what: str) -> None:
             "%s must name a %s; found %r" % (path, what, named))
     if named not in candidates:
         raise YmfReferenceError(
-            "%s names %r, which is not a %s in this document (have: %s)"
-            % (path, named, what, ", ".join(candidates) or "none"))
+            "%s names %r, which is not %s %s in this document (have: %s)"
+            % (path, named, "an" if what[:1] in "aeiou" else "a", what,
+               ", ".join(candidates) or "none"))
 
 
 def _check_equations(doc: Dict[str, Any]) -> None:
@@ -320,10 +321,59 @@ def _unknown_entries(unknowns):
     return [dict(u, rank=ranks.get(u["name"])) for u in normalize_unknowns(unknowns)]
 
 
+#: gauge kind -> (keys it needs, keys it may not have)
+_GAUGE_KEYS = {
+    "point": (("fields", "points"), ("lines", "tags", "quantities", "moment_point")),
+    "line": (("fields", "lines"), ("points", "tags", "quantities", "moment_point")),
+    "line_integral": (("fields", "lines"), ("points", "tags", "quantities", "moment_point")),
+    "boundary_integral": (("tags", "quantities"), ("fields", "points", "lines")),
+}
+
+
+def _check_gauges(doc: Dict[str, Any]) -> None:
+    """What each gauge's kind needs, and that its names exist."""
+    model = _problem(doc)
+    strong = model.get("strong_form") or {}
+    names = ({u["name"] for u in _unknown_entries(strong.get("unknowns") or [])}
+             | set(strong.get("coefficients") or {}))
+    regions = {r.get("name") for r in strong.get("boundary_regions") or [] if isinstance(r, dict)}
+    complete = doc.get("ymf_state") != "abstract"
+    for i, gauge in enumerate(model.get("gauges") or []):
+        if not isinstance(gauge, dict):
+            continue
+        where = "model.gauges[%s]" % (gauge.get("name") or i,)
+        kind = gauge.get("kind")
+        needs, refuses = _GAUGE_KEYS.get(kind, ((), ()))
+        for key in needs:
+            if not gauge.get(key):
+                raise YmfReferenceError("%s: a %s gauge needs %s" % (where, kind, key))
+        for key in refuses:
+            if key in gauge:
+                raise YmfReferenceError("%s: a %s gauge takes no %s" % (where, kind, key))
+        if complete and names:
+            for field in gauge.get("fields") or []:
+                _check(field, sorted(names), where + ".fields", "unknown or coefficient")
+        if complete and regions:
+            for tag in gauge.get("tags") or []:
+                _check(tag, sorted(regions), where + ".tags", "boundary region")
+        points = list(gauge.get("points") or [])
+        for line in gauge.get("lines") or []:
+            if len(line) != 2:
+                raise YmfReferenceError("%s: a line is its two ends, not %d points"
+                                        % (where, len(line)))
+            points.extend(line)
+        if gauge.get("moment_point"):
+            points.append(gauge["moment_point"])
+        if len({len(p) for p in points}) > 1:
+            raise YmfReferenceError("%s: its points do not all have the same dimension"
+                                    % (where,))
+
+
 def resolve(doc: Dict[str, Any]) -> None:
     """Check every reference, raising :class:`YmfReferenceError` on the first bad one."""
     _check_equations(doc)
     _check_conditions(doc)
+    _check_gauges(doc)
     for entry in _paths(doc).get("discretizations") or []:
         if isinstance(entry, dict):
             _check_split(doc, entry)
