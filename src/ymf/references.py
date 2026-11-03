@@ -229,10 +229,27 @@ def _check_split(doc: Dict[str, Any], entry: Dict[str, Any]) -> None:
                        "model unknown" if key == "correction_of" else
                        "model unknown or coefficient")
         for field, lag in (s.get("lags") or {}).items():
-            _check(field, sorted(readable), "%s.lags" % (here,),
-                   "model unknown, coefficient or introduced unknown")
+            copy_of = lag.get("of") if isinstance(lag, dict) else None
+            if copy_of is not None:
+                _check(copy_of, sorted(readable), "%s.lags.%s.of" % (here, field),
+                       "model unknown, coefficient or introduced unknown")
+                if field in readable:
+                    raise YmfReferenceError(
+                        "%s.lags.%s: a copy (of: %s) takes a name of its own, and %s is "
+                        "already one" % (here, field, copy_of, field))
+            else:
+                _check(field, sorted(readable), "%s.lags" % (here,),
+                       "model unknown, coefficient or introduced unknown")
             if isinstance(lag, dict) and "via" in lag:
                 _check(lag["via"], names, "%s.lags.%s.via" % (here, field), "sub-problem")
+        if "for" in s:
+            _check(s["for"], sorted(set(unknowns) | set(introduced)), here + ".for",
+                   "model or introduced unknown")
+        for function in s.get("regularize") or {}:
+            if function not in SHARP_FUNCTIONS:
+                raise YmfReferenceError(
+                    "%s.regularize.%s: only the sharp functions %s are regularized"
+                    % (here, function, ", ".join(SHARP_FUNCTIONS)))
         for field in s.get("writes_back") or {}:
             _check(field, sorted(set(unknowns) | set(introduced)),
                    "%s.writes_back" % (here,), "model or introduced unknown")

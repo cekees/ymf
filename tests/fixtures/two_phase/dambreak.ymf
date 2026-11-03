@@ -64,6 +64,11 @@ solution_paths:
           time_integration: backward_euler
         - name: rdls
           enforces: "norm(∇φ) = 1"
+          for: φ
+          equation: "sign(φs) (norm(∇φ) − 1) = 0"
+          lags: {φs: {of: φ, via: ncls, at: current_step}}
+          regularize: {sign: {by: smoothed_sign, width: εr}}
+          binds: {εr: {formula: "0.75 h"}}
           pseudo_time: steady
           writes_back: {φ: replace}
           finite_element: {fields: {family: CG, order: 1}}
@@ -72,5 +77,6 @@ solution_paths:
           introduces: {name: φc, correction_of: φ, units: m}
           equation: "heaviside(φ + φc) − χh − ∇·(εd ∇φc) = 0"
           binds: {εd: {formula: "10 h"}}
+          lags: {φ: {via: rdls, at: current_step}, χh: {via: vof, at: current_step}}
           writes_back: {φ: add}
           finite_element: {fields: {family: CG, order: 1}}

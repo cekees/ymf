@@ -155,17 +155,23 @@ SubproblemDef = Map({
         Optional("correction_of"): Str(),
         Optional("units"): Str(),
     }),
-    # the equation of an introduced unknown, or of a constraint's solve
+    # the equation of an introduced unknown, or of a constraint's solve, and
+    # the unknown it determines (default: the one this sub-problem introduces)
     Optional("equation"): Str(),
+    Optional("for"): Str(),
     Optional("initial_condition"): Str(),
-    # what it reads from elsewhere: name -> when, or {via: sub-problem, at: when}
+    # what it reads from elsewhere: name -> when, or {via: sub-problem, at:
+    # when}; with `of`, the name is a copy of that field under a name of its
+    # own (redistancing reads φs, the level set before it changes φ)
     Optional("lags"): MapPattern(Str(), LagAtEnum | Map({
-        Optional("via"): Str(), "at": LagAtEnum})),
+        Optional("via"): Str(), "at": LagAtEnum, Optional("of"): Str()})),
     # what it hands back: name -> replace | add | mass_quadrature | ...
     Optional("writes_back"): MapPattern(Str(), Str()),
     Optional("pseudo_time"): Enum(["steady"]),
     Optional("spin_up"): Bool(),
     Optional("binds"): MapPattern(Str(), SymbolBinding),
+    # replaces the entry's regularize: for this sub-problem's sharp functions
+    Optional("regularize"): MapPattern(Str(), Map({"by": Str(), Optional("width"): Str()})),
     Optional("finite_element"): FiniteElementDef,
     Optional("time_integration"): Str(),
     Optional("stabilization"): Any(),

@@ -127,7 +127,10 @@ def test_a_split_that_does_not_add_up_is_refused(dambreak, change, message):
 
 
 def test_every_model_equation_is_solved_by_some_sub_problem(dambreak):
-    doc = _broken(dambreak, lambda d: _split(d)["subproblems"].remove(_sub(d, "ncls")))
+    def drop_ncls(doc):
+        _split(doc)["subproblems"].remove(_sub(doc, "ncls"))
+        _sub(doc, "rdls")["lags"]["φs"]["via"] = "vof"     # it read φ as ncls left it
+    doc = _broken(dambreak, drop_ncls)
     with pytest.raises(YmfReferenceError, match="no sub-problem solves interface"):
         resolve(doc)
 
