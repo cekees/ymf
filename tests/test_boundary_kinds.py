@@ -83,7 +83,8 @@ def test_slip_on_a_vector_needs_no_value(poiseuille):
 def test_one_adr_system_runs_none_of_them(heat, poiseuille):
     pytest.importorskip("sympy")
     from ymf.symbolic import SymbolicError, adr_problem
-    with pytest.raises(SymbolicError, match="slip conditions are for a split discretization"):
+    with pytest.raises(SymbolicError, match="a dirichlet condition on the normal component "
+                                            "\\(expanded from slip\\) runs in a split"):
         adr_problem(_with(poiseuille, {"region": "walls", "variable": "v", "type": "slip"}))
     with pytest.raises(SymbolicError, match="a condition on a coefficient is for a split"):
         adr_problem(_with(heat, {"region": "walls", "variable": "κ", "type": "dirichlet",

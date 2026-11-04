@@ -194,6 +194,11 @@ def check(doc: Dict[str, Any], missing_units: str = "skip") -> UnitCheckResult:
     if missing_units not in MISSING_UNITS:
         raise ValueError("missing_units must be one of %s, not %r"
                          % (", ".join(MISSING_UNITS), missing_units))
+    from ymf.conditions import expand
+    try:
+        doc = expand(doc)          # check what is solved: the expanded conditions
+    except ValueError:
+        pass                       # what does not expand is reported on load
     result = UnitCheckResult()
     problem = doc.get("model") or {}
     strong_form = problem.get("strong_form") or {}
@@ -355,10 +360,6 @@ def _check_state_coefficients_in_scales(problem, strong_form, result) -> None:
                 f"from a constant coefficient instead"))
 
 
-#: conditions whose g is a value of the variable itself, like dirichlet's
-_VALUE_KINDS = ("slip", "inflow", "characteristic")
-
-
 #: What :func:`check` does with a boundary condition it cannot check for
 #: want of declared units: say nothing, warn, or call it an error.
 MISSING_UNITS = ("skip", "warn", "error")
@@ -498,8 +499,9 @@ def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckRe
 
     ``units`` on a condition is the units of g, its right-hand side.
 
-    - dirichlet, u = g: ``[g] = [u]``; so too slip (the normal component
-      of u), inflow and characteristic. open has no g.
+    - dirichlet, u = g: ``[g] = [u]`` (also on a projection, u.n = g).
+      Conditions are checked as expanded (ymf.conditions): a slip is a
+      dirichlet on the normal component and a neumann on the tangential one.
     - neumann, q.n = g, where q = -a grad u is the diffusive flux of the
       variable's own equation: ``[g] = [a][u]/[L]``.
     - robin, alpha u + beta q.n = g: ``[alpha][u] = [beta][q.n] = [g]``.
@@ -519,7 +521,7 @@ def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckRe
     except ValueError:
         return                         # an undefined set: reported on load
     bcs = [bc for bc in conditions
-           if bc.get("type") in ("dirichlet", "neumann", "robin") + _VALUE_KINDS]
+           if bc.get("type") in ("dirichlet", "neumann", "robin")]
     if not bcs:
         return
     dims = _Dimensions()
@@ -550,8 +552,11 @@ def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckRe
     for bc in bcs:
         var, kind = bc.get("variable"), bc["type"]
         location = f"boundary_conditions[region={bc.get('region')!r}, variable={var!r}]"
-        if bc.get("set"):
-            location += f" (set {bc['set']})"
+        origin = bc.get("expanded_from") or {}
+        if origin:
+            location += " (%s)" % ", ".join("%s %s" % (k, v) for k, v in
+                                           (("expanded from", origin.get("type")),
+                                            ("set", origin.get("set"))) if v)
         if var not in unknown_dims:
             continue
         try:
@@ -560,7 +565,7 @@ def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckRe
             result.issues.append(UnitIssue("error", location, str(exc)))
             continue
         u = unknown_dims[var]
-        if kind == "dirichlet" or kind in _VALUE_KINDS:
+        if kind == "dirichlet":
             verdict = dims.compare(g, u)
             if verdict and verdict[0] == "error":
                 declared = _unknown_units(unknowns, var)

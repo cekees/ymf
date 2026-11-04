@@ -167,3 +167,21 @@ def test_aliases_and_the_same_conditions_written_out_close_alike(tmp_path):
         doc.pop("composition", None)
         closed.append(doc)
     assert closed[0] == closed[1]            # the two closed documents, provenance aside
+
+
+def test_a_projection_is_of_a_vector():
+    from ymf.references import YmfReferenceError, resolve
+    doc = load_ymf(FIXTURES.parent.parent / "examples" / "heat_equation.ymf")
+    doc["model"]["strong_form"]["boundary_conditions"][0].update(component="normal")
+    with pytest.raises(YmfReferenceError, match="a normal component is a vector's, and T is "
+                                                "a scalar"):
+        resolve(doc)
+
+
+def test_a_reader_sees_only_the_expansion():
+    """split_problem and adr_problem expand first; units checks the expansion."""
+    pytest.importorskip("sympy")
+    from ymf.symbolic import SymbolicError, adr_problem
+    doc = load_ymf(FIXTURES / "shallow_water" / "lake_at_rest.ymf")
+    with pytest.raises(SymbolicError, match="normal component \\(expanded from slip\\)"):
+        adr_problem(doc)

@@ -61,7 +61,9 @@ def test_shallow_water_is_one_adr_system(lake):
     assert "q_0*numpy.sqrt(q_0**2 + q_1**2)/h**(7/3)" in momentum["reaction"]["r"]
     assert swe["coefficients"]["τb"]["depends_on"] == {
         "h": "nonlinear", "q_0": "nonlinear", "q_1": "nonlinear"}
-    assert [(c["type"], c["variable"]) for c in swe["boundary_conditions"]] == [("slip", "q")]
+    # the wall set's slip, expanded: q.n = 0 and no tangential traction
+    assert [(c["type"], c["variable"], c.get("component")) for c in swe["boundary_conditions"]] == [
+        ("dirichlet", "q", "normal"), ("neumann", "q", "tangential")]
 
 
 def test_the_lake_at_rest_solves_the_model_exactly(lake):
@@ -97,7 +99,7 @@ def test_the_torino_canopy(torino):
     assert math.isclose(_evaluate(mass, h=1.0, x=7.0, he=0.0725), porosity, rel_tol=1e-12)
     assert _evaluate(mass, h=1.0, x=2.0, he=0.0725) == 1.0
     assert [(c["type"], c["region"]) for c in swe["boundary_conditions"]] == [
-        ("slip", "walls"), ("open", "open_end")]
+        ("dirichlet", "walls"), ("neumann", "walls"), ("neumann", "open_end")]
 
 
 def test_the_torino_drag_is_the_decks_froude_law(torino):
