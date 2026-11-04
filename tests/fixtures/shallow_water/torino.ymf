@@ -1,0 +1,59 @@
+# The Torino flume (torino_flume/dswe/torino.py, sw_model 0): a dam break
+# down a 3 % slope into an emergent rod canopy, the flume open at its far
+# end. The deck's options carried over: dam_height 0.15 at x 5.173 along the
+# bed, the canopy from 5.2255 − 0.5·0.0525 to 5.2255 + 75.5·0.0525 along the
+# bed, 194 rods/m² of 6 mm, C_D under the Froude law, cE = 5, refinement 5
+# (he = 0.0725 m). Not carried: the 'age' drag law (it reads each node's
+# time since wetting, a history no coefficient holds), the gate snapped to a
+# node with half the depth there (a mesh-dependent initial condition), the
+# structured 161 × 8 mesh (a mesh gives one size, not one per axis), and
+# the load-cell forces (a derived-quantity gauge, C34).
+extends: proteus_numerics.ymf
+
+model:
+  name: "Torino flume, S = 0.03, H = 0.15 m, canopy"
+  physical_model: {provenance: human_specified}
+  strong_form:
+    domain: "Ω = [0, Lx] × [0, 0.51],  t ∈ (0, 15]"
+    boundary_regions:
+      - {name: walls, where: "x = 0 or y = 0 or y = 0.51"}
+      - {name: open_end, where: "x = Lx"}
+    boundary_sets:
+      - {region: walls, set: wall}
+      - {region: open_end, set: outflow}
+    initial_conditions:
+      - field: h
+        type: function
+        # the reservoir upstream of the gate, its level clipped at the bed
+        formula: "max(Z0 + H − Z, 0) heaviside(xg − x)"
+        units: m
+      - {field: q, type: constant, value: 0.0}
+    coefficients:
+      cS: {formula: "1/sqrt(1 + S²)"}               # along-bed to horizontal
+      Lx: {formula: "11.6 cS"}
+      S:  {value: 0.03}
+      Z:  {formula: "−S x"}
+      H:  {value: 0.15, units: m}
+      xg: {formula: "5.173 cS"}                      # the gate
+      Z0: {formula: "−S xg"}
+      xa: {formula: "(5.2255 − 0.5·0.0525) cS"}      # the canopy
+      xb: {formula: "(5.2255 + 75.5·0.0525) cS"}
+      canopy: {formula: "heaviside(x − xa) heaviside(xb − x)"}
+      m:  {value: 194.0, units: 1/m2}
+      D:  {value: 0.006, units: m}
+      θ:  {formula: "1 − canopy m π D²/4"}
+      CD: {value: 1.0}
+      frc: {value: 0.9}
+      frp: {value: 0.8}
+      Fr: {formula: "norm(q) / (h sqrt(g h))"}
+      β:  {formula: "canopy CD min(1, frc Fr^(−frp)) m D / 2"}
+      α:  {value: 0.0}
+      g:  {value: 9.81}
+      n:  {value: 0.0}
+
+solution_paths:
+  discretizations:
+    - name: convex_limited
+      mesh: {h: 0.0725}
+      discretization:
+        entropy_viscosity_cE: 5.0

@@ -217,7 +217,7 @@ def test_the_old_branch_ref_spelling_says_what_it_became(tmp_path):
 def test_a_reference_to_a_missing_analytical_branch_is_caught(tmp_path):
     text = spec(weak_form("only"), discretization("d"), analytical("exact"),
                 VVUQ % '    reference:\n      analytical: "nope"\n')
-    with pytest.raises(YmfReferenceError, match="not a analytical solution"):
+    with pytest.raises(YmfReferenceError, match="not an analytical solution"):
         load_ymf(write(tmp_path, text))
 
 

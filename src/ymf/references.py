@@ -137,12 +137,246 @@ def _check(named: Any, candidates: List[str], path: str, what: str) -> None:
             "%s must name a %s; found %r" % (path, what, named))
     if named not in candidates:
         raise YmfReferenceError(
-            "%s names %r, which is not a %s in this document (have: %s)"
-            % (path, named, what, ", ".join(candidates) or "none"))
+            "%s names %r, which is not %s %s in this document (have: %s)"
+            % (path, named, "an" if what[:1] in "aeiou" else "a", what,
+               ", ".join(candidates) or "none"))
+
+
+def _check_equations(doc: Dict[str, Any]) -> None:
+    """Named equations: each name once, and ``for`` naming the unknowns."""
+    from ymf.normalize import equations_in_order, normalize_equations
+    strong = _problem(doc).get("strong_form") or {}
+    names = [e["name"] for e in normalize_equations(strong.get("equations") or [])
+             if e["name"] is not None]
+    twice = sorted({n for n in names if names.count(n) > 1})
+    if twice:
+        raise YmfReferenceError("model.strong_form.equations: %s named more than once"
+                                % ", ".join(twice))
+    if strong.get("equations") and strong.get("unknowns"):
+        try:
+            equations_in_order(strong, complete=doc.get("ymf_state") != "abstract")
+        except ValueError as exc:
+            raise YmfReferenceError("model.strong_form.%s" % exc) from exc
+
+
+#: sharp functions of the notation a discretization may regularize
+SHARP_FUNCTIONS = ("heaviside", "sign")
+
+
+def _check_split(doc: Dict[str, Any], entry: Dict[str, Any]) -> None:
+    """A discretization's own names: its sub-problems, bindings and
+    regularizations, against the model and each other."""
+    from ymf.normalize import normalize_equations, normalize_unknowns
+    name = entry.get("name", "?")
+    where = "solution_paths.discretizations[%s]" % (name,)
+    subproblems = [s for s in entry.get("subproblems") or [] if isinstance(s, dict)]
+    strong = _problem(doc).get("strong_form") or {}
+    unknowns = [u["name"] for u in normalize_unknowns(strong.get("unknowns") or [])]
+    coefficients = list(strong.get("coefficients") or {})
+    model_names = set(unknowns) | set(coefficients)
+    for symbol in entry.get("binds") or {}:
+        if symbol in model_names:
+            raise YmfReferenceError(
+                "%s.binds.%s: %s is already a name in the model; a discretization "
+                "binds symbols the model leaves to it" % (where, symbol, symbol))
+    for function in entry.get("regularize") or {}:
+        if function not in SHARP_FUNCTIONS:
+            raise YmfReferenceError(
+                "%s.regularize.%s: only the sharp functions %s are regularized"
+                % (where, function, ", ".join(SHARP_FUNCTIONS)))
+    if not subproblems:
+        return
+    names = [s["name"] for s in subproblems]
+    twice = sorted({n for n in names if names.count(n) > 1})
+    if twice:
+        raise YmfReferenceError("%s.subproblems: %s named more than once"
+                                % (where, ", ".join(twice)))
+    equations = [e["name"] for e in normalize_equations(strong.get("equations") or [])]
+    introduced: Dict[str, str] = {}
+    for s in subproblems:
+        new = (s.get("introduces") or {}).get("name")
+        if new is None:
+            continue
+        if new in model_names or new in introduced:
+            raise YmfReferenceError(
+                "%s.subproblems[%s].introduces: %s is already a name (%s)"
+                % (where, s["name"], new, "in the model" if new in model_names
+                   else "introduced by %s" % introduced[new]))
+        introduced[new] = s["name"]
+    readable = model_names | set(introduced)
+    solved_by: Dict[str, str] = {}
+    for s in subproblems:
+        here = "%s.subproblems[%s]" % (where, s["name"])
+        if not (s.get("solves") or s.get("enforces") or s.get("introduces")
+                or s.get("spin_up")):
+            raise YmfReferenceError(
+                "%s neither solves a model equation, enforces a constraint, "
+                "introduces an unknown nor spins up: give one" % (here,))
+        for equation in s.get("solves") or []:
+            if None in equations:
+                raise YmfReferenceError(
+                    "%s.solves names %r, but the model's equations are not named; "
+                    "name them ({name, for, equation}) to split them" % (here, equation))
+            _check(equation, equations, here + ".solves", "model equation")
+            if equation in solved_by:
+                raise YmfReferenceError(
+                    "equation %s is solved by both %s and %s in %s"
+                    % (equation, solved_by[equation], s["name"], where))
+            solved_by[equation] = s["name"]
+        new = s.get("introduces") or {}
+        for key, candidates in (("approximates", model_names), ("correction_of", unknowns)):
+            if key in new:
+                _check(new[key], sorted(candidates), "%s.introduces.%s" % (here, key),
+                       "model unknown" if key == "correction_of" else
+                       "model unknown or coefficient")
+        for field, lag in (s.get("lags") or {}).items():
+            copy_of = lag.get("of") if isinstance(lag, dict) else None
+            if copy_of is not None:
+                _check(copy_of, sorted(readable), "%s.lags.%s.of" % (here, field),
+                       "model unknown, coefficient or introduced unknown")
+                if field in readable:
+                    raise YmfReferenceError(
+                        "%s.lags.%s: a copy (of: %s) takes a name of its own, and %s is "
+                        "already one" % (here, field, copy_of, field))
+            else:
+                _check(field, sorted(readable), "%s.lags" % (here,),
+                       "model unknown, coefficient or introduced unknown")
+            if isinstance(lag, dict) and "via" in lag:
+                _check(lag["via"], names, "%s.lags.%s.via" % (here, field), "sub-problem")
+        if "for" in s:
+            _check(s["for"], sorted(set(unknowns) | set(introduced)), here + ".for",
+                   "model or introduced unknown")
+        for function in s.get("regularize") or {}:
+            if function not in SHARP_FUNCTIONS:
+                raise YmfReferenceError(
+                    "%s.regularize.%s: only the sharp functions %s are regularized"
+                    % (here, function, ", ".join(SHARP_FUNCTIONS)))
+        for field in s.get("writes_back") or {}:
+            _check(field, sorted(set(unknowns) | set(introduced)),
+                   "%s.writes_back" % (here,), "model or introduced unknown")
+        for symbol in s.get("binds") or {}:
+            if symbol in readable:
+                raise YmfReferenceError(
+                    "%s.binds.%s: %s is already a name" % (here, symbol, symbol))
+    if None not in equations:
+        unsolved = [e for e in equations if e not in solved_by]
+        if unsolved:
+            raise YmfReferenceError(
+                "%s: no sub-problem solves %s" % (where, ", ".join(unsolved)))
+
+
+#: what each kind of condition needs: a value (value, formula or series),
+#: none, or either
+_NEEDS_VALUE = {"dirichlet": True, "neumann": True, "robin": True, "inflow": True,
+                "characteristic": True, "periodic": False, "open": False}
+
+
+def _check_conditions(doc: Dict[str, Any]) -> None:
+    """Boundary conditions: their region, their variable, and what their kind needs."""
+    strong = _problem(doc).get("strong_form") or {}
+    unknowns = {u["name"]: int(u.get("rank") or 0)
+                for u in _unknown_entries(strong.get("unknowns") or [])}
+    coefficients = set(strong.get("coefficients") or {})
+    regions = {r.get("name") for r in strong.get("boundary_regions") or []
+               if isinstance(r, dict)}
+    complete = doc.get("ymf_state") != "abstract"
+    from ymf.normalize import boundary_conditions
+    try:
+        conditions = boundary_conditions(strong)
+    except ValueError as exc:
+        raise YmfReferenceError("model.strong_form.%s" % exc) from exc
+    members = [dict(m, set=name) for name, entries in (strong.get("condition_sets") or {}).items()
+               for m in entries or [] if isinstance(m, dict)]
+    for bc in conditions + members:
+        if not isinstance(bc, dict):
+            continue
+        where = "model.strong_form.%s[%s]" % (
+            ("condition_sets.%s" % bc["set"]) if "region" not in bc else "boundary_conditions",
+            ("variable=%r" % bc.get("variable")) if "region" not in bc else
+            "region=%r, variable=%r%s" % (bc.get("region"), bc.get("variable"),
+                                          ", set %s" % bc["set"] if bc.get("set") else ""))
+        if "region" in bc and complete and regions and bc.get("region") not in regions:
+            raise YmfReferenceError("%s: no boundary region named %r (have: %s)"
+                                    % (where, bc.get("region"), ", ".join(sorted(regions))))
+        variable, kind = bc.get("variable"), bc.get("type")
+        if unknowns and variable not in unknowns and variable not in coefficients:
+            raise YmfReferenceError("%s: %s is neither an unknown nor a coefficient"
+                                    % (where, variable))
+        given = any(bc.get(k) is not None for k in ("value", "formula", "series"))
+        if kind == "slip" and variable in unknowns and unknowns[variable] != 1:
+            raise YmfReferenceError("%s: slip gives the normal component of a vector, and "
+                                    "%s is a scalar" % (where, variable))
+        article = "an" if str(kind)[:1] in "aeiou" else "a"
+        if _NEEDS_VALUE.get(kind) and not given:
+            raise YmfReferenceError("%s: %s %s condition needs a value, formula or series"
+                                    % (where, article, kind))
+        if _NEEDS_VALUE.get(kind) is False and given:
+            raise YmfReferenceError("%s: %s %s condition takes no value"
+                                    % (where, article, kind))
+
+
+def _unknown_entries(unknowns):
+    from ymf.normalize import normalize_unknowns
+    ranks = {u["name"]: u.get("rank") for u in unknowns if isinstance(u, dict)}
+    return [dict(u, rank=ranks.get(u["name"])) for u in normalize_unknowns(unknowns)]
+
+
+#: gauge kind -> (keys it needs, keys it may not have)
+_GAUGE_KEYS = {
+    "point": (("fields", "points"), ("lines", "tags", "quantities", "moment_point")),
+    "line": (("fields", "lines"), ("points", "tags", "quantities", "moment_point")),
+    "line_integral": (("fields", "lines"), ("points", "tags", "quantities", "moment_point")),
+    "boundary_integral": (("tags", "quantities"), ("fields", "points", "lines")),
+}
+
+
+def _check_gauges(doc: Dict[str, Any]) -> None:
+    """What each gauge's kind needs, and that its names exist."""
+    model = _problem(doc)
+    strong = model.get("strong_form") or {}
+    names = ({u["name"] for u in _unknown_entries(strong.get("unknowns") or [])}
+             | set(strong.get("coefficients") or {}))
+    regions = {r.get("name") for r in strong.get("boundary_regions") or [] if isinstance(r, dict)}
+    complete = doc.get("ymf_state") != "abstract"
+    for i, gauge in enumerate(model.get("gauges") or []):
+        if not isinstance(gauge, dict):
+            continue
+        where = "model.gauges[%s]" % (gauge.get("name") or i,)
+        kind = gauge.get("kind")
+        needs, refuses = _GAUGE_KEYS.get(kind, ((), ()))
+        for key in needs:
+            if not gauge.get(key):
+                raise YmfReferenceError("%s: a %s gauge needs %s" % (where, kind, key))
+        for key in refuses:
+            if key in gauge:
+                raise YmfReferenceError("%s: a %s gauge takes no %s" % (where, kind, key))
+        if complete and names:
+            for field in gauge.get("fields") or []:
+                _check(field, sorted(names), where + ".fields", "unknown or coefficient")
+        if complete and regions:
+            for tag in gauge.get("tags") or []:
+                _check(tag, sorted(regions), where + ".tags", "boundary region")
+        points = list(gauge.get("points") or [])
+        for line in gauge.get("lines") or []:
+            if len(line) != 2:
+                raise YmfReferenceError("%s: a line is its two ends, not %d points"
+                                        % (where, len(line)))
+            points.extend(line)
+        if gauge.get("moment_point"):
+            points.append(gauge["moment_point"])
+        if len({len(p) for p in points}) > 1:
+            raise YmfReferenceError("%s: its points do not all have the same dimension"
+                                    % (where,))
 
 
 def resolve(doc: Dict[str, Any]) -> None:
     """Check every reference, raising :class:`YmfReferenceError` on the first bad one."""
+    _check_equations(doc)
+    _check_conditions(doc)
+    _check_gauges(doc)
+    for entry in _paths(doc).get("discretizations") or []:
+        if isinstance(entry, dict):
+            _check_split(doc, entry)
     labels = weak_form_labels(doc)
     discretizations = discretization_names(doc)
 
