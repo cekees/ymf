@@ -135,7 +135,8 @@ as `value` or `formula` like any other right-hand side. All three are
 expressions, so they may vary along the boundary. It is one relation, so a
 vector unknown wants one condition per component. `beta: 0` is refused:
 that is a Dirichlet condition, and belongs where it can be imposed strongly.
-`periodic` conditions need a box (see [The domain](#the-domain)).
+`periodic` conditions need a box, or a region whose two faces are
+translations of each other (see [The domain](#the-domain)).
 
 Four more kinds are for a [split discretization](#splitting-a-discretization-into-sub-problems)'s
 solver; one ADR system (`adr_problem`) runs none of them and says so:
@@ -521,8 +522,14 @@ two levels, as with strong and weak forms.
 
 `kind: box` and `kind: piecewise_linear` can be solved today: a box is
 meshed by `cells` per side, any other region by `h`, the element size of an
-unstructured mesh (see the discretization's `mesh`). Periodic conditions
-need a box. `discrete` and `file` domains validate and are carried, and
+unstructured mesh (see the discretization's `mesh`). A periodic condition
+on a `piecewise_linear` region holds when the region's boundary pieces on
+the two faces of each periodic axis are translations of each other: the
+segments (2-D) or facets (3-D) on the lower face, moved by the length of
+the bounding box along the axis, must be exactly those on the upper face.
+That is checked at posing, with a count of the pieces that have no partner;
+the mesher must then add no points to them, and the solver checks after
+meshing that every node on one face has its partner on the other. `discrete` and `file` domains validate and are carried, and
 `adr_problem` says so rather than failing obscurely.
 
 **Boundary regions by position or by tag.** A region is named by `where`, a
@@ -1106,9 +1113,11 @@ nobody has to rediscover them. Gaps that have been closed, and how, are in
   kind validates and is carried (see [The domain](#the-domain)), but
   `adr_problem` refuses `discrete` and `file`, saying which kind it was
   given rather than failing obscurely.
-- **Periodic conditions only on a box.** A periodic region must name two
-  opposite faces of the box; on a `piecewise_linear` domain the condition is
-  refused.
+- **Periodic conditions only along the axes.** A periodic region names
+  two faces of the domain's bounding box, on a box or on a region whose two
+  faces match; a rotation, or a shift that is not along an axis, is not
+  expressible, and periodic conditions on a `file` domain are not
+  supported (Gmsh's `Periodic` constraint is not carried).
 - **The units of a flux condition are partly checked.** `neumann` and
   `robin` see the diffusive flux only, and `t` has no declared units
   anywhere, so an `α` or `β` that depends on time is never decided.

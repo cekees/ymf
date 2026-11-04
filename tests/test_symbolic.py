@@ -313,10 +313,14 @@ def test_a_piecewise_linear_region_is_carried_with_its_bounding_box():
     yaml.safe_dump(problem)                               # still plain data
 
 
-def test_periodic_faces_need_a_box():
-    doc = _poisson_with({"region": "all_boundaries", "variable": "u", "type": "periodic"})
+def test_periodic_faces_of_a_region_must_be_translations():
+    """A region may be periodic (C27 Phase 5, D3) when its two faces match;
+    the L-shape's x faces do not (lengths 2 and 1)."""
+    doc = _poisson_with({"region": "ends", "variable": "u", "type": "periodic"})
+    doc["model"]["strong_form"]["boundary_regions"].append(
+        {"name": "ends", "where": "x = 0 or x = 2"})
     doc["model"]["strong_form"]["domain"] = L_SHAPE
-    with pytest.raises(SymbolicError, match="periodic faces are a box's"):
+    with pytest.raises(SymbolicError, match="faces of axis x do not match: 2 of 2"):
         adr_problem(doc)
 
 

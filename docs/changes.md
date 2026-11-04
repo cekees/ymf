@@ -7,6 +7,14 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-04: periodic conditions on a `piecewise_linear` region (D3).**
+  Refused before ("periodic faces are a box's"). Allowed now when, on each
+  periodic axis, the region's boundary segments (2-D) or facets (3-D) on the
+  lower face translate exactly onto those on the upper face (as point sets,
+  to 1e-8 of the box); otherwise refused with the count of pieces without a
+  partner. `ymf.symbolic.problem.periodic_faces_match`, used by both
+  readers. The solver's part (no boundary points added by the mesher, a
+  partner check after meshing) is Proteus's companion PR.
 - **2026-11-04: boundary regions by tag (C27 Phase 5, decision D1).**
   `boundary_regions` entries take `tags: [ints or names]` instead of
   `where`, exactly one of the two; names resolve through the domain's

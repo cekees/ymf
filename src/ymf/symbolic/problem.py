@@ -333,6 +333,68 @@ def _domain_dimension(text: str) -> int:
     return count
 
 
+def periodic_faces_match(region: Dict[str, Any], axes: List[int], lower, upper,
+                         name: str) -> None:
+    """Check that a region's periodic faces are translations of each other.
+
+    A periodic axis pairs each boundary node on the lower face with the node
+    the translation along that axis puts on the upper face; a mesh has such
+    partners only if the boundary pieces on the two faces match. So the
+    segments (2-D) or facets (3-D) lying in the lower face, moved by the
+    box's length along the axis, must be exactly those lying in the upper
+    face, to a tolerance of 1e-8 of the box. (The mesher must then add no
+    points to them; that, and the partners themselves, are the solver's to
+    check after meshing.)
+    """
+    vertices = [[float(c) for c in v] for v in region["vertices"]]
+    dim = len(vertices[0])
+    scale = max(u - l for u, l in zip(upper, lower))
+    tol = 1e-8 * scale
+    if dim == 2:
+        pieces = [list(s) for s in region.get("segments") or []]
+        if not pieces:
+            raise SymbolicError("periodic condition on %s: the region gives no segments to "
+                                "match" % (name,))
+    else:
+        pieces = []
+        for facet in region.get("facets") or []:
+            # a PLC facet is a list of polygons; a bare polygon is allowed too
+            polygons = facet if facet and isinstance(facet[0], (list, tuple)) else [facet]
+            for polygon in polygons:
+                pieces.append(list(polygon))
+        if not pieces:
+            raise SymbolicError("periodic condition on %s: the region gives no facets to "
+                                "match" % (name,))
+
+    def key(points):
+        return frozenset(tuple(round(c / tol) for c in p) for p in points)
+
+    for a in axes:
+        shift = upper[a] - lower[a]
+        on = {side: [] for side in ("lower", "upper")}
+        for piece in pieces:
+            points = [vertices[i] for i in piece]
+            for side, face in (("lower", lower[a]), ("upper", upper[a])):
+                if all(abs(p[a] - face) <= tol for p in points):
+                    on[side].append(points)
+        moved = {key([[c + (shift if i == a else 0.0) for i, c in enumerate(p)]
+                      for p in points]) for points in on["lower"]}
+        there = {key(points) for points in on["upper"]}
+        unmatched = len(moved ^ there)
+        if not on["lower"] or not on["upper"]:
+            raise SymbolicError(
+                "periodic condition on %s: no boundary %s lies in the %s face of axis %s"
+                % (name, "segment" if dim == 2 else "facet",
+                   "lower" if not on["lower"] else "upper", "xyz"[a]))
+        if unmatched:
+            raise SymbolicError(
+                "periodic condition on %s: the faces of axis %s do not match: %d of %d "
+                "boundary %ss on them have no translated partner (the region's lower and "
+                "upper faces must be translations of each other)"
+                % (name, "xyz"[a], unmatched, len(on["lower"]) + len(on["upper"]),
+                   "segment" if dim == 2 else "facet"))
+
+
 def _periodic_axes(where, lower, upper, space: Space, region: str) -> List[int]:
     """The axes whose two opposite faces both lie in a periodic region."""
     code = _where(where, space)
@@ -485,11 +547,9 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                 raise SymbolicError(
                     "periodic condition on %s: periodic faces are found by position, "
                     "so the region needs where:, not tags:" % (bc["region"],))
-            if region is not None:
-                raise SymbolicError(
-                    "periodic condition on %s: periodic faces are a box's; "
-                    "this domain is piecewise_linear" % (bc["region"],))
             axes = _periodic_axes(where, lower, upper, space, bc["region"])
+            if region is not None:
+                periodic_faces_match(region, axes, lower, upper, bc["region"])
             comps = [name] if ranks[name] == 0 else ["%s_%d" % (name, i) for i in range(dim)]
             periodic.extend({"component": c, "region": bc["region"], "axes": axes} for c in comps)
             continue

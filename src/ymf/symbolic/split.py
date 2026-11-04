@@ -294,6 +294,10 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where) -> List[D
                                     "region needs where:, not tags:" % (here,))
             entry["axes"] = _periodic_axes(regions[bc["region"]]["where"], lower, upper,
                                            space, bc["region"])
+            domain = strong["domain"]
+            if isinstance(domain, dict) and domain.get("kind") == "piecewise_linear":
+                from ymf.symbolic.problem import periodic_faces_match
+                periodic_faces_match(domain, entry["axes"], lower, upper, bc["region"])
         elif kind == "robin":
             entry.update(alpha=_robin_part(bc, "alpha", space),
                          beta=_robin_part(bc, "beta", space), g=_robin_rhs(bc, space))
