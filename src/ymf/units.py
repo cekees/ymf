@@ -94,15 +94,21 @@ def normalize_unit_string(unit_str: Optional[str]) -> Optional[str]:
 def to_pint_unit(unit_str: Optional[str]) -> "pint.Unit":
     """Parse a YMF unit string into a :class:`pint.Unit`.
 
-    ``None``, ``""``, and ``"dimensionless"`` all map to pint's dimensionless
-    unit. Raises :class:`UnitParseError` on anything pint can't parse even
+    ``None``, ``""``, ``"dimensionless"`` and a bare number such as ``"1"``
+    (the usual way to write "no units") all map to pint's dimensionless
+    unit; only dimensions are ever compared, so a number's scale is not
+    kept. Raises :class:`UnitParseError` on anything pint can't parse even
     after :func:`normalize_unit_string`.
     """
     if not unit_str or unit_str.strip().lower() == "dimensionless":
         return _UREG.dimensionless
     normalized = normalize_unit_string(unit_str)
     try:
-        return _UREG.parse_expression(normalized).units
+        parsed = _UREG.parse_expression(normalized)
+        if not hasattr(parsed, "units"):
+            # older pint (before 0.25) returns a bare number for "1"
+            return _UREG.dimensionless
+        return parsed.units
     except Exception as exc:  # pint raises several distinct exception types
         raise UnitParseError(
             f"could not parse unit string {unit_str!r} (normalized: {normalized!r}): {exc}"

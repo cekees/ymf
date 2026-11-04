@@ -47,6 +47,8 @@ def test_normalize_unit_string(raw, expected_normalized):
 def test_to_pint_unit_none_and_dimensionless():
     assert to_pint_unit(None).dimensionless
     assert to_pint_unit("dimensionless").dimensionless
+    # "1", the usual way to write "no units"; pint before 0.25 parses it to an int
+    assert to_pint_unit("1").dimensionless
     assert to_pint_unit("").dimensionless
 
 
