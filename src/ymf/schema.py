@@ -491,7 +491,11 @@ StrongFormDef = Map(
         # "where" is a membership predicate, not geometry: "∂Ω" (all of
         # it), "y = 0 or y = H", "x = 0 and y = 0". adr_problem already
         # calls this thing "where" in the conditions it returns.
-        "boundary_regions": Seq(Map({"name": Str(), "where": Str()})),
+        # a region is named by a predicate (where) or by the mesh's boundary
+        # tags (tags: ints, or names the domain's boundary_tags resolve),
+        # exactly one of the two (ymf.references)
+        "boundary_regions": Seq(Map({"name": Str(), Optional("where"): Str(),
+                                     Optional("tags"): Seq(Int() | Str())})),
         Optional("initial_conditions"): Seq(InitialConditionDef),
         Optional("boundary_conditions"): Seq(BoundaryConditionDef),
         # named sets of conditions, and the regions they apply to: a model

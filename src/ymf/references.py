@@ -369,9 +369,52 @@ def _check_gauges(doc: Dict[str, Any]) -> None:
                                     % (where,))
 
 
+def _check_regions(doc: Dict[str, Any]) -> None:
+    """A boundary region is named by ``where`` or by ``tags``, exactly one; a
+    tag is an int or a name the domain's ``boundary_tags`` resolves; a box's
+    faces are named by position; a periodic region is found by position."""
+    strong = _problem(doc).get("strong_form") or {}
+    domain = strong.get("domain")
+    is_box = isinstance(domain, str) or (isinstance(domain, dict)
+                                         and domain.get("kind") == "box")
+    names = (domain.get("boundary_tags") if isinstance(domain, dict) else None) or {}
+    periodic = set()
+    try:
+        from ymf.normalize import boundary_conditions
+        periodic = {bc.get("region") for bc in boundary_conditions(strong)
+                    if bc.get("type") == "periodic"}
+    except ValueError:
+        pass                       # an undefined set: _check_conditions says so
+    for region in strong.get("boundary_regions") or []:
+        if not isinstance(region, dict):
+            continue
+        where = "model.strong_form.boundary_regions[%s]" % (region.get("name"),)
+        given = [k for k in ("where", "tags") if region.get(k) is not None]
+        if len(given) != 1:
+            raise YmfReferenceError(
+                "%s: give where (a predicate) or tags (the mesh's boundary tags), "
+                "exactly one; this gives %s" % (where, " and ".join(given) or "neither"))
+        if "tags" not in given:
+            continue
+        if is_box and domain is not None:
+            raise YmfReferenceError(
+                "%s: a box carries no boundary tags; name its faces with where "
+                "(\"x = 0\")" % (where,))
+        for tag in region["tags"]:
+            if isinstance(tag, str) and not tag.lstrip("-").isdigit() and tag not in names:
+                raise YmfReferenceError(
+                    "%s: tag %r is not one of the domain's boundary_tags (have: %s)"
+                    % (where, tag, ", ".join(sorted(names)) or "none"))
+        if region.get("name") in periodic:
+            raise YmfReferenceError(
+                "%s: a periodic condition finds its faces by position, so the region "
+                "needs where:, not tags:" % (where,))
+
+
 def resolve(doc: Dict[str, Any]) -> None:
     """Check every reference, raising :class:`YmfReferenceError` on the first bad one."""
     _check_equations(doc)
+    _check_regions(doc)
     _check_conditions(doc)
     _check_gauges(doc)
     for entry in _paths(doc).get("discretizations") or []:

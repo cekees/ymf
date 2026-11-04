@@ -272,6 +272,37 @@ def _series(bc, name, rank):
     return [[float(t), float(v)] for t, v in series]
 
 
+def region_tags(region: Dict[str, Any], domain: Any) -> List[int]:
+    """A tag region's boundary flags: its ints, and its names resolved
+    through the domain's ``boundary_tags``."""
+    names = (domain.get("boundary_tags") if isinstance(domain, dict) else None) or {}
+    flags = []
+    for tag in region["tags"]:
+        if isinstance(tag, int) or (isinstance(tag, str) and tag.lstrip("-").isdigit()):
+            flags.append(int(tag))
+        elif tag in names:
+            flags.append(int(names[tag]))
+        else:
+            raise SymbolicError("boundary region %s: tag %r is not one of the domain's "
+                                "boundary_tags (have: %s)"
+                                % (region["name"], tag, ", ".join(sorted(names)) or "none"))
+    return flags
+
+
+def _selector(region: Dict[str, Any], domain: Any, space: Space) -> Dict[str, Any]:
+    """How a solver finds a region's boundary points.
+
+    ``{"where": code}`` for a predicate (None: the whole boundary), or
+    ``{"flags": [ints]}`` for a tag region, which the solver tests against the
+    boundary flag of the point. A tag region has no ``where`` key at all, so a
+    solver that does not know ``flags`` fails on it rather than reading a
+    missing predicate as "the whole boundary".
+    """
+    if region.get("tags") is not None:
+        return {"flags": region_tags(region, domain)}
+    return {"where": _where(region["where"], space)}
+
+
 def _where(text: str, space: Space) -> Optional[str]:
     """A region's ``where`` predicate -> boolean code using ``tol`` (None: the whole boundary)."""
     from ymf.symbolic.notation import NotationError, Parser
@@ -422,7 +453,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
 
     adr = adr_form(residuals, space, hamiltonian_gradients=tuple(hamiltonian_gradients))
 
-    regions = {r["name"]: r["where"] for r in strong.get("boundary_regions", [])}
+    regions = {r["name"]: r for r in strong.get("boundary_regions", [])}
     dirichlet = []
     neumann = []
     robin = []
@@ -447,8 +478,13 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                                    if name in (strong.get("coefficients") or {}) else ""))
         if bc["region"] not in regions:
             raise SymbolicError("boundary condition: no boundary region named %r" % bc["region"])
-        where = regions[bc["region"]]
+        selector = _selector(regions[bc["region"]], domain, space)
+        where = regions[bc["region"]].get("where")
         if bc["type"] == "periodic":
+            if where is None:
+                raise SymbolicError(
+                    "periodic condition on %s: periodic faces are found by position, "
+                    "so the region needs where:, not tags:" % (bc["region"],))
             if region is not None:
                 raise SymbolicError(
                     "periodic condition on %s: periodic faces are a box's; "
@@ -463,8 +499,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                     "robin condition on %s: %s is a vector. alpha u + beta q.n = g "
                     "is one relation, so give one per component."
                     % (bc["region"], name))
-            robin.append({"component": name, "region": bc["region"],
-                          "where": _where(where, space),
+            robin.append({"component": name, "region": bc["region"], **selector,
                           "alpha": _robin_part(bc, "alpha", space),
                           "beta": _robin_part(bc, "beta", space),
                           "g": _robin_rhs(bc, space)})
@@ -475,8 +510,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
             # neumann, a stage hydrograph or a measured inlet value under
             # dirichlet. One number per time, so a vector wants one
             # condition per component.
-            entries.append({"component": name, "region": bc["region"],
-                            "where": _where(where, space),
+            entries.append({"component": name, "region": bc["region"], **selector,
                             "series": _series(bc, name, ranks[name])})
             continue
         if bc.get("formula") is not None:
@@ -489,8 +523,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
             raise SymbolicError("boundary condition on %s: give value or formula" % bc["region"])
         for component, code in _components(value, name, ranks[name], space,
                                            "boundary condition on %s" % bc["region"]).items():
-            entries.append({"component": component, "region": bc["region"],
-                            "where": _where(where, space),
+            entries.append({"component": component, "region": bc["region"], **selector,
                             "value": code})
 
     initial = {}

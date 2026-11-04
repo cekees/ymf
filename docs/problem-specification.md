@@ -521,10 +521,32 @@ two levels, as with strong and weak forms.
 
 `kind: box` and `kind: piecewise_linear` can be solved today: a box is
 meshed by `cells` per side, any other region by `h`, the element size of an
-unstructured mesh (see the discretization's `mesh`). Boundary regions are
-still named by `where` predicates, which hold on any mesh of the region;
-periodic conditions need a box. `discrete` and `file` domains validate and
-are carried, and `adr_problem` says so rather than failing obscurely.
+unstructured mesh (see the discretization's `mesh`). Periodic conditions
+need a box. `discrete` and `file` domains validate and are carried, and
+`adr_problem` says so rather than failing obscurely.
+
+**Boundary regions by position or by tag.** A region is named by `where`, a
+predicate on the point that holds on any mesh of the domain, or by `tags`,
+the mesh's boundary tags: ints, or names the domain's `boundary_tags`
+resolve. Exactly one of the two:
+
+```yaml
+domain:
+  kind: piecewise_linear
+  vertices: [[0, 0], [2, 0], [2, 1], [1, 1], [1, 2], [0, 2]]
+  segments: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]]
+  segment_flags: [1, 2, 3, 3, 4, 5]
+  boundary_tags: {bottom: 1, right: 2, notch: 3, top: 4, left: 5}
+boundary_regions:
+  - {name: dry, tags: [bottom, left]}
+  - {name: outlet, where: "x = 2"}
+```
+
+A tag region reaches a solver as `flags: [1, 5]`, which it tests against the
+boundary flag of the point, and carries no `where`, so a solver that does
+not read `flags` fails on it rather than taking a missing predicate for the
+whole boundary. A box carries no tags (name its faces by position), and a
+periodic region is found by position, so it needs `where`.
 
 ## Branching: one problem, several solution paths
 

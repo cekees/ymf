@@ -7,6 +7,12 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-04: boundary regions by tag (C27 Phase 5, decision D1).**
+  `boundary_regions` entries take `tags: [ints or names]` instead of
+  `where`, exactly one of the two; names resolve through the domain's
+  `boundary_tags`. `adr_problem` and `split_problem` give a tag region as
+  `flags` and no `where`. Checked on load: one of the two, every name
+  resolves, no tags on a box, a periodic region uses `where`.
 - **2026-11-04: the shallow-water family.** `tests/fixtures/shallow_water`:
   the model (depth and discharge; porosity, Manning friction and
   Darcy-Forchheimer drag as coefficients of the state; `wall` and
