@@ -272,6 +272,37 @@ def _series(bc, name, rank):
     return [[float(t), float(v)] for t, v in series]
 
 
+def region_tags(region: Dict[str, Any], domain: Any) -> List[int]:
+    """A tag region's boundary flags: its ints, and its names resolved
+    through the domain's ``boundary_tags``."""
+    names = (domain.get("boundary_tags") if isinstance(domain, dict) else None) or {}
+    flags = []
+    for tag in region["tags"]:
+        if isinstance(tag, int) or (isinstance(tag, str) and tag.lstrip("-").isdigit()):
+            flags.append(int(tag))
+        elif tag in names:
+            flags.append(int(names[tag]))
+        else:
+            raise SymbolicError("boundary region %s: tag %r is not one of the domain's "
+                                "boundary_tags (have: %s)"
+                                % (region["name"], tag, ", ".join(sorted(names)) or "none"))
+    return flags
+
+
+def _selector(region: Dict[str, Any], domain: Any, space: Space) -> Dict[str, Any]:
+    """How a solver finds a region's boundary points.
+
+    ``{"where": code}`` for a predicate (None: the whole boundary), or
+    ``{"flags": [ints]}`` for a tag region, which the solver tests against the
+    boundary flag of the point. A tag region has no ``where`` key at all, so a
+    solver that does not know ``flags`` fails on it rather than reading a
+    missing predicate as "the whole boundary".
+    """
+    if region.get("tags") is not None:
+        return {"flags": region_tags(region, domain)}
+    return {"where": _where(region["where"], space)}
+
+
 def _where(text: str, space: Space) -> Optional[str]:
     """A region's ``where`` predicate -> boolean code using ``tol`` (None: the whole boundary)."""
     from ymf.symbolic.notation import NotationError, Parser
@@ -302,6 +333,68 @@ def _domain_dimension(text: str) -> int:
     return count
 
 
+def periodic_faces_match(region: Dict[str, Any], axes: List[int], lower, upper,
+                         name: str) -> None:
+    """Check that a region's periodic faces are translations of each other.
+
+    A periodic axis pairs each boundary node on the lower face with the node
+    the translation along that axis puts on the upper face; a mesh has such
+    partners only if the boundary pieces on the two faces match. So the
+    segments (2-D) or facets (3-D) lying in the lower face, moved by the
+    box's length along the axis, must be exactly those lying in the upper
+    face, to a tolerance of 1e-8 of the box. (The mesher must then add no
+    points to them; that, and the partners themselves, are the solver's to
+    check after meshing.)
+    """
+    vertices = [[float(c) for c in v] for v in region["vertices"]]
+    dim = len(vertices[0])
+    scale = max(u - l for u, l in zip(upper, lower))
+    tol = 1e-8 * scale
+    if dim == 2:
+        pieces = [list(s) for s in region.get("segments") or []]
+        if not pieces:
+            raise SymbolicError("periodic condition on %s: the region gives no segments to "
+                                "match" % (name,))
+    else:
+        pieces = []
+        for facet in region.get("facets") or []:
+            # a PLC facet is a list of polygons; a bare polygon is allowed too
+            polygons = facet if facet and isinstance(facet[0], (list, tuple)) else [facet]
+            for polygon in polygons:
+                pieces.append(list(polygon))
+        if not pieces:
+            raise SymbolicError("periodic condition on %s: the region gives no facets to "
+                                "match" % (name,))
+
+    def key(points):
+        return frozenset(tuple(round(c / tol) for c in p) for p in points)
+
+    for a in axes:
+        shift = upper[a] - lower[a]
+        on = {side: [] for side in ("lower", "upper")}
+        for piece in pieces:
+            points = [vertices[i] for i in piece]
+            for side, face in (("lower", lower[a]), ("upper", upper[a])):
+                if all(abs(p[a] - face) <= tol for p in points):
+                    on[side].append(points)
+        moved = {key([[c + (shift if i == a else 0.0) for i, c in enumerate(p)]
+                      for p in points]) for points in on["lower"]}
+        there = {key(points) for points in on["upper"]}
+        unmatched = len(moved ^ there)
+        if not on["lower"] or not on["upper"]:
+            raise SymbolicError(
+                "periodic condition on %s: no boundary %s lies in the %s face of axis %s"
+                % (name, "segment" if dim == 2 else "facet",
+                   "lower" if not on["lower"] else "upper", "xyz"[a]))
+        if unmatched:
+            raise SymbolicError(
+                "periodic condition on %s: the faces of axis %s do not match: %d of %d "
+                "boundary %ss on them have no translated partner (the region's lower and "
+                "upper faces must be translations of each other)"
+                % (name, "xyz"[a], unmatched, len(on["lower"]) + len(on["upper"]),
+                   "segment" if dim == 2 else "facet"))
+
+
 def _periodic_axes(where, lower, upper, space: Space, region: str) -> List[int]:
     """The axes whose two opposite faces both lie in a periodic region."""
     code = _where(where, space)
@@ -330,6 +423,26 @@ def _periodic_axes(where, lower, upper, space: Space, region: str) -> List[int]:
     return axes
 
 
+def _geometry_dimension(region: Dict[str, Any]) -> Optional[int]:
+    """A discrete domain's space dimension, from its geometry's type."""
+    kind = ((region.get("geometry") or {}).get("type") or "").upper()
+    return {"XY": 2, "XYZ": 3}.get(kind)
+
+
+def _inline_nodes(region: Dict[str, Any]) -> Optional[List[List[float]]]:
+    """A discrete domain's node coordinates, when its geometry holds them
+    inline (``values``); None when they are in a file (an HDF5 reference),
+    which the solver reads."""
+    item = (region.get("geometry") or {}).get("data_item") or {}
+    values = item.get("values")
+    if not values:
+        return None
+    flat = [float(v) for v in (values if not isinstance(values[0], (list, tuple))
+                               else [c for row in values for c in row])]
+    dim = _geometry_dimension(region) or int((item.get("dimensions") or [0, 3])[-1])
+    return [flat[i:i + dim] for i in range(0, len(flat), dim)]
+
+
 def _frame(doc: Dict[str, Any]):
     """The strong form's setting, before any equation is read.
 
@@ -343,13 +456,44 @@ def _frame(doc: Dict[str, Any]):
     domain = strong["domain"]
     box = box_bounds(domain)
     region = None
+    if box is None and not isinstance(domain, str) and domain.get("kind") in ("file",
+                                                                              "discrete"):
+        # someone else's language, which the solver reads (or meshes, a
+        # geometry): carried whole. Its bounds set the boundary tolerance's
+        # scale; without them the solver takes them from the mesh, so that
+        # posing follows meshing for this kind alone (cekees, D2).
+        # A discrete domain is a mesh already (C7.1: a mesh is a type of
+        # domain), solved as it stands; its bounds are its nodes' (D4), when
+        # they are in the document, and the solver's to take otherwise.
+        from ymf.closure import plain
+        region = plain(domain)
+        bounds = region.get("bounds")
+        nodes = _inline_nodes(region) if region["kind"] == "discrete" else None
+        if bounds is None and nodes:
+            bounds = {"lower": [min(c) for c in zip(*nodes)],
+                      "upper": [max(c) for c in zip(*nodes)]}
+        if bounds is not None:
+            box = [[float(c) for c in bounds["lower"]], [float(c) for c in bounds["upper"]]]
+            dim = len(box[0])
+        elif region.get("dimension") or _geometry_dimension(region):
+            dim = int(region.get("dimension") or _geometry_dimension(region))
+        else:
+            raise SymbolicError("strong_form.domain: a %s domain gives its bounds, or at "
+                                "least its dimension, so the problem can be posed before "
+                                "the mesh is read" % (region["kind"],))
+        if not strong.get("equations"):
+            raise SymbolicError("strong_form.equations is needed to run a spec")
+        ranks = {}
+        for u in strong["unknowns"]:
+            ranks[u if isinstance(u, str) else u["name"]] = (
+                0 if isinstance(u, str) else int(u.get("rank", 0)))
+        return strong, box, region, ranks, dim
     if box is None and not isinstance(domain, str):
         if domain.get("kind") != "piecewise_linear":
             raise SymbolicError(
-                "strong_form.domain: adr_problem can run a box or a "
-                "piecewise_linear region; this one is kind %r. Other kinds "
-                "validate and are carried, but nothing solves them yet."
-                % (domain.get("kind"),))
+                "strong_form.domain: adr_problem can run a box, a piecewise_linear "
+                "region or a file; this one is kind %r. Other kinds validate and are "
+                "carried, but nothing solves them yet." % (domain.get("kind"),))
         # A boundary representation: the solver meshes it (its
         # discretization gives mesh.h). The bounding box stands in for the
         # box where one is needed: the boundary tolerance's scale.
@@ -414,6 +558,11 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
         lower, upper = box
         interval = domain.get("time")
         time = tuple(interval) if interval else None
+    elif isinstance(domain, dict):
+        # a file domain without bounds: the solver takes them from the mesh
+        lower = upper = None
+        interval = domain.get("time")
+        time = tuple(interval) if interval else None
     else:
         try:
             lower, upper, time = Parser(Space(dim, {}, coefficients)).domain(domain)
@@ -422,7 +571,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
 
     adr = adr_form(residuals, space, hamiltonian_gradients=tuple(hamiltonian_gradients))
 
-    regions = {r["name"]: r["where"] for r in strong.get("boundary_regions", [])}
+    regions = {r["name"]: r for r in strong.get("boundary_regions", [])}
     dirichlet = []
     neumann = []
     robin = []
@@ -447,13 +596,22 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                                    if name in (strong.get("coefficients") or {}) else ""))
         if bc["region"] not in regions:
             raise SymbolicError("boundary condition: no boundary region named %r" % bc["region"])
-        where = regions[bc["region"]]
+        selector = _selector(regions[bc["region"]], domain, space)
+        where = regions[bc["region"]].get("where")
         if bc["type"] == "periodic":
-            if region is not None:
+            if where is None:
                 raise SymbolicError(
-                    "periodic condition on %s: periodic faces are a box's; "
-                    "this domain is piecewise_linear" % (bc["region"],))
+                    "periodic condition on %s: periodic faces are found by position, "
+                    "so the region needs where:, not tags:" % (bc["region"],))
+            if region is not None and region.get("kind") != "piecewise_linear":
+                raise SymbolicError(
+                    "periodic condition on %s: a %s domain cannot be periodic (a mesh's "
+                    "periodic pairing, or Gmsh's Periodic constraint, is not carried); a "
+                    "box or a piecewise_linear region whose faces match can"
+                    % (bc["region"], region.get("kind")))
             axes = _periodic_axes(where, lower, upper, space, bc["region"])
+            if region is not None:
+                periodic_faces_match(region, axes, lower, upper, bc["region"])
             comps = [name] if ranks[name] == 0 else ["%s_%d" % (name, i) for i in range(dim)]
             periodic.extend({"component": c, "region": bc["region"], "axes": axes} for c in comps)
             continue
@@ -463,8 +621,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                     "robin condition on %s: %s is a vector. alpha u + beta q.n = g "
                     "is one relation, so give one per component."
                     % (bc["region"], name))
-            robin.append({"component": name, "region": bc["region"],
-                          "where": _where(where, space),
+            robin.append({"component": name, "region": bc["region"], **selector,
                           "alpha": _robin_part(bc, "alpha", space),
                           "beta": _robin_part(bc, "beta", space),
                           "g": _robin_rhs(bc, space)})
@@ -475,8 +632,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
             # neumann, a stage hydrograph or a measured inlet value under
             # dirichlet. One number per time, so a vector wants one
             # condition per component.
-            entries.append({"component": name, "region": bc["region"],
-                            "where": _where(where, space),
+            entries.append({"component": name, "region": bc["region"], **selector,
                             "series": _series(bc, name, ranks[name])})
             continue
         if bc.get("formula") is not None:
@@ -489,8 +645,7 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
             raise SymbolicError("boundary condition on %s: give value or formula" % bc["region"])
         for component, code in _components(value, name, ranks[name], space,
                                            "boundary condition on %s" % bc["region"]).items():
-            entries.append({"component": component, "region": bc["region"],
-                            "where": _where(where, space),
+            entries.append({"component": component, "region": bc["region"], **selector,
                             "value": code})
 
     initial = {}

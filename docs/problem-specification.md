@@ -135,7 +135,8 @@ as `value` or `formula` like any other right-hand side. All three are
 expressions, so they may vary along the boundary. It is one relation, so a
 vector unknown wants one condition per component. `beta: 0` is refused:
 that is a Dirichlet condition, and belongs where it can be imposed strongly.
-`periodic` conditions need a box (see [The domain](#the-domain)).
+`periodic` conditions need a box, or a region whose two faces are
+translations of each other (see [The domain](#the-domain)).
 
 Four more kinds are for a [split discretization](#splitting-a-discretization-into-sub-problems)'s
 solver; one ADR system (`adr_problem`) runs none of them and says so:
@@ -521,10 +522,57 @@ two levels, as with strong and weak forms.
 
 `kind: box` and `kind: piecewise_linear` can be solved today: a box is
 meshed by `cells` per side, any other region by `h`, the element size of an
-unstructured mesh (see the discretization's `mesh`). Boundary regions are
-still named by `where` predicates, which hold on any mesh of the region;
-periodic conditions need a box. `discrete` and `file` domains validate and
-are carried, and `adr_problem` says so rather than failing obscurely.
+unstructured mesh (see the discretization's `mesh`). A periodic condition
+on a `piecewise_linear` region holds when the region's boundary pieces on
+the two faces of each periodic axis are translations of each other: the
+segments (2-D) or facets (3-D) on the lower face, moved by the length of
+the bounding box along the axis, must be exactly those on the upper face.
+That is checked at posing, with a count of the pieces that have no partner;
+the mesher must then add no points to them, and the solver checks after
+meshing that every node on one face has its partner on the other.
+
+A `file` domain is carried whole for the solver to read. A mesh file
+(`2dm`, `3dm`, `hex`, `tetgen`, `ymf`) fixes the mesh, so its discretization
+gives `mesh: {levels: ...}` only, the levels of uniform refinement of the
+file's mesh, and a mesh size there is reported as what it lacks; a geometry
+(`gmsh_geo`) is meshed by `h` like a region. `bounds: {lower, upper}` is
+optional: it sets the scale of the boundary tolerance, and without it the
+solver takes the bounds from the mesh, so for this kind alone posing
+follows meshing; the dimension must then be given. A file's boundary
+regions are naturally its boundary tags. A file domain cannot be periodic
+(Gmsh's `Periodic` constraint is not carried).
+
+A `discrete` domain is a mesh as ymf stores one (`topology`, `geometry`, and
+optionally tagged `facets` and `provenance`; see `ymf.mesh`): a mesh is a
+type of domain. It is posed whole, like a file. Its bounds are its nodes'
+when the geometry holds them inline; when they are in an HDF5 file the
+solver takes them, or `bounds` gives them, and the dimension comes from the
+geometry's type (`XY`, `XYZ`). Its boundary regions are its facets' tags, a
+discretization gives `mesh: {levels}` only, and it cannot be periodic. The
+design is [design/domains-beyond-box.md](design/domains-beyond-box.md).
+
+**Boundary regions by position or by tag.** A region is named by `where`, a
+predicate on the point that holds on any mesh of the domain, or by `tags`,
+the mesh's boundary tags: ints, or names the domain's `boundary_tags`
+resolve. Exactly one of the two:
+
+```yaml
+domain:
+  kind: piecewise_linear
+  vertices: [[0, 0], [2, 0], [2, 1], [1, 1], [1, 2], [0, 2]]
+  segments: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]]
+  segment_flags: [1, 2, 3, 3, 4, 5]
+  boundary_tags: {bottom: 1, right: 2, notch: 3, top: 4, left: 5}
+boundary_regions:
+  - {name: dry, tags: [bottom, left]}
+  - {name: outlet, where: "x = 2"}
+```
+
+A tag region reaches a solver as `flags: [1, 5]`, which it tests against the
+boundary flag of the point, and carries no `where`, so a solver that does
+not read `flags` fails on it rather than taking a missing predicate for the
+whole boundary. A box carries no tags (name its faces by position), and a
+periodic region is found by position, so it needs `where`.
 
 ## Branching: one problem, several solution paths
 
@@ -1080,13 +1128,14 @@ These are real limitations of the current schema and code, recorded here so
 nobody has to rediscover them. Gaps that have been closed, and how, are in
 [changes.md](changes.md).
 
-- **Only `box` and `piecewise_linear` domains are solved.** A domain of any
-  kind validates and is carried (see [The domain](#the-domain)), but
-  `adr_problem` refuses `discrete` and `file`, saying which kind it was
-  given rather than failing obscurely.
-- **Periodic conditions only on a box.** A periodic region must name two
-  opposite faces of the box; on a `piecewise_linear` domain the condition is
-  refused.
+- **A solver may not read every domain kind yet.** ymf poses all four;
+  Proteus reads `discrete` domains once cekees/proteus#186 lands, and takes
+  the bounds of a bounds-free file only from tetgen, 2dm and 3dm files.
+- **Periodic conditions only along the axes.** A periodic region names
+  two faces of the domain's bounding box, on a box or on a region whose two
+  faces match; a rotation, or a shift that is not along an axis, is not
+  expressible, and periodic conditions on a `file` domain are not
+  supported (Gmsh's `Periodic` constraint is not carried).
 - **The units of a flux condition are partly checked.** `neumann` and
   `robin` see the diffusive flux only, and `t` has no declared units
   anywhere, so an `α` or `β` that depends on time is never decided.

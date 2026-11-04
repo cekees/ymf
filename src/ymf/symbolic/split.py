@@ -259,8 +259,9 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where) -> List[D
     """
     from ymf.normalize import boundary_conditions
     from ymf.symbolic.problem import (_components, _given, _number, _periodic_axes,
-                                      _robin_part, _robin_rhs, _series, _where)
-    regions = {r["name"]: r["where"] for r in strong.get("boundary_regions") or []}
+                                      _robin_part, _robin_rhs, _series)
+    from ymf.symbolic.problem import _selector
+    regions = {r["name"]: r for r in strong.get("boundary_regions") or []}
     out = []
     try:
         conditions = boundary_conditions(strong)
@@ -277,7 +278,7 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where) -> List[D
         here = "%s, boundary condition %s on %s" % (where, bc["type"], bc["region"])
         entry: Dict[str, Any] = {"type": bc["type"], "variable": variable,
                                  "region": bc["region"],
-                                 "where": _where(regions[bc["region"]], space)}
+                                 **_selector(regions[bc["region"]], strong["domain"], space)}
         if target != variable:
             entry["carried_by"] = target
         if bc.get("set"):
@@ -288,8 +289,15 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where) -> List[D
         if kind == "periodic":
             if lower is None:
                 raise SymbolicError("%s: periodic faces are a box's" % (here,))
-            entry["axes"] = _periodic_axes(regions[bc["region"]], lower, upper, space,
-                                           bc["region"])
+            if regions[bc["region"]].get("where") is None:
+                raise SymbolicError("%s: periodic faces are found by position, so the "
+                                    "region needs where:, not tags:" % (here,))
+            entry["axes"] = _periodic_axes(regions[bc["region"]]["where"], lower, upper,
+                                           space, bc["region"])
+            domain = strong["domain"]
+            if isinstance(domain, dict) and domain.get("kind") == "piecewise_linear":
+                from ymf.symbolic.problem import periodic_faces_match
+                periodic_faces_match(domain, entry["axes"], lower, upper, bc["region"])
         elif kind == "robin":
             entry.update(alpha=_robin_part(bc, "alpha", space),
                          beta=_robin_part(bc, "beta", space), g=_robin_rhs(bc, space))

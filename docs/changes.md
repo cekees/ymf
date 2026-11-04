@@ -7,6 +7,38 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-04: `discrete` domains are posed (D4).** A mesh as ymf stores
+  one (`topology`, `geometry`, and the tagged `facets` and `provenance` of
+  cekees/ymf#6) is a domain: `adr_problem` poses it whole, with bounds from
+  its inline nodes (or `bounds`, or the solver's, for nodes in a file), its
+  boundary regions by facet tag and `mesh: {levels}` only; periodic is
+  refused. The design note, decided 2026-11-04, lands as
+  `docs/design/domains-beyond-box.md`.
+- **2026-11-04: `file` domains are posed (D2, D3).** `adr_problem` carries
+  a file domain whole (`domain.region`) for the solver to read. Optional
+  `bounds: {lower, upper}` set the box; without them `lower` and `upper`
+  are None and the solver takes them from the mesh (posing follows meshing
+  for this kind alone), and the dimension must be given. A mesh file
+  (`2dm`, `3dm`, `hex`, `tetgen`, `ymf`) fixes the mesh: its discretization
+  gives `mesh: {levels}` only, keyed `levels=L`, and a mesh size is
+  reported as lacking; `gmsh_geo` is meshed by `h`. `ymf.discretizations`,
+  `ymf.closure.realizations` and `ymf.state` take the domain for this
+  (optional; without it a mesh needs a size, as before). Periodic
+  conditions on a file domain are refused.
+- **2026-11-04: periodic conditions on a `piecewise_linear` region (D3).**
+  Refused before ("periodic faces are a box's"). Allowed now when, on each
+  periodic axis, the region's boundary segments (2-D) or facets (3-D) on the
+  lower face translate exactly onto those on the upper face (as point sets,
+  to 1e-8 of the box); otherwise refused with the count of pieces without a
+  partner. `ymf.symbolic.problem.periodic_faces_match`, used by both
+  readers. The solver's part (no boundary points added by the mesher, a
+  partner check after meshing) is Proteus's companion PR.
+- **2026-11-04: boundary regions by tag (C27 Phase 5, decision D1).**
+  `boundary_regions` entries take `tags: [ints or names]` instead of
+  `where`, exactly one of the two; names resolve through the domain's
+  `boundary_tags`. `adr_problem` and `split_problem` give a tag region as
+  `flags` and no `where`. Checked on load: one of the two, every name
+  resolves, no tags on a box, a periodic region uses `where`.
 - **2026-11-04: the shallow-water family.** `tests/fixtures/shallow_water`:
   the model (depth and discharge; porosity, Manning friction and
   Darcy-Forchheimer drag as coefficients of the state; `wall` and

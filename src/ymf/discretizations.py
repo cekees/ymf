@@ -63,16 +63,22 @@ class Method:
     studied: Tuple[Tuple[str, Tuple[str, ...]], ...]
     #: values an axis takes when the block is present but the axis is not
     defaults: Dict[str, Any]
-    #: what an entry of this method lacks (block-level checks are shared)
-    lacks: Callable[[Dict[str, Any]], List[Missing]]
+    #: what an entry of this method lacks (block-level checks are shared),
+    #: given the entry and the domain (or None)
+    lacks: Callable[..., List[Missing]]
     #: False: the fields validate, but no output is planned yet
     implemented: bool = True
 
     def axes(self) -> Tuple[Tuple[str, Tuple[str, ...]], ...]:
         return self.studied + (_DT,)
 
-    def missing(self, entry: Dict[str, Any]) -> List[Missing]:
-        """What ``entry`` still lacks before it can plan an output."""
+    def missing(self, entry: Dict[str, Any], domain: Any = None) -> List[Missing]:
+        """What ``entry`` still lacks before it can plan an output.
+
+        ``domain`` is the strong form's domain, where it decides what a
+        mesh needs: a domain that is already a mesh, or a file of one, fixes
+        it (see :func:`mesh_from_domain`). Without it, a mesh needs a size.
+        """
         out = []
         for other in METHODS.values():
             if other is not self and other.block in entry:
@@ -80,7 +86,7 @@ class Method:
                     "a %s block that matches its method" % self.block,
                     "%s: belongs to method %s, and this entry's method is %s"
                     % (other.block, other.name, self.name)))
-        out += self.lacks(entry)
+        out += self.lacks(entry, domain)
         if not out and not self.implemented:
             out.append(Missing(
                 "an implementation",
@@ -90,7 +96,11 @@ class Method:
 
     def key_parts(self, realization: Dict[str, Any]) -> List[str]:
         """How a realization reads in an output key, before the digest."""
-        if self.name == "mesh":
+        if self.name == "mesh" and not ("cells" in realization or "h" in realization):
+            # a mesh the domain fixes (a file of one, or a discrete domain):
+            # only its levels of refinement are the discretization's
+            parts = ["levels=%s" % (realization.get("levels", 1),)]
+        elif self.name == "mesh":
             # the key format archives were first written with: cells or h,
             # then levels only when it is not 1
             size = "cells" if "cells" in realization else "h"
@@ -105,8 +115,30 @@ class Method:
         return parts
 
 
-def _mesh_lacks(entry: Dict[str, Any]) -> List[Missing]:
+#: file formats whose file is a mesh; the others (gmsh_geo) are meshed by h
+MESH_FILE_FORMATS = ("2dm", "3dm", "hex", "tetgen", "ymf")
+
+
+def mesh_from_domain(domain: Any) -> bool:
+    """Whether the domain fixes the mesh: a ``discrete`` domain, or a
+    ``file`` domain whose file is a mesh rather than a geometry."""
+    if not isinstance(domain, dict):
+        return False
+    return domain.get("kind") == "discrete" or (
+        domain.get("kind") == "file" and domain.get("format") in MESH_FILE_FORMATS)
+
+
+def _mesh_lacks(entry: Dict[str, Any], domain: Any = None) -> List[Missing]:
     mesh = entry.get("mesh")
+    if mesh_from_domain(domain):
+        if not isinstance(mesh, dict):
+            return [Missing("a mesh", "give mesh: {levels: 1}: the domain is the mesh, "
+                                      "and levels refines it uniformly")]
+        if "cells" in mesh or "h" in mesh:
+            return [Missing("a mesh the domain does not fix",
+                            "this %s domain is already a mesh; give mesh: {levels: ...} "
+                            "only, not cells or h" % (domain.get("kind"),))]
+        return []
     if not isinstance(mesh, dict) or not ("cells" in mesh or "h" in mesh):
         return [Missing("a mesh", "give mesh: {h: ...} (or {cells: ...} on a box), "
                                   "or --h (--cells) on the command line")]
@@ -117,7 +149,7 @@ def _mesh_lacks(entry: Dict[str, Any]) -> List[Missing]:
 
 
 def _fields_lacking(block: str, required: Tuple[str, ...], meaning: Dict[str, str]):
-    def lacks(entry: Dict[str, Any]) -> List[Missing]:
+    def lacks(entry: Dict[str, Any], domain: Any = None) -> List[Missing]:
         given = entry.get(block)
         given = given if isinstance(given, dict) else {}
         return [Missing("%s.%s" % (block, f), "give %s: {%s: ...}: %s" % (block, f, meaning[f]))
@@ -166,9 +198,10 @@ def method_of(entry: Dict[str, Any]) -> Method:
     return METHODS[name]
 
 
-def missing(entry: Dict[str, Any]) -> List[Missing]:
-    """What ``entry`` lacks before it can plan an output (empty: nothing)."""
-    return method_of(entry).missing(entry)
+def missing(entry: Dict[str, Any], domain: Any = None) -> List[Missing]:
+    """What ``entry`` lacks before it can plan an output (empty: nothing);
+    ``domain`` as in :meth:`Method.missing`."""
+    return method_of(entry).missing(entry, domain)
 
 
 def subproblem_solver(entry: Dict[str, Any], subproblem: Dict[str, Any]) -> Dict[str, Any]:
