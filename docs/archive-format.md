@@ -398,6 +398,89 @@ per-rank grid metadata as these strings and stores them in fixed-width HDF5
 datasets. (Parallel HDF5 rejects variable-length strings, so the width is
 agreed across ranks with an `allreduce` of the maximum length.)
 
+## Meshes: facets, provenance and the cell type's order
+
+A mesh is a grid: a document with one instant whose one space is the mesh
+(proteus names it `Mesh Spatial_Domain`, as in its run archives). Two
+optional keys, on a uniform space or on any grid of a spatial collection,
+carry what only a mesh needs:
+
+```yaml
+topology: {type: Triangle, number_of_elements: 2, data_item: ...}
+geometry: {type: XYZ, data_item: ...}
+attributes: [...]
+facets:
+  topology: {type: Polyline, number_of_elements: 4, nodes_per_element: 2,
+             data_item: ...}          # node numbers of each facet
+  tags: {data_item: ...}              # one integer per facet
+  view: global                        # or subdomain
+provenance:
+  tool: a mesh converter              # free text: the archive names no tools
+  version: '0.1'
+  files: [{name: square.msh, sha256: 3f5a...}]
+  extra: {...}                        # anything else the writer keeps
+```
+
+**Facets** are the tagged faces of the mesh (edges in 2D, points in 1D),
+listed by their node numbers, with an integer tag each: **0 untagged, >0 a
+condition**. The names of the conditions belong to the specification; the
+mesh holds integers. A tag per facet, not per node, because a node at a
+corner belongs to two faces that may carry different conditions. The facet
+type follows the cell type and has the same order: `Polyline` facets for
+`Triangle` and `Quadrilateral` cells, `Edge_3` for `Tri_6`, `Triangle` for
+`Tetrahedron`, `Tri_6` for `Tet_10`, `Quadrilateral` for `Hexahedron`
+(wedges and pyramids may use `Mixed`).
+**-1 marks a face on the interface between two ranks.** It is the
+partitioner's product, so a mesh as a whole (`view: global`, the default)
+never stores it; one rank's piece (`view: subdomain`) may. `write_ymf`
+refuses a -1 in a global view, and any tag below -1, when the tags are
+inline; `ymf.mesh.check_facets(grid, base_dir)` reads tags held in an HDF5
+file and also checks that every facet node is a node of the grid and every
+facet a face of some cell.
+
+**Provenance** says where the mesh came from: the tool, its version, and
+each source file's name and SHA-256 (`ymf.mesh.file_provenance(tool, paths)`
+computes them), so a reader can tell whether the mesh still matches the
+files beside it. It takes no other keys; `extra` holds the rest.
+
+**Geometry order is the cell type's.** `Tri_6` is a quadratic triangle and
+`Tet_10` a quadratic tetrahedron; there is no separate order field to
+disagree with the type (`geometry_order(type)` reads it off). A quadratic
+cell lists its vertices first, in the linear type's order, then one node on
+each edge, in the order of `QUADRATIC_EDGES`:
+
+| type | edge nodes after the vertices sit on |
+|---|---|
+| `Edge_3` | (0,1) |
+| `Tri_6` | (0,1) (1,2) (2,0) |
+| `Quad_8` | (0,1) (1,2) (2,3) (3,0) |
+| `Tet_10` | (0,1) (1,2) (2,0) (0,3) (1,3) (2,3) |
+| `Pyramid_13` | (0,1) (1,2) (2,3) (3,0) (0,4) (1,4) (2,4) (3,4) |
+| `Wedge_15` | (0,1) (1,2) (2,0) (3,4) (4,5) (5,3) (0,3) (1,4) (2,5) |
+| `Hex_20` | (0,1) (1,2) (2,3) (3,0) (4,5) (5,6) (6,7) (7,4) (0,4) (1,5) (2,6) (3,7) |
+
+This is VTK's order, which is what a viewer draws: ParaView's XDMF readers
+pass the connectivity through unpermuted. Sources do not all agree with it.
+A common mesh generator numbers the last two edge nodes of a 10-node
+tetrahedron (2,3) then (1,3); proteus's own quadratic tetrahedron numbers
+them (0,1) (1,2) (2,3) (0,2) (1,3) (0,3). A writer states its source's
+convention as data and permutes:
+
+```python
+from ymf.mesh import reorder_cells, edge_midpoint_offsets
+source = ((0, 1), (1, 2), (2, 0), (0, 3), (2, 3), (1, 3))
+cells = reorder_cells(cells, "Tet_10", source)          # columns 8 and 9 swap
+assert edge_midpoint_offsets("Tet_10", nodes, cells).max() < 1e-12   # straight-sided sample
+```
+
+`edge_midpoint_offsets` is the check: on a straight-sided mesh every edge
+node sits at its edge's midpoint once the order is right, and about half an
+edge away when two are swapped.
+
+`ymf2xmf` writes the grid as before; the facet list and the provenance are
+not written to the `.xmf` (XDMF's `Set` is not supported, see
+`docs/xdmf-model.yaml`).
+
 ## What the writer checks, and what it doesn't
 
 YMF splits checking across a trust boundary:
