@@ -98,3 +98,72 @@ def test_expanding_is_idempotent_and_leaves_its_input_alone():
 def test_what_does_not_expand_is_refused():
     with pytest.raises(ValueError, match="no condition set named 'nowhere'"):
         expand(_strong(boundary_sets=[{"region": "top", "set": "nowhere"}]))
+
+
+# --- in closure -------------------------------------------------------------------------
+
+strictyaml = pytest.importorskip("strictyaml")
+from ymf import closure  # noqa: E402
+from ymf.schema import load_ymf  # noqa: E402
+
+
+def _keys(doc):
+    return sorted(k for k, _, _ in closure.planned_outputs(doc))
+
+
+@pytest.mark.parametrize("fixture", ["two_phase/dambreak.ymf", "shallow_water/torino.ymf",
+                                     "shallow_water/lake_at_rest.ymf"])
+def test_a_closed_spec_holds_the_expansion_and_round_trips(fixture, tmp_path):
+    spec = load_ymf(FIXTURES / fixture)
+    archive = tmp_path / "closed.archive.ymf"
+    closure.write(archive, spec, {})
+    reloaded, outputs, dropped = closure.load(archive)
+    strong = reloaded["model"]["strong_form"]
+    assert "boundary_sets" not in strong and "condition_sets" not in strong
+    assert all(bc["type"] in ("dirichlet", "neumann", "robin", "periodic")
+               for bc in strong["boundary_conditions"])
+    assert strong["boundary_conditions"] == expand(spec)["model"]["strong_form"][
+        "boundary_conditions"]
+    assert _keys(reloaded) == _keys(spec)          # the spec and its closure key alike
+    closure.write(tmp_path / "again.archive.ymf", reloaded, {})
+    assert (tmp_path / "again.archive.ymf").read_text() == archive.read_text()
+
+
+def _without_provenance(doc):
+    doc = copy.deepcopy(doc)
+    for bc in doc["model"]["strong_form"]["boundary_conditions"]:
+        bc.pop("expanded_from", None)
+    return doc
+
+
+def test_aliases_and_the_same_conditions_written_out_close_alike(tmp_path):
+    """The dam break with its sets, and with what they mean written by hand."""
+    aliased = load_ymf(FIXTURES / "two_phase" / "dambreak.ymf")
+    (tmp_path / "two_phase_level_set.ymf").write_text(
+        (FIXTURES / "two_phase" / "two_phase_level_set.ymf").read_text(encoding="utf-8")
+        .split("    # what the cases' walls and tops mean")[0], encoding="utf-8")
+    text = (FIXTURES / "two_phase" / "dambreak.ymf").read_text(encoding="utf-8")
+    text = text.replace('''    boundary_sets:
+      - {region: walls, set: free_slip}
+      - {region: top, set: atmosphere}''', '''    boundary_conditions:
+      - {region: walls, variable: v, type: dirichlet, component: normal, value: 0.0}
+      - {region: walls, variable: v, type: neumann, component: tangential, value: 0.0}
+      - {region: top, variable: p, type: dirichlet, value: 0.0}
+      - {region: top, variable: v, type: neumann, value: 0.0}
+      - {region: top, variable: χ, type: dirichlet, only: inflow, value: 1.0}''')
+    (tmp_path / "dambreak.ymf").write_text(text, encoding="utf-8")
+    by_hand = load_ymf(tmp_path / "dambreak.ymf")
+    a = _without_provenance(expand(aliased))
+    b = _without_provenance(expand(by_hand))
+    a.pop("composition", None)
+    b.pop("composition", None)
+    assert a == b
+    closure.write(tmp_path / "a.archive.ymf", aliased, {})
+    closure.write(tmp_path / "b.archive.ymf", by_hand, {})
+    closed = []
+    for name in ("a", "b"):
+        doc, _, _ = closure.load(tmp_path / ("%s.archive.ymf" % name))
+        doc = _without_provenance(doc)
+        doc.pop("composition", None)
+        closed.append(doc)
+    assert closed[0] == closed[1]            # the two closed documents, provenance aside
