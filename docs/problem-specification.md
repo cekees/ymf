@@ -643,7 +643,10 @@ redistancing, then a mass correction. That splitting is a property of the
 discretization, not of the model, so another discretization of the same
 model can split it differently (CLSVOF and a projection scheme) or not at
 all. [`tests/fixtures/two_phase`](../tests/fixtures/two_phase) holds the
-model and the dam break split this way.
+model and the dam break split this way; [`tests/fixtures/shallow_water`](../tests/fixtures/shallow_water)
+holds the shallow-water family the same way (one sub-problem, as Proteus's
+SW2DCV solves the whole system at once), with a lake at rest and the
+Torino flume as cases.
 
 ```yaml
 discretizations:

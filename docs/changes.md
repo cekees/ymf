@@ -7,6 +7,14 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-04: the shallow-water family.** `tests/fixtures/shallow_water`:
+  the model (depth and discharge; porosity, Manning friction and
+  Darcy-Forchheimer drag as coefficients of the state; `wall` and
+  `outflow` condition sets), Proteus's numerics (SW2DCV as one sub-problem,
+  its algebraic scheme in the free-form `discretization` block), a lake at
+  rest over a bump, and the Torino flume (dam break down a 3 % slope into a
+  rod canopy, from `torino_flume/dswe/torino.py`). The second family
+  needed no new schema: what two-phase flow added covers it.
 - **2026-11-04: boundary conditions in `split_problem`.** Each sub-problem
   carries the conditions it imposes, in `adr_problem`'s plain-data shape
   (`where` code, per-component values, series, robin parts, periodic axes),
