@@ -83,8 +83,9 @@ def _set(entry: Dict[str, Any], path: Tuple[str, ...], value: Any) -> None:
     entry[path[-1]] = value
 
 
-def realizations(discretization: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """The realizations a discretization entry asks for, in study order.
+def realizations(discretization: Dict[str, Any], domain: Any = None) -> List[Dict[str, Any]]:
+    """The realizations a discretization entry asks for, in study order
+    (``domain``: the strong form's, which decides what a mesh needs).
 
     Each is a mapping such as ``{"cells": 8, "levels": 1}`` or
     ``{"h": 0.1, "levels": 1}`` (and ``"dt"`` when the entry steps in time).
@@ -99,7 +100,7 @@ def realizations(discretization: Dict[str, Any]) -> List[Dict[str, Any]]:
                          "cells is for a box, h for any other region"
                          % (discretization.get("name"),))
     method = method_of(discretization)
-    if method.missing(discretization):
+    if method.missing(discretization, domain):
         return []                      # see ymf.discretizations.missing
     block = _get(discretization, (method.block,))
     axes = []
@@ -219,8 +220,13 @@ def output_key(doc: Dict[str, Any], discretization: str,
 def planned_outputs(doc: Dict[str, Any]) -> Iterator[Tuple[str, str, Dict[str, Any]]]:
     """Every (key, discretization name, realization) the spec asks for."""
     for entry in doc["solution_paths"]["discretizations"]:
-        for realization in realizations(entry):
+        for realization in realizations(entry, _domain_of(doc)):
             yield output_key(doc, entry["name"], realization), entry["name"], realization
+
+
+def _domain_of(doc: Dict[str, Any]) -> Any:
+    """The strong form's domain, which decides what a mesh needs."""
+    return ((doc.get("model") or {}).get("strong_form") or {}).get("domain")
 
 
 def _base_key(key: str) -> str:

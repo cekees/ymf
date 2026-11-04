@@ -394,6 +394,7 @@ DomainDef = Str() | Map(
         # kind: file -- someone else's language
         Optional("format"): Str(),
         Optional("path"): Str(),
+        Optional("bounds"): Map({"lower": Seq(Float()), "upper": Seq(Float())}),
     }
 )
 

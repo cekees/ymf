@@ -70,7 +70,9 @@ DOMAIN_KINDS: Dict[str, Dict[str, Set[str]]] = {
     },
     "file": {
         "required": {"format", "path"},
-        "optional": set(),
+        # the bounding box, which sets the scale of the boundary tolerance;
+        # without it a solver takes it from the mesh (posing follows meshing)
+        "optional": {"bounds"},
     },
 }
 
@@ -134,6 +136,21 @@ def validate_domain_block(domain: Any, where: str = "domain") -> None:
         if dim is not None and dim != len(lower):
             raise YmfDomainError(
                 "%s: dimension %r but %d components" % (where, dim, len(lower)))
+
+    bounds = domain.get("bounds")
+    if bounds is not None:
+        lower, upper = bounds.get("lower") or [], bounds.get("upper") or []
+        if not lower or len(lower) != len(upper):
+            raise YmfDomainError("%s.bounds: lower and upper need the same, nonzero, number "
+                                 "of components" % (where,))
+        for i, (a, b) in enumerate(zip(lower, upper)):
+            if not b > a:
+                raise YmfDomainError("%s.bounds: upper[%d] = %r is not above lower[%d] = %r"
+                                     % (where, i, b, i, a))
+        dim = domain.get("dimension")
+        if dim is not None and dim != len(lower):
+            raise YmfDomainError("%s: dimension %r but bounds of %d components"
+                                 % (where, dim, len(lower)))
 
     time = domain.get("time")
     if time is not None:

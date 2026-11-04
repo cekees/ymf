@@ -7,6 +7,17 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-04: `file` domains are posed (D2, D3).** `adr_problem` carries
+  a file domain whole (`domain.region`) for the solver to read. Optional
+  `bounds: {lower, upper}` set the box; without them `lower` and `upper`
+  are None and the solver takes them from the mesh (posing follows meshing
+  for this kind alone), and the dimension must be given. A mesh file
+  (`2dm`, `3dm`, `hex`, `tetgen`, `ymf`) fixes the mesh: its discretization
+  gives `mesh: {levels}` only, keyed `levels=L`, and a mesh size is
+  reported as lacking; `gmsh_geo` is meshed by `h`. `ymf.discretizations`,
+  `ymf.closure.realizations` and `ymf.state` take the domain for this
+  (optional; without it a mesh needs a size, as before). Periodic
+  conditions on a file domain are refused.
 - **2026-11-04: periodic conditions on a `piecewise_linear` region (D3).**
   Refused before ("periodic faces are a box's"). Allowed now when, on each
   periodic axis, the region's boundary segments (2-D) or facets (3-D) on the

@@ -529,8 +529,19 @@ segments (2-D) or facets (3-D) on the lower face, moved by the length of
 the bounding box along the axis, must be exactly those on the upper face.
 That is checked at posing, with a count of the pieces that have no partner;
 the mesher must then add no points to them, and the solver checks after
-meshing that every node on one face has its partner on the other. `discrete` and `file` domains validate and are carried, and
-`adr_problem` says so rather than failing obscurely.
+meshing that every node on one face has its partner on the other.
+
+A `file` domain is carried whole for the solver to read. A mesh file
+(`2dm`, `3dm`, `hex`, `tetgen`, `ymf`) fixes the mesh, so its discretization
+gives `mesh: {levels: ...}` only, the levels of uniform refinement of the
+file's mesh, and a mesh size there is reported as what it lacks; a geometry
+(`gmsh_geo`) is meshed by `h` like a region. `bounds: {lower, upper}` is
+optional: it sets the scale of the boundary tolerance, and without it the
+solver takes the bounds from the mesh, so for this kind alone posing
+follows meshing; the dimension must then be given. A file's boundary
+regions are naturally its boundary tags. A file domain cannot be periodic
+(Gmsh's `Periodic` constraint is not carried). `discrete` domains validate
+and are carried, and
 
 **Boundary regions by position or by tag.** A region is named by `where`, a
 predicate on the point that holds on any mesh of the domain, or by `tags`,
@@ -1109,10 +1120,8 @@ These are real limitations of the current schema and code, recorded here so
 nobody has to rediscover them. Gaps that have been closed, and how, are in
 [changes.md](changes.md).
 
-- **Only `box` and `piecewise_linear` domains are solved.** A domain of any
-  kind validates and is carried (see [The domain](#the-domain)), but
-  `adr_problem` refuses `discrete` and `file`, saying which kind it was
-  given rather than failing obscurely.
+- **`discrete` domains are carried, not solved.** A domain of any kind
+  validates; `adr_problem` refuses `discrete`, saying so.
 - **Periodic conditions only along the axes.** A periodic region names
   two faces of the domain's bounding box, on a box or on a region whose two
   faces match; a rotation, or a shift that is not along an axis, is not

@@ -436,13 +436,36 @@ def _frame(doc: Dict[str, Any]):
     domain = strong["domain"]
     box = box_bounds(domain)
     region = None
+    if box is None and not isinstance(domain, str) and domain.get("kind") == "file":
+        # someone else's language, which the solver reads (or meshes, a
+        # geometry): carried whole. Its bounds set the boundary tolerance's
+        # scale; without them the solver takes them from the mesh, so that
+        # posing follows meshing for this kind alone (cekees, D2).
+        from ymf.closure import plain
+        region = plain(domain)
+        bounds = region.get("bounds")
+        if bounds is not None:
+            box = [[float(c) for c in bounds["lower"]], [float(c) for c in bounds["upper"]]]
+            dim = len(box[0])
+        elif region.get("dimension"):
+            dim = int(region["dimension"])
+        else:
+            raise SymbolicError("strong_form.domain: a file domain gives its bounds, or at "
+                                "least its dimension, so the problem can be posed before "
+                                "the mesh is read")
+        if not strong.get("equations"):
+            raise SymbolicError("strong_form.equations is needed to run a spec")
+        ranks = {}
+        for u in strong["unknowns"]:
+            ranks[u if isinstance(u, str) else u["name"]] = (
+                0 if isinstance(u, str) else int(u.get("rank", 0)))
+        return strong, box, region, ranks, dim
     if box is None and not isinstance(domain, str):
         if domain.get("kind") != "piecewise_linear":
             raise SymbolicError(
-                "strong_form.domain: adr_problem can run a box or a "
-                "piecewise_linear region; this one is kind %r. Other kinds "
-                "validate and are carried, but nothing solves them yet."
-                % (domain.get("kind"),))
+                "strong_form.domain: adr_problem can run a box, a piecewise_linear "
+                "region or a file; this one is kind %r. Other kinds validate and are "
+                "carried, but nothing solves them yet." % (domain.get("kind"),))
         # A boundary representation: the solver meshes it (its
         # discretization gives mesh.h). The bounding box stands in for the
         # box where one is needed: the boundary tolerance's scale.
@@ -507,6 +530,11 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
         lower, upper = box
         interval = domain.get("time")
         time = tuple(interval) if interval else None
+    elif isinstance(domain, dict):
+        # a file domain without bounds: the solver takes them from the mesh
+        lower = upper = None
+        interval = domain.get("time")
+        time = tuple(interval) if interval else None
     else:
         try:
             lower, upper, time = Parser(Space(dim, {}, coefficients)).domain(domain)
@@ -547,6 +575,11 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                 raise SymbolicError(
                     "periodic condition on %s: periodic faces are found by position, "
                     "so the region needs where:, not tags:" % (bc["region"],))
+            if region is not None and region.get("kind") != "piecewise_linear":
+                raise SymbolicError(
+                    "periodic condition on %s: a %s domain cannot be periodic (Gmsh's "
+                    "Periodic constraint is not carried); a box or a piecewise_linear "
+                    "region whose faces match can" % (bc["region"], region.get("kind")))
             axes = _periodic_axes(where, lower, upper, space, bc["region"])
             if region is not None:
                 periodic_faces_match(region, axes, lower, upper, bc["region"])
