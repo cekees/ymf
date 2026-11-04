@@ -7,6 +7,19 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-04: aliases expand into the abstract forms, and closure records
+  the expansion.** cekees's review note: `slip`, `open`, `inflow`,
+  `characteristic` and condition sets had their meaning only in code
+  (`split.py`, `units.py`, a solver's dispatch), so a closed spec saying
+  `type: slip` did not say what was solved. `ymf.conditions.ALIASES` now
+  defines each alias as Dirichlet/Neumann/Robin components on a variable or
+  its `normal`/`tangential` part, `only` where the flow or the
+  characteristics enter where it applies; `expand` writes them out, with
+  `expanded_from`, removing `condition_sets` and `boundary_sets`.
+  `closure.write` writes the expansion and `closure.input_slice` keys by it
+  (a spec without aliases keeps its keys); `adr_problem`, `split_problem`
+  and `ymf.units` read only the expansion. New condition keys: `component`,
+  `only`, `imposed` (strong or weak, per condition, C12), `expanded_from`.
 - **2026-11-04: `discrete` domains are posed (D4).** A mesh as ymf stores
   one (`topology`, `geometry`, and the tagged `facets` and `provenance` of
   cekees/ymf#6) is a domain: `adr_problem` poses it whole, with bounds from

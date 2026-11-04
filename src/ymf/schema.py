@@ -321,6 +321,13 @@ InitialConditionDef = Map(
 _CONDITION_FIELDS = {
     "variable": Str(),
     "type": BCTypeEnum,
+    # Where an alias expands (ymf.conditions): which part of a vector the
+    # condition is on, which part of the region it holds on, how it is
+    # imposed (C12: a property of each condition), and what it expanded from.
+    Optional("component"): Enum(["normal", "tangential"]),
+    Optional("only"): Enum(["inflow", "incoming_characteristics"]),
+    Optional("imposed"): Enum(["strong", "weak"]),
+    Optional("expanded_from"): Map({Optional("type"): Str(), Optional("set"): Str()}),
     Optional("value"): Float(),
     # A value that varies along the boundary or in time: an expression
     # in x, y, z, t and the coefficients; "(a, b)" for a vector variable.

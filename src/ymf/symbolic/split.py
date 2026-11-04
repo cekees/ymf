@@ -76,6 +76,11 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
     the run up, or enforces a constraint it gives no equation for) has
     ``"classified": False`` and the reason instead of ``adr``.
     """
+    from ymf.conditions import expand
+    try:
+        doc = expand(doc)          # aliases and condition sets: only their expansion is solved
+    except ValueError as exc:
+        raise SymbolicError(str(exc)) from exc
     from ymf.discretizations import subproblem_solver
     from ymf.normalize import normalize_equations
     from ymf.symbolic.problem import _coefficients, _frame, _state_coefficient_data
@@ -281,8 +286,9 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where) -> List[D
                                  **_selector(regions[bc["region"]], strong["domain"], space)}
         if target != variable:
             entry["carried_by"] = target
-        if bc.get("set"):
-            entry["set"] = bc["set"]
+        for key in ("component", "only", "imposed", "expanded_from"):
+            if bc.get(key) is not None:
+                entry[key] = bc[key]
         entry["components"] = ([target] if rank == 0 else
                                ["%s_%d" % (target, i) for i in range(dim)])
         kind = bc["type"]
@@ -302,18 +308,16 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where) -> List[D
             entry.update(alpha=_robin_part(bc, "alpha", space),
                          beta=_robin_part(bc, "beta", space), g=_robin_rhs(bc, space))
         elif bc.get("series") is not None:
-            entry["series"] = _series(bc, target, 0 if kind == "slip" else rank)
+            entry["series"] = _series(bc, target, 0 if bc.get("component") else rank)
         elif bc.get("formula") is not None or bc.get("value") is not None:
             value = (parse_expression(bc["formula"], space) if bc.get("formula") is not None
                      else _number(bc["value"]))
-            if kind == "slip" or rank == 0:
+            if bc.get("component") or rank == 0:      # a projection is one number
                 entry["value"] = to_code(_given(value, space, here))
             else:
                 if not isinstance(value, sympy.MatrixBase):
                     value = sympy.Matrix([value] * dim)
                 entry["value"] = _components(value, target, rank, space, here)
-        elif kind == "slip":
-            entry["value"] = "0.0"
         out.append(entry)
     return out
 

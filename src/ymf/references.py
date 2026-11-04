@@ -303,6 +303,9 @@ def _check_conditions(doc: Dict[str, Any]) -> None:
             raise YmfReferenceError("%s: %s is neither an unknown nor a coefficient"
                                     % (where, variable))
         given = any(bc.get(k) is not None for k in ("value", "formula", "series"))
+        if bc.get("component") and variable in unknowns and unknowns[variable] != 1:
+            raise YmfReferenceError("%s: a %s component is a vector's, and %s is a scalar"
+                                    % (where, bc["component"], variable))
         if kind == "slip" and variable in unknowns and unknowns[variable] != 1:
             raise YmfReferenceError("%s: slip gives the normal component of a vector, and "
                                     "%s is a scalar" % (where, variable))

@@ -138,21 +138,49 @@ that is a Dirichlet condition, and belongs where it can be imposed strongly.
 `periodic` conditions need a box, or a region whose two faces are
 translations of each other (see [The domain](#the-domain)).
 
-Four more kinds are for a [split discretization](#splitting-a-discretization-into-sub-problems)'s
-solver; one ADR system (`adr_problem`) runs none of them and says so:
+**Aliases, and what is solved.** Dirichlet, Neumann and Robin (and
+periodic pairing) are the abstract forms; each is complete with its
+expression. Four more kinds are **aliases**, shorthand for particular
+combinations of them, defined as data in `ymf.conditions.ALIASES`:
 
-| type | means | value |
+| alias | expands to | value |
 |---|---|---|
-| `slip` | on a vector: its normal component is the value (0 if none is given), its tangential traction zero -- a free-slip wall | optional |
-| `open` | a declared open boundary: the natural flux applies, nothing is imposed | none |
-| `inflow` | the value, imposed only where the flow enters -- the phase that comes in through an open top | required |
-| `characteristic` | a state imposed through the incoming characteristics only -- a tailwater stage that a supercritical outflow ignores | required |
+| `slip` (a vector) | `dirichlet` on the `normal` component, the value (0 if none is given); `neumann` on the `tangential` component, 0 (no tangential traction) | optional |
+| `open` | `neumann` 0: the natural condition, declared (C12's open boundary) | none |
+| `inflow` | `dirichlet`, the value, `only: inflow` (where the flow enters) | required |
+| `characteristic` | `dirichlet`, the value, `only: incoming_characteristics` (a tailwater stage that a supercritical outflow ignores) | required |
+
+A spec may write the aliases. **What is solved, and what the closure of
+the spec records, is the expansion**: `ymf.conditions.expand` replaces
+every alias, and every applied condition set, with its abstract
+conditions, each marked with what it came from:
+
+```yaml
+# boundary_sets: [{region: walls, set: free_slip}] closes as
+boundary_conditions:
+  - {region: walls, variable: v, type: dirichlet, component: normal, value: 0.0,
+     expanded_from: {type: slip, set: free_slip}}
+  - {region: walls, variable: v, type: neumann, component: tangential, value: 0.0,
+     expanded_from: {type: slip, set: free_slip}}
+```
+
+The archive of a spec holds the expansion, its output keys are computed
+from it (so a spec and its archive key alike, and a spec without aliases
+keeps its keys), and `adr_problem`, `split_problem` and `ymf.units` read
+only it. Otherwise two solvers could close the same spec differently and
+the archive could not show which. An expanded condition may say how it is
+`imposed`, `strong` or `weak`: C12 makes that a property of each
+condition. One ADR system (`adr_problem`) runs Dirichlet, Neumann and
+Robin on whole variables; a condition on a component, restricted with
+`only`, or imposed weakly is for a split discretization's solver, and
+`adr_problem` says so.
 
 A condition may also name a coefficient of the state rather than an
 unknown: `{variable: χ, type: inflow, value: 1.0}` says the fluid entering
 is air, whatever carries `χ` in a given discretization. Checked on load:
-the region exists, the variable is an unknown or a coefficient, `slip` is
-on a vector, and a kind gets a value exactly when it takes one.
+the region exists, the variable is an unknown or a coefficient, `slip` and
+a `component` are on a vector, and a kind gets a value exactly when it
+takes one.
 
 **Condition sets.** What a free-slip wall or an open top means is part of
 the model: written once there, over its own unknowns and coefficients, and
@@ -179,7 +207,8 @@ condition written out under `boundary_conditions` for the same region and
 variable replaces the set's member, so a case can apply `atmosphere` and
 give the pressure its own value; two sets that both decide one region's
 variable are an error, as is a set nobody defines. A set's members are
-checked where they are defined, as any condition is.
+checked where they are defined, as any condition is. Like an alias, a set is
+input shorthand: the closure writes its members out (above).
 
 A value is given as a number (`value`), an expression (`formula`), or a
 table, `series: [[t, value], ...]` with `t` ascending: a measured or design

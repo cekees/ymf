@@ -161,7 +161,15 @@ def used_weak_form(doc: Dict[str, Any], discretization: Dict[str, Any]
 
 def input_slice(doc: Dict[str, Any], discretization: str,
                 realization: Dict[str, Any]) -> Dict[str, Any]:
-    """The part of the input one output depends on (see the module docstring)."""
+    """The part of the input one output depends on (see the module docstring).
+
+    Taken from the document with its boundary-condition aliases and condition
+    sets expanded (ymf.conditions): what is solved is the expansion, so a
+    spec and the archive it closes into, which holds the expansion, key
+    their outputs alike; a spec with no shorthand is unchanged by it.
+    """
+    from ymf.conditions import expand
+    doc = expand(doc)
     paths = doc.get("solution_paths") or {}
     entry = _discretization(doc, discretization)
     return plain({
@@ -312,9 +320,13 @@ def archive_stem(path: str | Path) -> str:
 def write(path: str | Path, spec: Dict[str, Any], outputs: Dict[str, Any]) -> None:
     """Write an archive: ``ymf:``, its ``ymf_state``, the realized spec, then
     ``outputs``. The state is the one the archive reaches (see ymf.state),
-    whatever its input declared."""
+    whatever its input declared. The realized spec has its boundary-condition
+    aliases and condition sets expanded (ymf.conditions)."""
+    from ymf.conditions import expand
     from ymf.state import reached
-    document = dict(plain(spec))
+    # the closure records what was solved: the conditions expanded, each
+    # with the alias and the set it came from (ymf.conditions)
+    document = dict(plain(expand(spec)))
     document.pop("outputs", None)
     document.pop("ymf_state", None)
     document.pop("generated", None)     # it describes the input file, not this one
