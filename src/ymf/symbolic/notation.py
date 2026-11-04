@@ -183,6 +183,7 @@ class Parser:
         })
         for axis, n in enumerate("xyz"[:space.dim]):
             self.functions["d" + n] = (lambda e, a=axis: space.d(e, a))
+        self.functions.update(getattr(space, "functions", {}))
 
     # -- driving -------------------------------------------------------------
 

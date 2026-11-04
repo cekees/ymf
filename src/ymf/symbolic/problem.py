@@ -24,7 +24,7 @@ consumer supplies (a length tolerance for testing points on a boundary).
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import sympy
 
@@ -52,7 +52,9 @@ def _number(value):
 def _coefficients(spec: Dict[str, Any], dim: int, strict: bool = True,
                   unknowns: Optional[Dict[str, int]] = None,
                   fields: Optional[Dict[str, int]] = None,
-                  preset: Optional[Dict[str, Any]] = None) -> Dict[str, sympy.Expr]:
+                  preset: Optional[Dict[str, Any]] = None,
+                  functions: Optional[Dict[str, Any]] = None,
+                  parameters: Sequence[sympy.Symbol] = ()) -> Dict[str, sympy.Expr]:
     """Resolve coefficient values and formulas; formulas may use each other.
 
     ``strict`` decides what an unresolvable formula means. Building a problem
@@ -80,7 +82,8 @@ def _coefficients(spec: Dict[str, Any], dim: int, strict: bool = True,
         raise SymbolicError("coefficient %s has the name of an unknown; a name is one "
                             "or the other" % ", ".join(clash))
     state = Space(dim, unknowns)
-    allowed = {"x", "y", "z", "t"} | set(state.components)
+    allowed = ({"x", "y", "z", "t"} | set(state.components)
+               | {p.name for p in parameters})
     values: Dict[str, sympy.Expr] = dict(preset or {})
     formulas: Dict[str, str] = {}
     for name, entry in spec.items():
@@ -106,7 +109,8 @@ def _coefficients(spec: Dict[str, Any], dim: int, strict: bool = True,
         progressed = False
         for name, text in list(formulas.items()):
             try:
-                value = parse_expression(text, Space(dim, unknowns, values, fields))
+                value = parse_expression(text, Space(dim, unknowns, values, fields,
+                                                     functions=functions))
             except SymbolicError:
                 continue
             entries = list(value) if isinstance(value, sympy.MatrixBase) else [value]

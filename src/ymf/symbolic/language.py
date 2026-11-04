@@ -67,6 +67,10 @@ class Space:
     ``parameters`` are symbols the solver supplies, which an expression may
     keep free (a discretization's element size ``h``).
 
+    ``functions`` replace functions of the notation by name as expressions
+    are read (``heaviside`` -> a smoothed Heaviside of width ε): what is
+    written is regularized, and what differentiation produces is not.
+
     ``fields`` (name -> rank) are known fields: the unknowns of another
     sub-problem, read here as data (a velocity lagged into a transport
     solve). Each component is an undefined function of the coordinates and
@@ -77,7 +81,8 @@ class Space:
     def __init__(self, dim: int, unknowns: Dict[str, int],
                  coefficients: Dict[str, sympy.Expr] | None = None,
                  fields: Dict[str, int] | None = None,
-                 parameters: Iterable[sympy.Symbol] = ()):
+                 parameters: Iterable[sympy.Symbol] = (),
+                 functions: Dict[str, object] | None = None):
         if dim not in (1, 2, 3):
             raise SymbolicError("space dimension must be 1, 2 or 3, not %r" % (dim,))
         self.dim = dim
@@ -100,6 +105,9 @@ class Space:
                                     % (name, rank))
         self.component_symbols = [sympy.Symbol(n, real=True) for n in self.components]
         self.coefficients = dict(coefficients or {})
+        #: functions of the notation replaced for this space: a split
+        #: discretization's regularized heaviside and sign
+        self.functions = dict(functions or {})
         #: symbols the solver supplies and an expression may keep free: a
         #: split discretization's bound symbols (h, the element size)
         self.parameters = tuple(parameters)

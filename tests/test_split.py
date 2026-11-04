@@ -81,6 +81,7 @@ def test_flow_reads_density_and_viscosity_through_the_vof_carrier(split):
     assert set(momentum["diffusion"]) == {"v_0", "v_1"}          # 2μ sym(∇v)
     assert flow["solver"]["max_iterations"] == 100                 # refined
     assert flow["proteus"] == {"model": "RANS2P", "useVF": "1.0"}  # a hint, carried as text
+    assert "regularized" not in flow           # χ is read through χh, not evaluated
 
 
 def test_the_level_set_is_a_hamiltonian_in_the_lagged_velocity(split):

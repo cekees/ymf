@@ -56,7 +56,6 @@ REGULARIZATIONS = {
     "heaviside": {"smoothed_heaviside": smoothed_heaviside},
     "sign": {"smoothed_sign": smoothed_sign},
 }
-_SHARP = {"heaviside": sympy.Heaviside, "sign": sympy.sign}
 
 
 def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
@@ -172,27 +171,31 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
             out_subs.append(record)
             continue
 
+        smooth = _regularizations(entry, sub, bound, dim, where)
+        functions = {fn: (lambda a, *rest, s=smoother, w=width: s(a, w))
+                     for fn, (_, width, smoother) in smooth.items()}
+        supplied = [s for s in bound.values() if isinstance(s, sympy.Symbol)]
         coefficients = _coefficients(spec, dim, strict=False, unknowns=own,
-                                     fields=fields, preset=preset)
+                                     fields=fields, preset=preset, functions=functions,
+                                     parameters=supplied)
         declared = (set(spec) | set(ranks) | set(introduced) | set(bound)
                     | set(sub.get("lags") or {}))
-        used = _used([t for _, t in texts], spec, declared)
-        smooth = _regularizations(entry, sub, bound, coefficients, dim, where)
-        values = {k: _apply(v, smooth) for k, v in coefficients.items()}
+        used = _used([t for _, t in texts], spec, declared, carried=set(preset))
+        values = dict(coefficients)
         values.update(bound)
-        supplied = [s for s in bound.values() if isinstance(s, sympy.Symbol)]
-        space = Space(dim, own, values, fields, supplied)
+        space = Space(dim, own, values, fields, supplied, functions)
         residuals: List[sympy.Expr] = []
         for label, text in texts:
             try:
-                parsed = parse_equation(text, space)
+                residuals.extend(parse_equation(text, space))
             except SymbolicError as exc:
                 raise SymbolicError(
                     "%s, %s: %s (a field a sub-problem reads must be one of its unknowns "
                     "or declared in its lags)" % (where, label, exc)) from exc
-            residuals.extend(parsed)
-        sharp = {fn for fn, f in _SHARP.items() if any(sympy.sympify(r).has(f) for r in residuals)}
-        residuals = [_apply(r, smooth) for r in residuals]
+        written = [t for _, t in texts] + [
+            (spec[c].get("formula") if isinstance(spec[c], dict) else spec[c]) or ""
+            for c in used if c not in preset] + [sub.get("initial_condition") or ""]
+        sharp = _written(written, smooth)
         try:
             record["adr"] = adr_form(residuals, space)
         except SymbolicError as exc:
@@ -206,9 +209,8 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
         if named:
             record["coefficients"] = named
         if sub.get("initial_condition"):
-            record["initial"] = _initial(sub, own, ranks, values, smooth, dim, where)
-            sharp |= set(record["initial"].pop("sharp"))
-        if sharp & set(smooth):
+            record["initial"] = _initial(sub, own, ranks, values, functions, dim, where)
+        if sharp:
             record["regularized"] = {fn: {"by": by, "width": to_code(width)}
                                      for fn, (by, width, _) in smooth.items() if fn in sharp}
         if sub.get("enforces"):
@@ -338,7 +340,7 @@ def _describe_bound(binds, values):
                    else values[name]) for name, b in binds.items()}
 
 
-def _regularizations(entry, sub, bound, coefficients, dim, where):
+def _regularizations(entry, sub, bound, dim, where):
     """{sharp function: (by, width, smoother)} for this sub-problem."""
     chosen = dict(entry.get("regularize") or {})
     chosen.update(sub.get("regularize") or {})
@@ -355,39 +357,35 @@ def _regularizations(entry, sub, bound, coefficients, dim, where):
     return out
 
 
-def _apply(expr, smooth):
-    """``expr`` with each regularized sharp function replaced by its smoothing."""
-    if not smooth:
-        return expr
-    if isinstance(expr, sympy.MatrixBase):
-        return expr.applyfunc(lambda e: _apply(e, smooth))
-    expr = sympy.sympify(expr)
-    for function, (_, width, smoother) in smooth.items():
-        expr = expr.replace(_SHARP[function], lambda a, *rest, s=smoother, w=width: s(a, w))
-    return expr
+def _written(texts, smooth) -> set:
+    """The regularized sharp functions these texts use."""
+    from ymf.symbolic.notation import tokens
+    names = set()
+    for text in texts:
+        names |= {v for k, v, _ in tokens(str(text)) if k == "NAME"}
+    return {fn for fn in smooth if fn in names}
 
 
-def _initial(sub, own, ranks, values, smooth, dim, where):
+def _initial(sub, own, ranks, values, functions, dim, where):
     """An introduced unknown's initial condition: an expression in the model
     unknowns at the start, which the solver reads as known fields."""
     target = sub.get("for") or sub["introduces"]["name"]
     model_fields = {n: r for n, r in ranks.items() if n not in own}
     space = Space(dim, {}, {k: v for k, v in values.items() if not _names_unknown(v, own)},
-                  model_fields)
+                  model_fields, functions=functions)
     try:
-        raw = parse_expression(sub["initial_condition"], space)
+        value = parse_expression(sub["initial_condition"], space)
     except SymbolicError as exc:
         raise SymbolicError("%s, initial_condition: %s" % (where, exc)) from exc
-    value = _apply(raw, smooth)
     return {target: to_code(value),
-            "sharp": [fn for fn, f in _SHARP.items() if sympy.sympify(raw).has(f)],
             "reads": sorted({f.func.__name__ for f in sympy.sympify(value).atoms(
                 sympy.core.function.AppliedUndef)})}
 
 
-def _used(texts: List[str], spec: Dict[str, Any], declared: set) -> set:
+def _used(texts: List[str], spec: Dict[str, Any], declared: set, carried=()) -> set:
     """The coefficients the texts name, directly or through other coefficients'
-    formulas. A run of letters that is not a declared name counts for each
+    formulas; not through a ``carried`` one, which is read rather than
+    computed. A run of letters that is not a declared name counts for each
     letter, as the notation reads an undeclared ``ρU`` as ``ρ·U``."""
     from ymf.symbolic.notation import tokens
 
@@ -402,6 +400,8 @@ def _used(texts: List[str], spec: Dict[str, Any], declared: set) -> set:
     while todo:
         name = todo.pop()
         used.add(name)
+        if name in carried:
+            continue
         entry = spec[name]
         formula = entry.get("formula") if isinstance(entry, dict) else entry
         if formula is not None:
