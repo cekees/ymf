@@ -119,6 +119,21 @@ rediscover why a thing is the way it is. Open gaps are in
   unknown's name; a formula may not take a derivative of an unknown (yet).
   `ymf.symbolic.state_coefficients` lists which coefficients follow the
   state, and on what.
+- **2026-11-03: a mesh carries its tagged facets, its provenance, and its
+  order in its cell type.** Proteus's mesh campaign (C7.1, step A) needs a
+  mesh to say which faces carry which boundary condition, and where it came
+  from, so converters from other codes' inputs can write ymf. A grid may
+  now carry `facets` (node tuples and one integer tag per facet: 0
+  untagged, >0 a condition, -1 a rank interface, allowed only in a
+  `subdomain` view) and `provenance` (tool, version, files with SHA-256;
+  no list of tools anywhere). Facets, not node tags, because a corner node
+  belongs to two faces. Geometry order stays the topology type's
+  (`geometry_order`), and the node order of each quadratic type is now
+  written down (`QUADRATIC_EDGES`, VTK's, what viewers draw); the
+  10-node tetrahedra of one widely used generator and of proteus number
+  their edge nodes differently, and `ymf.mesh.edge_node_permutation`
+  maps any stated convention onto ymf's. Older documents are unchanged.
+
 - **2026-11-01: one name per thing: `model` and `approximation`.** The spec's
   top-level key has been `model` since a66ea1c, and the archive of a spec
   stores the realized spec under the key the spec uses, so it has written

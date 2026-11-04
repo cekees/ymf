@@ -416,9 +416,12 @@ XDMF_Elements:
   Set:
     status: not_supported
     notes: |-
-      Boundary and material regions are archived today as ordinary
-      attributes (Proteus writes nodeMaterialTypes and
-      elementMaterialTypes as Node- and Cell-centred Int fields).
+      Material regions are archived today as ordinary attributes (Proteus
+      writes nodeMaterialTypes and elementMaterialTypes as Node- and
+      Cell-centred Int fields). Tagged boundary faces are a mesh's facets
+      key (node tuples and one integer tag per facet, see
+      archive-format.md, "Meshes"), which is ymf's own and is not written
+      to the .xmf.
 
   Time:
     ymf: step.Time
