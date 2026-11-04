@@ -230,11 +230,12 @@ def test_a_name_is_an_unknown_or_a_known_field_not_both():
 
 
 def test_each_sub_problem_imposes_the_conditions_on_what_it_solves(split):
-    flow = [(c["type"], c["variable"], c["region"], c.get("set"))
+    flow = [(c["type"], c["variable"], c["region"], c["expanded_from"].get("set"))
             for c in _sub(split, "flow")["boundary_conditions"]]
-    assert flow == [("slip", "v", "walls", "free_slip"),
+    assert flow == [("dirichlet", "v", "walls", "free_slip"),       # slip, expanded
+                    ("neumann", "v", "walls", "free_slip"),
                     ("dirichlet", "p", "top", "atmosphere"),
-                    ("open", "v", "top", "atmosphere")]
+                    ("neumann", "v", "top", "atmosphere")]         # open, expanded
     slip = _sub(split, "flow")["boundary_conditions"][0]
     assert slip["components"] == ["v_0", "v_1"] and slip["value"] == "0.0"
     assert _sub(split, "ncls")["boundary_conditions"] == []
@@ -242,9 +243,10 @@ def test_each_sub_problem_imposes_the_conditions_on_what_it_solves(split):
 
 def test_a_condition_on_a_coefficient_goes_to_its_carrier(split):
     (inflow,) = _sub(split, "vof")["boundary_conditions"]
-    assert inflow == {"type": "inflow", "variable": "χ", "region": "top",
+    assert inflow == {"type": "dirichlet", "only": "inflow", "variable": "χ", "region": "top",
                       "where": "(abs(y - 1.8) <= tol)", "carried_by": "χh",
-                      "set": "atmosphere", "components": ["χh"], "value": "1.0"}
+                      "expanded_from": {"type": "inflow", "set": "atmosphere"},
+                      "components": ["χh"], "value": "1.0"}
 
 
 def test_a_condition_reaches_every_sub_problem_that_solves_for_its_variable(dambreak):
