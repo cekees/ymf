@@ -14,6 +14,8 @@ that have been closed and why, [changes.md](changes.md).
 - [Writing it once: the notation](#writing-it-once-the-notation)
 - [Running a spec](#running-a-spec)
 - [Branching: one problem, several solution paths](#branching-one-problem-several-solution-paths)
+- [Gauges](#gauges)
+- [Splitting a discretization into sub-problems](#splitting-a-discretization-into-sub-problems)
 - [Document state](#document-state)
 - [Composing documents](#composing-documents)
 - [Provenance](#provenance)
@@ -87,6 +89,27 @@ Optional: `initial_conditions`, `boundary_conditions`, `coefficients`.
 `dimensional_check` used to be accepted and are refused now; see
 [changes.md](changes.md).)
 
+An equation is a string, and the strings are taken in the order of the
+unknowns. Or it is named, and says which unknown it is `for`:
+
+```yaml
+equations:
+  - name: continuity
+    for: p
+    equation: "∇·v = 0  in Ω"
+  - name: momentum
+    for: v
+    equation: "ρ ∂v/∂t + ∇·(ρ v⊗v) − ∇·(μ∇v) + ∇p = f  in Ω"
+```
+
+With `for` on every equation the order written no longer matters (it is
+`for` on all of them or on none). A name is unique, is what a file that
+extends this one merges onto (replacing `momentum`'s text replaces that
+equation and is recorded as an override), and is how a discretization will
+say which equations each of its sub-problems solves. An abstract model may
+leave an unknown without an equation for the files that extend it to
+supply; a well-posed document may not.
+
 ```yaml
 initial_conditions:
   - field: T
@@ -112,7 +135,51 @@ as `value` or `formula` like any other right-hand side. All three are
 expressions, so they may vary along the boundary. It is one relation, so a
 vector unknown wants one condition per component. `beta: 0` is refused:
 that is a Dirichlet condition, and belongs where it can be imposed strongly.
-`periodic` conditions need a box (see [The domain](#the-domain)).
+`periodic` conditions need a box, or a region whose two faces are
+translations of each other (see [The domain](#the-domain)).
+
+Four more kinds are for a [split discretization](#splitting-a-discretization-into-sub-problems)'s
+solver; one ADR system (`adr_problem`) runs none of them and says so:
+
+| type | means | value |
+|---|---|---|
+| `slip` | on a vector: its normal component is the value (0 if none is given), its tangential traction zero -- a free-slip wall | optional |
+| `open` | a declared open boundary: the natural flux applies, nothing is imposed | none |
+| `inflow` | the value, imposed only where the flow enters -- the phase that comes in through an open top | required |
+| `characteristic` | a state imposed through the incoming characteristics only -- a tailwater stage that a supercritical outflow ignores | required |
+
+A condition may also name a coefficient of the state rather than an
+unknown: `{variable: χ, type: inflow, value: 1.0}` says the fluid entering
+is air, whatever carries `χ` in a given discretization. Checked on load:
+the region exists, the variable is an unknown or a coefficient, `slip` is
+on a vector, and a kind gets a value exactly when it takes one.
+
+**Condition sets.** What a free-slip wall or an open top means is part of
+the model: written once there, over its own unknowns and coefficients, and
+applied to regions by each problem.
+
+```yaml
+# the model
+condition_sets:
+  free_slip:
+    - {variable: v, type: slip}
+  atmosphere:
+    - {variable: p, type: dirichlet, value: 0.0}
+    - {variable: v, type: open}
+    - {variable: χ, type: inflow, value: 1.0}     # what enters is air
+# a problem extending it
+boundary_sets:
+  - {region: walls, set: free_slip}
+  - {region: top, set: atmosphere}
+```
+
+`ymf.boundary_conditions(strong_form)` is every condition with the sets
+expanded, each member carrying its region and the set it came from. A
+condition written out under `boundary_conditions` for the same region and
+variable replaces the set's member, so a case can apply `atmosphere` and
+give the pressure its own value; two sets that both decide one region's
+variable are an error, as is a set nobody defines. A set's members are
+checked where they are defined, as any condition is.
 
 A value is given as a number (`value`), an expression (`formula`), or a
 table, `series: [[t, value], ...]` with `t` ascending: a measured or design
@@ -260,6 +327,8 @@ solution_paths:
 | `x² π³ x^n x**n` | powers |
 | `2π²κt`, `κ ΔT`, `sin(πx)` | implicit multiplication |
 | `sin cos tan exp log sqrt sinh cosh tanh abs` | functions, with parentheses |
+| `heaviside(φ)`, `sign(e)`, `min(a, b, ...)`, `max(a, b, ...)` | sharp functions; a solver needs `heaviside` and `sign` of an unknown regularized, since their derivatives are Dirac deltas |
+| `norm(v)`, `sym(∇v)` | `sqrt(v·v)`, and the symmetric part `(A + Aᵀ)/2` of a square tensor |
 | `grad div lap dt dx dy dz dot outer` | the operators spelled out, for ASCII-only text |
 | `lhs = rhs  in Ω` | an equation; the `in ...` clause is ignored |
 | `y = 0 or x = 0 and y = H` | a boundary region; `∂Ω` is the whole boundary |
@@ -276,6 +345,44 @@ and is an error otherwise, so a misspelling is reported, not multiplied:
 unknown name 'kapa' (not a coefficient, an unknown, a coordinate, t, π or a
 function, nor a product of single-letter names) at position 2 in '2 kapa T'
 ```
+
+**A coefficient may be a function of the state.** Its formula may name the
+unknowns as well: a conductivity that grows with temperature, a density
+that follows a phase indicator, a friction law in the depth and discharge.
+
+```yaml
+strong_form:
+  unknowns: [T]
+  equations:
+    - "∂T/∂t = ∇·(κ∇T)  in Ω"
+  coefficients:
+    κ: {formula: "κ0 (1 + T²)", units: m2/s}
+    κ0: {value: 1.0e-3, units: m2/s}
+```
+
+It is substituted into the equations like any other coefficient, so the ADR
+form carries the dependence: `κ` here makes the diffusion of `T` nonlinear
+in `T`, with its derivative, exactly as if `κ0 (1 + T²)` were written in the
+equation. Write a variable coefficient inside the divergence (`∇·(κ∇T)`,
+`∇·(μ∇v)`); `κΔT` is the divergence form only while `κ` is constant, and is
+refused otherwise. A formula may name the unknowns, not their derivatives.
+
+Such a coefficient is not a number, and three things that need one say so
+rather than go quiet. Boundary data, initial conditions and exact solutions
+are evaluated at points in `x`, `y`, `z`, `t`, so one that names it is an
+error (the heat example's exact solution names `κ`, and stops being exact
+the moment `κ` depends on `T`). A characteristic scale or a dimensionless
+number built on it has no value, so `ymf.units` warns and asks for a
+constant coefficient instead (`ρw`, not `ρ = ρw (1 − χ) + ρa χ`). And
+`coefficient_numbers` leaves it out. A coefficient may not share its name
+with an unknown.
+
+`adr_problem` substitutes such a coefficient, and also lists it by name
+under `coefficients` -- its code, what it depends on, and its derivative
+in each unknown (`sharp: true` and no derivative for `heaviside` or `sign`
+of an unknown) -- so a code generator can emit `ρ` once as a function of
+the state rather than its expansion in every term. A problem with no such
+coefficient has no `coefficients` key and reads exactly as before.
 
 Tensors follow the continuum-mechanics convention `grad(v)[i, j] =
 ∂v_j/∂x_i`, so `v·∇v` is (v·∇)v and `∇·(μ∇v)` is the vector Laplacian.
@@ -415,10 +522,57 @@ two levels, as with strong and weak forms.
 
 `kind: box` and `kind: piecewise_linear` can be solved today: a box is
 meshed by `cells` per side, any other region by `h`, the element size of an
-unstructured mesh (see the discretization's `mesh`). Boundary regions are
-still named by `where` predicates, which hold on any mesh of the region;
-periodic conditions need a box. `discrete` and `file` domains validate and
-are carried, and `adr_problem` says so rather than failing obscurely.
+unstructured mesh (see the discretization's `mesh`). A periodic condition
+on a `piecewise_linear` region holds when the region's boundary pieces on
+the two faces of each periodic axis are translations of each other: the
+segments (2-D) or facets (3-D) on the lower face, moved by the length of
+the bounding box along the axis, must be exactly those on the upper face.
+That is checked at posing, with a count of the pieces that have no partner;
+the mesher must then add no points to them, and the solver checks after
+meshing that every node on one face has its partner on the other.
+
+A `file` domain is carried whole for the solver to read. A mesh file
+(`2dm`, `3dm`, `hex`, `tetgen`, `ymf`) fixes the mesh, so its discretization
+gives `mesh: {levels: ...}` only, the levels of uniform refinement of the
+file's mesh, and a mesh size there is reported as what it lacks; a geometry
+(`gmsh_geo`) is meshed by `h` like a region. `bounds: {lower, upper}` is
+optional: it sets the scale of the boundary tolerance, and without it the
+solver takes the bounds from the mesh, so for this kind alone posing
+follows meshing; the dimension must then be given. A file's boundary
+regions are naturally its boundary tags. A file domain cannot be periodic
+(Gmsh's `Periodic` constraint is not carried).
+
+A `discrete` domain is a mesh as ymf stores one (`topology`, `geometry`, and
+optionally tagged `facets` and `provenance`; see `ymf.mesh`): a mesh is a
+type of domain. It is posed whole, like a file. Its bounds are its nodes'
+when the geometry holds them inline; when they are in an HDF5 file the
+solver takes them, or `bounds` gives them, and the dimension comes from the
+geometry's type (`XY`, `XYZ`). Its boundary regions are its facets' tags, a
+discretization gives `mesh: {levels}` only, and it cannot be periodic. The
+design is [design/domains-beyond-box.md](design/domains-beyond-box.md).
+
+**Boundary regions by position or by tag.** A region is named by `where`, a
+predicate on the point that holds on any mesh of the domain, or by `tags`,
+the mesh's boundary tags: ints, or names the domain's `boundary_tags`
+resolve. Exactly one of the two:
+
+```yaml
+domain:
+  kind: piecewise_linear
+  vertices: [[0, 0], [2, 0], [2, 1], [1, 1], [1, 2], [0, 2]]
+  segments: [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]]
+  segment_flags: [1, 2, 3, 3, 4, 5]
+  boundary_tags: {bottom: 1, right: 2, notch: 3, top: 4, left: 5}
+boundary_regions:
+  - {name: dry, tags: [bottom, left]}
+  - {name: outlet, where: "x = 2"}
+```
+
+A tag region reaches a solver as `flags: [1, 5]`, which it tests against the
+boundary flag of the point, and carries no `where`, so a solver that does
+not read `flags` fails on it rather than taking a missing predicate for the
+whole boundary. A box carries no tags (name its faces by position), and a
+periodic region is found by position, so it needs `where`.
 
 ## Branching: one problem, several solution paths
 
@@ -493,6 +647,135 @@ later file did.
 Adding a branch adds entries; it never edits existing ones. That is what
 makes a document safe for several contributors, or an LLM and a person, to
 extend.
+
+## Gauges
+
+What a run measures as it goes is part of the problem, beside its
+conditions: `model.gauges`, one entry per gauge file.
+
+```yaml
+gauges:
+  - name: heights                   # the level set along four verticals
+    kind: line
+    fields: [φ]
+    lines: [[[2.724, 0.0], [2.724, 1.8]], [[2.228, 0.0], [2.228, 1.8]]]
+    file: height1.csv
+  - name: pressure
+    kind: point
+    fields: [p]
+    points: [[3.22, 0.16], [3.22, 0.584]]
+  - kind: boundary_integral         # forces and moments per boundary region
+    tags: [cylinder]
+    quantities: [force, moment]
+    moment_point: [0.2, 0.2, 0.0]
+    sample_rate: 0.01
+```
+
+`point`, `line` and `line_integral` gauges sample `fields` (unknowns or
+coefficients, `ρ` as well as `p`) at `points` or along `lines`, each line
+its two ends. A `boundary_integral` gauge integrates `quantities`
+(`wetted_area`, `force_pressure`, `force_viscous`, `force`, `moment`, the
+moment about `moment_point`) over each boundary region in `tags`. Checked
+on load: what each kind needs and may not have, that fields and tags
+exist, and that a gauge's points share one dimension. A solver reads them;
+Proteus's reader is C22's next step.
+
+## Splitting a discretization into sub-problems
+
+A model with several unknowns is often solved as a sequence of smaller
+problems in each time step. Two-phase level-set flow is the standard case:
+the model is momentum, continuity and the interface transport of a level
+set `φ`, with `ρ` and `μ` coefficients of `χ = heaviside(φ)`; Proteus solves
+it as flow, then a volume-of-fluid carrier of `χ`, then the level set, then
+redistancing, then a mass correction. That splitting is a property of the
+discretization, not of the model, so another discretization of the same
+model can split it differently (CLSVOF and a projection scheme) or not at
+all. [`tests/fixtures/two_phase`](../tests/fixtures/two_phase) holds the
+model and the dam break split this way; [`tests/fixtures/shallow_water`](../tests/fixtures/shallow_water)
+holds the shallow-water family the same way (one sub-problem, as Proteus's
+SW2DCV solves the whole system at once), with a lake at rest and the
+Torino flume as cases.
+
+```yaml
+discretizations:
+  - name: level_set_five
+    provenance: proteus_derived
+    mesh: {h: 0.0322}
+    binds:                          # symbols the model leaves to the discretization
+      h: {meaning: element_size}
+      ε: {formula: "1.5 h"}
+    regularize:                     # sharp model functions made smooth
+      heaviside: {by: smoothed_heaviside, width: ε}
+    step_control: {type: min_cfl, cfl: 0.25}
+    solver: {type: nonlinear, nonlinear_solver: newton, linear_solver: petsc}
+    subproblems:                    # solved in this order every step
+      - name: flow
+        solves: [momentum, continuity]
+        lags: {φ: previous_step, χ: {via: vof, at: previous_step}}
+        finite_element: {velocity: {family: CG, order: 1}, pressure: {family: CG, order: 1}}
+        solver: {max_iterations: 100}           # refines the entry's solver
+      - name: vof
+        introduces: {name: χh, approximates: χ}
+        equation: "∂χh/∂t + ∇·(v χh) = 0"
+        lags: {v: {via: flow, at: current_step}}
+      - name: ncls
+        solves: [interface]
+        lags: {v: {via: flow, at: current_step}}
+      - name: rdls
+        enforces: "norm(∇φ) = 1"
+        pseudo_time: steady
+        writes_back: {φ: replace}
+      - name: mcorr
+        enforces: "heaviside(φ) = χh"
+        introduces: {name: φc, correction_of: φ}
+        writes_back: {φ: add}
+```
+
+A sub-problem **solves** model equations by name (so the model's equations
+must be [named](#document-structure)), or **enforces** a constraint the
+others lose, or **introduces** an unknown of its own (an auxiliary carrier
+of a model quantity, or a correction to a model unknown), or spins the run
+up. It says what it **lags** -- reads from elsewhere -- and when: as the
+previous step left it, or as an earlier sub-problem of this step left it
+(`via`). What it **writes back** into another field it says too. Its
+`solver` refines the entry's, which stays required as the default.
+`binds` names the symbols the discretization supplies and the model may not
+use (the element size, a smoothing width), and `regularize` the sharp
+functions it replaces with smooth ones (`heaviside`, `sign`).
+
+Checked on load: sub-problem names are unique; every model equation is
+solved by exactly one sub-problem; every name a sub-problem uses (an
+equation, a lagged field, a `via`, what it introduces, approximates,
+corrects or writes back) exists, and an introduced or bound name does not
+shadow one that does. The split is part of what an output's key covers, so
+changing a sub-problem's solver plans a new output.
+
+A sub-problem may give an `equation` of its own, `for` the unknown it
+determines (by default the one it introduces); a lag with `of` reads a
+copy of a field under a name of its own (redistancing reads `φs`, the
+level set before it changes `φ`); and a sub-problem's own `regularize`
+replaces the entry's (redistancing smooths its sign over `0.75 h`, the
+rest their Heaviside over `1.5 h`).
+
+**Each sub-problem is classified on its own.** `adr_problem` reads a model
+as one system, which this one is not (`v·∇φ` is a Hamiltonian in another
+unknown). `ymf.symbolic.split.split_problem(doc, "level_set_five")` gives
+each sub-problem's ADR form instead: its unknowns are those of the
+equations it solves and of its own equation; every other field it reads is
+a known field, declared in its `lags` (a read that is not is an error that
+says so), which the plain data names (`v_0`) and whose gradient it names
+`grad_v_0_0`; a coefficient lagged through the sub-problem that carries it
+(`χ` via `vof`, which introduces `χh`) is that carrier. Bound symbols are
+substituted, and the sharp functions are smoothed as Proteus smooths them:
+`heaviside` becomes `gf.H` of `equivalent_polynomials.h`, whose derivative
+is its `gf.D`, and `sign` becomes `2 H_ε − 1`. Each sub-problem also
+carries what it reads and when, its named coefficients, the
+regularizations it used, an introduced unknown's initial condition, its
+effective solver, and its **boundary conditions**: those on the unknowns it
+solves for, and those on a coefficient its introduced unknown carries
+(atmosphere's `χ` inflow is VOF's `χh` inflow), with condition sets
+expanded. A condition on a field a sub-problem only reads is another's. A solver maps a sub-problem onto its own modules (a
+dispatcher); `proteus:` blocks are interim hints for it, carried as text.
 
 ## Document state
 
@@ -845,13 +1128,14 @@ These are real limitations of the current schema and code, recorded here so
 nobody has to rediscover them. Gaps that have been closed, and how, are in
 [changes.md](changes.md).
 
-- **Only `box` and `piecewise_linear` domains are solved.** A domain of any
-  kind validates and is carried (see [The domain](#the-domain)), but
-  `adr_problem` refuses `discrete` and `file`, saying which kind it was
-  given rather than failing obscurely.
-- **Periodic conditions only on a box.** A periodic region must name two
-  opposite faces of the box; on a `piecewise_linear` domain the condition is
-  refused.
+- **A solver may not read every domain kind yet.** ymf poses all four;
+  Proteus reads `discrete` domains once cekees/proteus#186 lands, and takes
+  the bounds of a bounds-free file only from tetgen, 2dm and 3dm files.
+- **Periodic conditions only along the axes.** A periodic region names
+  two faces of the domain's bounding box, on a box or on a region whose two
+  faces match; a rotation, or a shift that is not along an axis, is not
+  expressible, and periodic conditions on a `file` domain are not
+  supported (Gmsh's `Periodic` constraint is not carried).
 - **The units of a flux condition are partly checked.** `neumann` and
   `robin` see the diffusive flux only, and `t` has no declared units
   anywhere, so an `α` or `β` that depends on time is never decided.

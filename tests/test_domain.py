@@ -162,16 +162,25 @@ def test_the_two_box_forms_give_the_same_problem():
     assert adr_problem(doc) == adr_problem(mapped)
 
 
-def test_a_kind_nothing_solves_yet_says_so(tmp_path):
-    """Validating and carrying a domain is not the same as running it."""
+def test_a_file_domain_is_posed_from_its_bounds_or_its_dimension(tmp_path):
+    """A file domain is carried whole for the solver to read (C27 Phase 5,
+    D2). Its bounds set the boundary tolerance's scale; without them the
+    solver takes them from the mesh, but the dimension must still be known
+    to pose the problem."""
     pytest.importorskip("sympy")
     from ymf.symbolic.language import SymbolicError
     from ymf.symbolic.problem import adr_problem
 
-    doc = load(tmp_path, '{kind: file, format: "stl", path: "hull.stl"}')
+    doc = load(tmp_path, '{kind: file, format: "tetgen", path: "cube"}')
     doc["model"]["strong_form"]["equations"] = ["−Δu = 0"]
-    with pytest.raises(SymbolicError, match="adr_problem can run a box"):
+    with pytest.raises(SymbolicError, match="gives its bounds, or at least its dimension"):
         adr_problem(doc)
+    doc["model"]["strong_form"]["domain"]["dimension"] = 2
+    problem = adr_problem(doc)
+    assert problem["domain"]["lower"] is None and problem["domain"]["upper"] is None
+    assert problem["domain"]["region"]["format"] == "tetgen"
+    doc["model"]["strong_form"]["domain"]["bounds"] = {"lower": [0, 0], "upper": [2, 1]}
+    assert adr_problem(doc)["domain"]["upper"] == [2.0, 1.0]
 
 
 # --------------------------------------------------------------------------

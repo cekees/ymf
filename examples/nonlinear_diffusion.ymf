@@ -1,0 +1,59 @@
+# ============================================================
+# YMF Example: steady nonlinear diffusion, -∇·((1 + u²)∇u) = f
+#
+# Demonstrates: a coefficient that is a function of the state. k names
+# the unknown u, so the diffusion is nonlinear in u and the solver needs
+# Newton; the ADR form carries k's derivative in u. The source term is
+# manufactured from u = sin(πx) sin(πy), so the run has an exact answer.
+#
+# With Proteus's ymf_run: P1 converges at rate 1.99, P2 at 3.00 (8, 16,
+# 32 cells), and --check reproduces every output bitwise.
+# ============================================================
+
+model:
+  name: "Nonlinear diffusion, conductivity 1 + u², unit square"
+  physical_model:
+    provenance: human_specified
+    processes: [heat_conduction]
+    assumptions: [steady]
+  strong_form:
+    provenance: human_specified
+    unknowns: [u]
+    equation_formulation: "steady nonlinear diffusion"
+    equations:
+      - "-∇·(k∇u) = f  in Ω"
+    domain: "Ω = [0, 1] × [0, 1]"
+    boundary_regions:
+      - {name: all_boundaries, where: "∂Ω"}
+    boundary_conditions:
+      - {region: all_boundaries, variable: u, type: dirichlet, value: 0.0}
+    coefficients:
+      k: {formula: "1 + u²"}
+      s: {formula: "sin(πx) sin(πy)"}
+      f: {formula: "2π² (3 s² − sin(πx)² − sin(πy)² + 1) s"}
+  weak_forms:
+    - label: galerkin
+      provenance: human_specified
+      derivation: "multiply by v in H1_0, integrate the diffusion by parts"
+      solution_spaces: {trial: H1, test: H1_0}
+      bilinear: "a(u; u, v) = ∫Ω (1 + u²) ∇u·∇v dx"
+      linear: "l(v) = ∫Ω f v dx"
+      stabilization_method: "none"
+solution_paths:
+  analytical:
+    - name: manufactured
+      provenance: human_specified
+      method: manufactured
+      solution:
+        formula: "u = sin(πx) sin(πy)"
+  discretizations:
+    - name: P1
+      provenance: human_specified
+      finite_element: {fields: {family: CG, order: 1}}
+      mesh: {cells: [8, 16, 32]}
+      solver: {type: nonlinear, nonlinear_solver: newton, linear_solver: superlu, tolerance: 1.0e-10}
+    - name: P2
+      provenance: human_specified
+      finite_element: {fields: {family: CG, order: 2}}
+      mesh: {cells: [8, 16, 32]}
+      solver: {type: nonlinear, nonlinear_solver: newton, linear_solver: superlu, tolerance: 1.0e-10}

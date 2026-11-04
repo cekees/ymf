@@ -48,7 +48,14 @@ FEFamilyEnum = Enum(["CG", "DG", "RT", "BDM", "RTF", "N1curl"])
 # discharge hydrograph is a tabulated neumann condition, and a stage
 # hydrograph a tabulated dirichlet one, which naming it as a type made
 # impossible to write.
-BCTypeEnum = Enum(["dirichlet", "neumann", "robin", "periodic"])
+# slip, open, inflow and characteristic (C42): the normal component of a
+# vector given and its tangential traction zero; a declared open boundary
+# (the natural flux, C12); a value imposed only where the flow enters; a
+# state imposed through the incoming characteristics (a tailwater stage).
+# They are for a split discretization's solver: one ADR system runs the
+# first four only (ymf.symbolic.adr_problem).
+BCTypeEnum = Enum(["dirichlet", "neumann", "robin", "periodic",
+                   "slip", "open", "inflow", "characteristic"])
 
 ICTypeEnum = Enum(["constant", "function", "data_source"])
 
@@ -121,6 +128,66 @@ AnalyticalEntry = Map(
     }
 )
 
+# --- splitting a discretization into sub-problems (C42) ---------------------
+# A split discretization solves the model as a sequence of sub-problems in
+# one time step: two-phase level-set flow as flow, VOF, level set,
+# redistancing and mass correction. Each names the model equations it
+# solves, or the constraint it enforces, the unknowns it introduces, what it
+# reads from the others and when, and how it is solved. ymf checks the
+# structure and the names (ymf.references); a solver's dispatcher maps a
+# sub-problem onto a module.
+
+#: when a sub-problem reads another's field: as the previous system step
+#: left it, or as an earlier sub-problem of this step left it
+LagAtEnum = Enum(["previous_step", "current_step"])
+
+SymbolBinding = Map({
+    Optional("meaning"): Str(),        # e.g. element_size
+    Optional("formula"): Str(),        # e.g. "1.5 h"
+    Optional("value"): Float(),
+    Optional("proteus"): Any(),        # an interim hint, see SubproblemDef
+})
+
+SubproblemDef = Map({
+    "name": Str(),
+    # model equations (by name) this sub-problem solves
+    Optional("solves"): Seq(Str()),
+    # a constraint it restores ("|∇φ| = 1", "heaviside(φ) = χh"), in the notation
+    Optional("enforces"): Str(),
+    # an unknown it adds: an auxiliary carrier of a model quantity
+    # (approximates), or a correction to a model unknown (correction_of)
+    Optional("introduces"): Map({
+        "name": Str(),
+        Optional("approximates"): Str(),
+        Optional("correction_of"): Str(),
+        Optional("units"): Str(),
+    }),
+    # the equation of an introduced unknown, or of a constraint's solve, and
+    # the unknown it determines (default: the one this sub-problem introduces)
+    Optional("equation"): Str(),
+    Optional("for"): Str(),
+    Optional("initial_condition"): Str(),
+    # what it reads from elsewhere: name -> when, or {via: sub-problem, at:
+    # when}; with `of`, the name is a copy of that field under a name of its
+    # own (redistancing reads φs, the level set before it changes φ)
+    Optional("lags"): MapPattern(Str(), LagAtEnum | Map({
+        Optional("via"): Str(), "at": LagAtEnum, Optional("of"): Str()})),
+    # what it hands back: name -> replace | add | mass_quadrature | ...
+    Optional("writes_back"): MapPattern(Str(), Str()),
+    Optional("pseudo_time"): Enum(["steady"]),
+    Optional("spin_up"): Bool(),
+    Optional("binds"): MapPattern(Str(), SymbolBinding),
+    # replaces the entry's regularize: for this sub-problem's sharp functions
+    Optional("regularize"): MapPattern(Str(), Map({"by": Str(), Optional("width"): Str()})),
+    Optional("finite_element"): FiniteElementDef,
+    Optional("time_integration"): Str(),
+    Optional("stabilization"): Any(),
+    Optional("solver"): SolverConfig,
+    # options a dispatcher cannot infer yet, for one solver: an interim hint
+    # it checks against what it infers, and drops once it covers them
+    Optional("proteus"): Any(),
+})
+
 DiscretizationEntry = Map(
     {
         "name": Str(),
@@ -133,7 +200,22 @@ DiscretizationEntry = Map(
         Optional("from_weak_form"): Str(),
         Optional("finite_element"): FiniteElementDef,
         Optional("discretization"): Any(),
+        # with sub-problems, the default each one's own solver: refines
         "solver": SolverConfig,
+        # split into sub-problems, solved in this order each step
+        Optional("subproblems"): Seq(SubproblemDef),
+        # symbols the discretization supplies and the model may not use:
+        # the element size h, a smoothing width ε = 1.5 h
+        Optional("binds"): MapPattern(Str(), SymbolBinding),
+        # sharp model functions replaced by smooth ones: heaviside -> a
+        # smoothed Heaviside of width ε
+        Optional("regularize"): MapPattern(Str(), Map({
+            "by": Str(), Optional("width"): Str()})),
+        Optional("step_control"): Map({
+            Optional("type"): Str(),
+            Optional("cfl"): Float(),
+            Optional("step_exact"): Bool(),
+        }),
         Optional("flux_method"): Str(),
         Optional("numerical_flux"): Str(),
         Optional("discretization_details"): Str(),
@@ -236,37 +318,41 @@ InitialConditionDef = Map(
     }
 )
 
-BoundaryConditionDef = Map(
-    {
-        "region": Str(),
-        "variable": Str(),
-        "type": BCTypeEnum,
-        Optional("value"): Float(),
-        # A value that varies along the boundary or in time: an expression
-        # in x, y, z, t and the coefficients; "(a, b)" for a vector variable.
-        Optional("formula"): Str(),
-        # The value as tabulated data rather than a formula -- a measured or
-        # design record, which is the one thing that cannot be written as an
-        # expression. Pairs of [t, value], t ascending. Linear between
-        # samples; outside the range the end value is held, because
-        # extrapolating a record past its end is not something to do
-        # quietly.
-        #
-        # Available to any type: with neumann this is a discharge
-        # hydrograph, with dirichlet a stage hydrograph or a measured inlet
-        # temperature.
-        Optional("series"): Seq(Seq(Float())),
-        # A robin condition, alpha*u + beta*(q.n) = g: alpha and beta here,
-        # g in value or formula like any other right-hand side. Expressions,
-        # so they may vary along the boundary.
-        Optional("alpha"): Str(),
-        Optional("beta"): Str(),
-        Optional("units"): Str(),
-        Optional("source"): Str(),
-        Optional("source_url"): Str(),
-        Optional("temporal"): Str(),
-    }
-)
+_CONDITION_FIELDS = {
+    "variable": Str(),
+    "type": BCTypeEnum,
+    Optional("value"): Float(),
+    # A value that varies along the boundary or in time: an expression
+    # in x, y, z, t and the coefficients; "(a, b)" for a vector variable.
+    Optional("formula"): Str(),
+    # The value as tabulated data rather than a formula -- a measured or
+    # design record, which is the one thing that cannot be written as an
+    # expression. Pairs of [t, value], t ascending. Linear between
+    # samples; outside the range the end value is held, because
+    # extrapolating a record past its end is not something to do
+    # quietly.
+    #
+    # Available to any type: with neumann this is a discharge
+    # hydrograph, with dirichlet a stage hydrograph or a measured inlet
+    # temperature.
+    Optional("series"): Seq(Seq(Float())),
+    # A robin condition, alpha*u + beta*(q.n) = g: alpha and beta here,
+    # g in value or formula like any other right-hand side. Expressions,
+    # so they may vary along the boundary.
+    Optional("alpha"): Str(),
+    Optional("beta"): Str(),
+    Optional("units"): Str(),
+    Optional("source"): Str(),
+    Optional("source_url"): Str(),
+    Optional("temporal"): Str(),
+}
+
+BoundaryConditionDef = Map({"region": Str(), **_CONDITION_FIELDS})
+
+# A condition set: conditions without a region, defined once in a model
+# (free_slip, atmosphere) and applied to regions by a problem's
+# boundary_sets. ymf.normalize.boundary_conditions expands them.
+ConditionDef = Map(dict(_CONDITION_FIELDS))
 
 # A domain is the notation short form -- "Ω = [0, 1] × [0, 1],  t ∈ (0, 50]",
 # which means a box and is parsed by ymf.symbolic -- or a mapping tagged by
@@ -308,6 +394,7 @@ DomainDef = Str() | Map(
         # kind: file -- someone else's language
         Optional("format"): Str(),
         Optional("path"): Str(),
+        Optional("bounds"): Map({"lower": Seq(Float()), "upper": Seq(Float())}),
     }
 )
 
@@ -405,20 +492,61 @@ StrongFormDef = Map(
         # "where" is a membership predicate, not geometry: "∂Ω" (all of
         # it), "y = 0 or y = H", "x = 0 and y = 0". adr_problem already
         # calls this thing "where" in the conditions it returns.
-        "boundary_regions": Seq(Map({"name": Str(), "where": Str()})),
+        # a region is named by a predicate (where) or by the mesh's boundary
+        # tags (tags: ints, or names the domain's boundary_tags resolve),
+        # exactly one of the two (ymf.references)
+        "boundary_regions": Seq(Map({"name": Str(), Optional("where"): Str(),
+                                     Optional("tags"): Seq(Int() | Str())})),
         Optional("initial_conditions"): Seq(InitialConditionDef),
         Optional("boundary_conditions"): Seq(BoundaryConditionDef),
+        # named sets of conditions, and the regions they apply to: a model
+        # says what free_slip and atmosphere mean, a problem where they hold
+        Optional("condition_sets"): MapPattern(Str(), Seq(ConditionDef)),
+        Optional("boundary_sets"): Seq(Map({"region": Str(), "set": Str()})),
         Optional("coefficients"): MapPattern(Str(), CoefficientDef),
         # The equations, one string per (vector or scalar) equation, in the
         # notation of ymf.symbolic.notation -- "∂T/∂t = ∇·(κ∇T)  in Ω",
         # "ρ ∂v/∂t + ∇·(ρ v⊗v) − μΔv + ∇p = f" -- ordered like the unknowns.
-        Optional("equations"): Seq(Str()),
+        # Or named, saying which unknown each determines: a sub-problem of
+        # a discretization names the equations it solves, and an extending
+        # file merges onto an equation by its name.
+        Optional("equations"): Seq(Str() | Map({
+            "name": Str(),
+            Optional("for"): Str(),
+            "equation": Str(),
+            Optional("provenance"): ProvenanceEnum,
+            Optional("notes"): Str(),
+        })),
     }
 )
 
 # ---------------------------------------------------------------------------
 # model (updated: + characteristic_scales, units, mesh_generation)
 # ---------------------------------------------------------------------------
+
+# --- gauges: what a run measures as it goes (C22) -----------------------------
+# The shape planned in FORCE_HISTORY_GAUGES_PLAN step 4: proteus's point,
+# line and line-integral gauges, and the boundary-integral gauge (forces and
+# moments per boundary region) that replaces RANS2P's and RANS3PF's history
+# files. What each kind needs is checked on load (ymf.references).
+GaugeKindEnum = Enum(["point", "line", "line_integral", "boundary_integral"])
+GaugeQuantityEnum = Enum(["wetted_area", "force_pressure", "force_viscous", "force", "moment"])
+
+GaugeDef = Map({
+    Optional("name"): Str(),
+    "kind": GaugeKindEnum,
+    # point, line, line_integral: the fields sampled (unknowns or coefficients)
+    Optional("fields"): Seq(Str()),
+    Optional("points"): Seq(Seq(Float())),
+    # each line is two points, its ends
+    Optional("lines"): Seq(Seq(Seq(Float()))),
+    # boundary_integral: boundary regions, and what is integrated over each
+    Optional("tags"): Seq(Str()),
+    Optional("quantities"): Seq(GaugeQuantityEnum),
+    Optional("moment_point"): Seq(Float()),
+    Optional("sample_rate"): Float(),
+    Optional("file"): Str(),
+})
 
 ModelDef = Map(
     {
@@ -430,6 +558,7 @@ ModelDef = Map(
         Optional("dimensionless_numbers"): MapPattern(Str(), DimensionlessNumberDef),
         Optional("units"): UnitsDef,
         Optional("mesh_generation"): MeshGenerationDef,
+        Optional("gauges"): Seq(GaugeDef),
     }
 )
 

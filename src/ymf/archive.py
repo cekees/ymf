@@ -151,12 +151,19 @@ __all__ = [
     "DATA_TYPES",
     "DATA_ITEM_FORMATS",
     "GEOMETRY_TYPES",
+    "FACET_VIEWS",
+    "QUADRATIC_EDGES",
+    "geometry_order",
+    "nodes_per_cell",
     "data_item",
     "data_item_for",
     "attribute",
     "topology",
     "geometry",
     "grid",
+    "facets",
+    "provenance",
+    "check_facet_tags",
     "new_approximation",
     "add_instant",
     "uniform_grid",
@@ -285,6 +292,94 @@ DATA_ITEM_FORMATS = frozenset({"HDF", "XML", "Binary"})
 
 #: Legal ``Geometry`` types.
 GEOMETRY_TYPES = frozenset({"XYZ", "XY", "X_Y_Z", "X_Y", "VXVYVZ", "ORIGIN_DXDYDZ", "ORIGIN_DXDY"})
+
+#: Where a grid's facet list sits: ``"global"``, a mesh as a whole, whose
+#: tags are 0 (untagged) or a condition (>0); or ``"subdomain"``, one rank's
+#: piece, whose tags may also be -1 for a face on the interface between
+#: ranks. -1 is a partitioner's product, so a global mesh never stores it.
+FACET_VIEWS = frozenset({"global", "subdomain"})
+
+#: Vertices of each unstructured cell type with a fixed node count.
+_VERTICES = {
+    "Edge_3": 2,
+    "Triangle": 3, "Tri_6": 3, "Triangle_6": 3,
+    "Quadrilateral": 4, "Quad_8": 4, "Quadrilateral_8": 4,
+    "Tetrahedron": 4, "Tet_10": 4, "Tetrahedron_10": 4,
+    "Pyramid": 5, "Pyramid_13": 5,
+    "Wedge": 6, "Wedge_15": 6,
+    "Hexahedron": 8, "Hex_20": 8, "Hexahedron_20": 8,
+}
+
+#: The node order of the quadratic cell types. The vertices come first, in
+#: the linear type's order; then one node on each edge, node
+#: ``n_vertices + k`` sitting on the edge between the two vertices
+#: ``QUADRATIC_EDGES[type][k]``. This is VTK's order, which is what a
+#: viewer draws, since ParaView's XDMF readers pass connectivity through
+#: unpermuted. Mesh generators do not all agree with it -- one widely used
+#: generator numbers the last two edge nodes of a 10-node tetrahedron the
+#: other way round, (2,3) before (1,3) -- so a writer whose source orders
+#: edge nodes differently permutes them first; see
+#: :func:`ymf.mesh.edge_node_permutation`.
+QUADRATIC_EDGES = {
+    "Edge_3": ((0, 1),),
+    "Tri_6": ((0, 1), (1, 2), (2, 0)),
+    "Quad_8": ((0, 1), (1, 2), (2, 3), (3, 0)),
+    "Tet_10": ((0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)),
+    "Pyramid_13": ((0, 1), (1, 2), (2, 3), (3, 0), (0, 4), (1, 4), (2, 4), (3, 4)),
+    "Wedge_15": ((0, 1), (1, 2), (2, 0), (3, 4), (4, 5), (5, 3), (0, 3), (1, 4), (2, 5)),
+    "Hex_20": ((0, 1), (1, 2), (2, 3), (3, 0), (4, 5), (5, 6), (6, 7), (7, 4),
+               (0, 4), (1, 5), (2, 6), (3, 7)),
+}
+for _long, _short in (("Triangle_6", "Tri_6"), ("Quadrilateral_8", "Quad_8"),
+                      ("Tetrahedron_10", "Tet_10"), ("Hexahedron_20", "Hex_20")):
+    QUADRATIC_EDGES[_long] = QUADRATIC_EDGES[_short]
+del _long, _short
+
+#: The facet types a cell type's facet list may hold. A 1D cell's facets are
+#: points, a 2D cell's are edges and a 3D cell's are faces, of the cell's
+#: own geometry order; a wedge or pyramid has faces of two shapes, so its
+#: facet list may be ``Mixed``.
+_FACET_TYPES = {
+    "Polyline": {"Polyvertex"}, "Edge_3": {"Polyvertex"},
+    "Triangle": {"Polyline"}, "Quadrilateral": {"Polyline"}, "Polygon": {"Polyline"},
+    "Tri_6": {"Edge_3"}, "Triangle_6": {"Edge_3"},
+    "Quad_8": {"Edge_3"}, "Quadrilateral_8": {"Edge_3"},
+    "Tetrahedron": {"Triangle"}, "Hexahedron": {"Quadrilateral"},
+    "Wedge": {"Triangle", "Quadrilateral", "Mixed"},
+    "Pyramid": {"Triangle", "Quadrilateral", "Mixed"},
+    "Tet_10": {"Tri_6", "Triangle_6"}, "Tetrahedron_10": {"Tri_6", "Triangle_6"},
+    "Hex_20": {"Quad_8", "Quadrilateral_8"}, "Hexahedron_20": {"Quad_8", "Quadrilateral_8"},
+    "Wedge_15": {"Tri_6", "Triangle_6", "Quad_8", "Quadrilateral_8", "Mixed"},
+    "Pyramid_13": {"Tri_6", "Triangle_6", "Quad_8", "Quadrilateral_8", "Mixed"},
+}
+
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def geometry_order(topology_type: str) -> Optional[int]:
+    """The geometry order a topology type carries: 1 linear, 2 quadratic.
+
+    The order is the type's, never a separate field, so the two cannot
+    disagree: a ``Tet_10`` grid is a quadratic tetrahedral mesh. ``Mixed``
+    has no single order and gives ``None``.
+    """
+    if topology_type not in KNOWN_TOPOLOGY_TYPES:
+        raise YmfArchiveError(
+            f"{topology_type!r} is not a known topology type. "
+            f"Known types: {sorted(KNOWN_TOPOLOGY_TYPES)}")
+    if topology_type == "Mixed":
+        return None
+    return 2 if topology_type in QUADRATIC_EDGES else 1
+
+
+def nodes_per_cell(topology_type: str) -> Optional[int]:
+    """The node count a cell of this type has, or ``None`` where the type does
+    not fix it: ``Polyvertex``, ``Polyline`` and ``Polygon`` (which say so in
+    ``nodes_per_element``), ``Mixed`` and the structured types."""
+    if topology_type not in _VERTICES:
+        return None
+    return _VERTICES[topology_type] + len(QUADRATIC_EDGES.get(topology_type, ()))
+
 
 # XDMF's own documented default for DataItem/@Precision. Faithful to the
 # format rather than to what a solver usually writes -- use data_item_for()
@@ -550,18 +645,81 @@ def geometry(item: Dict[str, Any], *, geometry_type: str = "XYZ") -> Dict[str, A
     return {"type": geometry_type, "data_item": item}
 
 
+def facets(
+    topo: Dict[str, Any],
+    tags: Dict[str, Any],
+    *,
+    view: str = "global",
+) -> Dict[str, Any]:
+    """Describe a grid's tagged facets: boundary faces (or edges, in 2D) and
+    an integer tag on each.
+
+    ``topo`` is a :func:`topology` of the facets, as tuples of the grid's
+    node numbers (a triangle's facets are ``Polyline`` with
+    ``nodes_per_element=2``, a ``Tet_10``'s are ``Tri_6``); ``tags`` is a
+    data item of one integer per facet: 0 untagged, >0 a condition. The
+    names of conditions belong to the specification, not to the mesh.
+    ``view`` is ``"global"`` for a whole mesh, or ``"subdomain"`` for one
+    rank's piece, where -1 marks a face on the interface between ranks
+    (:data:`FACET_VIEWS`). A face per facet, not a tag per node: a node at
+    a corner belongs to two faces that may carry different conditions.
+    """
+    return {"topology": topo, "tags": {"data_item": tags}, "view": view}
+
+
+def provenance(
+    tool: str,
+    *,
+    version: Optional[str] = None,
+    files: Iterable[Dict[str, str]] = (),
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Describe where a grid came from: the tool that made it, its version,
+    and the files it was made from with their SHA-256 checksums.
+
+    ``files`` is a list of ``{"name": ..., "sha256": ...}``;
+    :func:`ymf.mesh.file_provenance` computes the checksums from paths. The
+    tool is free text -- the archive names no tools -- and ``extra`` is a
+    mapping the writer may fill with anything else it wants kept.
+    """
+    block: Dict[str, Any] = {"tool": str(tool)}
+    if version is not None:
+        block["version"] = str(version)
+    block["files"] = [dict(f) for f in files]
+    if extra:
+        block["extra"] = dict(extra)
+    return block
+
+
+def _mesh_keys(facet_list: Optional[Dict[str, Any]],
+               source: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    keys: Dict[str, Any] = {}
+    if facet_list is not None:
+        keys["facets"] = facet_list
+    if source is not None:
+        keys["provenance"] = source
+    return keys
+
+
 def grid(
     topo: Dict[str, Any],
     geom: Dict[str, Any],
     attributes: Optional[Iterable[Dict[str, Any]]] = None,
     *,
     name: Optional[str] = None,
+    facets: Optional[Dict[str, Any]] = None,
+    provenance: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Assemble one uniform grid: connectivity, coordinates, and fields."""
+    """Assemble one uniform grid: connectivity, coordinates, and fields.
+
+    A mesh may also carry its tagged ``facets`` (:func:`facets`) and its
+    ``provenance`` (:func:`provenance`).
+    """
     g: Dict[str, Any] = {"topology": topo, "geometry": geom}
     if name is not None:
         g["name"] = str(name)
     g["attributes"] = list(attributes) if attributes is not None else []
+    g.update(_mesh_keys(facets, provenance))
     return g
 
 
@@ -583,10 +741,16 @@ def uniform_grid(
     topo: Dict[str, Any],
     geom: Dict[str, Any],
     attributes: Optional[Iterable[Dict[str, Any]]] = None,
+    *,
+    facets: Optional[Dict[str, Any]] = None,
+    provenance: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """The value of a space at an instant, as one grid: ``{topology, geometry, attributes}``."""
-    return {"topology": topo, "geometry": geom,
-            "attributes": list(attributes) if attributes is not None else []}
+    """The value of a space at an instant, as one grid: ``{topology, geometry, attributes}``,
+    and for a mesh optionally its ``facets`` and ``provenance`` (see :func:`grid`)."""
+    space = {"topology": topo, "geometry": geom,
+             "attributes": list(attributes) if attributes is not None else []}
+    space.update(_mesh_keys(facets, provenance))
+    return space
 
 
 def spatial_grid(grids: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
@@ -894,6 +1058,55 @@ def _canonicalize_geometry(geom: Dict[str, Any], where: str) -> Dict[str, Any]:
     }
 
 
+def _canonicalize_facets(f: Dict[str, Any], where: str) -> Dict[str, Any]:
+    for key in ("topology", "tags"):
+        if key not in f:
+            raise YmfArchiveError(f"{where}: facets has no {key!r}")
+    if not isinstance(f["tags"], dict) or "data_item" not in f["tags"]:
+        raise YmfArchiveError(f"{where}.tags: must be {{data_item: ...}}")
+    return {
+        "topology": _canonicalize_topology(f["topology"], f"{where}.topology"),
+        "tags": {"data_item": _canonicalize_data_item(
+            f["tags"]["data_item"], f"{where}.tags.data_item")},
+        "view": str(f.get("view", "global")),
+    }
+
+
+def _canonicalize_provenance(p: Dict[str, Any], where: str) -> Dict[str, Any]:
+    if not isinstance(p, dict) or "tool" not in p:
+        raise YmfArchiveError(f"{where}: provenance has no 'tool'")
+    unknown = sorted(set(p) - {"tool", "version", "files", "extra"})
+    if unknown:
+        raise YmfArchiveError(
+            f"{where}: provenance takes tool, version, files and extra, not "
+            f"{', '.join(unknown)}; put anything else under extra")
+    canonical: Dict[str, Any] = {"tool": str(p["tool"])}
+    if p.get("version") is not None:
+        canonical["version"] = str(p["version"])
+    files = []
+    for i, entry in enumerate(p.get("files") or []):
+        if not isinstance(entry, dict) or set(entry) != {"name", "sha256"}:
+            raise YmfArchiveError(
+                f"{where}.files[{i}]: a file is {{name, sha256}}, got {entry!r}")
+        files.append({"name": str(entry["name"]), "sha256": str(entry["sha256"]).lower()})
+    canonical["files"] = files
+    if p.get("extra"):
+        if not isinstance(p["extra"], dict):
+            raise YmfArchiveError(f"{where}.extra: must be a mapping")
+        canonical["extra"] = dict(p["extra"])
+    return canonical
+
+
+def _canonicalize_mesh_keys(src: Dict[str, Any], canonical: Dict[str, Any],
+                            where: str) -> None:
+    """Carry a grid's optional ``facets`` and ``provenance`` into its canonical form."""
+    if "facets" in src:
+        canonical["facets"] = _canonicalize_facets(src["facets"], f"{where}.facets")
+    if "provenance" in src:
+        canonical["provenance"] = _canonicalize_provenance(
+            src["provenance"], f"{where}.provenance")
+
+
 def _canonicalize_grid(g: Dict[str, Any], where: str) -> Dict[str, Any]:
     canonical: Dict[str, Any] = {}
     if "name" in g:
@@ -904,6 +1117,7 @@ def _canonicalize_grid(g: Dict[str, Any], where: str) -> Dict[str, Any]:
         _canonicalize_attribute(a, f"{where}.attributes[{i}]")
         for i, a in enumerate(g.get("attributes", []))
     ]
+    _canonicalize_mesh_keys(g, canonical, where)
     return canonical
 
 
@@ -939,6 +1153,7 @@ def _canonicalize_step(step: Dict[str, Any], where: str) -> Dict[str, Any]:
             _canonicalize_attribute(a, f"{where}.attributes[{i}]")
             for i, a in enumerate(step.get("attributes", []))
         ]
+        _canonicalize_mesh_keys(step, canonical, where)
     return canonical
 
 
@@ -1131,6 +1346,72 @@ def _validate_grid_like(g: Dict[str, Any], where: str) -> None:
             )
         seen[key] = i
         _validate_data_item(attr["data_item"], f"{at}.data_item")
+
+    if "facets" in g:
+        _validate_facets(g, f"{where}.facets")
+    if "provenance" in g:
+        for i, entry in enumerate(g["provenance"]["files"]):
+            if not _SHA256.match(entry["sha256"]):
+                raise YmfArchiveError(
+                    f"{where}.provenance.files[{i}].sha256: {entry['sha256']!r} is "
+                    "not a SHA-256 digest (64 hexadecimal digits)")
+
+
+def _validate_facets(g: Dict[str, Any], where: str) -> None:
+    """The facet list's structure, and its tags where they are inline.
+
+    Tags held in an HDF5 file are not read here (validation stays O(1) per
+    field); :func:`ymf.mesh.check_facets` reads them.
+    """
+    f = g["facets"]
+    cell_type = g["topology"]["type"]
+    facet_topo = f["topology"]
+    allowed = _FACET_TYPES.get(cell_type)
+    if allowed is None and cell_type != "Mixed":
+        raise YmfArchiveError(
+            f"{where}: a {cell_type} grid cannot carry a facet list; facets are "
+            "for unstructured grids")
+    if allowed is not None and facet_topo["type"] not in allowed:
+        raise YmfArchiveError(
+            f"{where}.topology.type: the facets of {cell_type} cells are "
+            f"{' or '.join(sorted(allowed))}, not {facet_topo['type']!r}")
+    if facet_topo["type"] not in KNOWN_TOPOLOGY_TYPES:
+        raise YmfArchiveError(
+            f"{where}.topology.type: {facet_topo['type']!r} is not a known topology type")
+    _validate_data_item(facet_topo["data_item"], f"{where}.topology.data_item")
+    if facet_topo["data_item"]["data_type"] not in _INTEGER_DATA_TYPES:
+        raise YmfArchiveError(f"{where}.topology.data_item: node numbers must be integers")
+    if f["view"] not in FACET_VIEWS:
+        raise YmfArchiveError(
+            f"{where}.view: {f['view']!r} is not one of {sorted(FACET_VIEWS)}")
+    tags = f["tags"]["data_item"]
+    _validate_data_item(tags, f"{where}.tags.data_item")
+    if tags["data_type"] not in ("Int", "UInt"):
+        raise YmfArchiveError(
+            f"{where}.tags.data_item.data_type: tags are integers (Int), not "
+            f"{tags['data_type']!r}")
+    n = facet_topo["number_of_elements"]
+    dims = list(tags["dimensions"])
+    if dims not in ([n], [n, 1]):
+        raise YmfArchiveError(
+            f"{where}.tags.data_item.dimensions: one tag per facet, {[n]}, got {dims}")
+    if "values" in tags:
+        check_facet_tags(tags["values"], f["view"], f"{where}.tags")
+
+
+def check_facet_tags(tags: Iterable[int], view: str, where: str = "facets.tags") -> None:
+    """Refuse facet tags the view cannot hold: below -1 anywhere, and -1 in a
+    global mesh (a rank interface exists only once the mesh is partitioned)."""
+    lowest = min((int(t) for t in tags), default=0)
+    if lowest < -1:
+        raise YmfArchiveError(
+            f"{where}: tag {lowest} is not a tag; 0 is untagged, >0 a condition, "
+            "-1 a rank interface")
+    if lowest == -1 and view == "global":
+        raise YmfArchiveError(
+            f"{where}: tag -1 marks a rank interface, which a global mesh never "
+            "stores; the partitioner (or a per-rank reader) sets it, in a "
+            "subdomain view")
 
 
 def validate_approximation(domain: Dict[str, Any]) -> Dict[str, Any]:
@@ -1506,6 +1787,9 @@ def _data_items(domain: Dict[str, Any]):
                 yield where + "/Geometry", g["geometry"]
                 for a in g["attributes"]:
                     yield "%s/%s/%s" % (where, a.get("center", "Node"), a["name"]), a
+                if "facets" in g:
+                    yield where + "/Facets/Topology", g["facets"]["topology"]
+                    yield where + "/Facets/Tags", g["facets"]["tags"]
 
 
 def step_indices(spec: Any, n: int) -> List[int]:

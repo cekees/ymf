@@ -94,15 +94,21 @@ def normalize_unit_string(unit_str: Optional[str]) -> Optional[str]:
 def to_pint_unit(unit_str: Optional[str]) -> "pint.Unit":
     """Parse a YMF unit string into a :class:`pint.Unit`.
 
-    ``None``, ``""``, and ``"dimensionless"`` all map to pint's dimensionless
-    unit. Raises :class:`UnitParseError` on anything pint can't parse even
+    ``None``, ``""``, ``"dimensionless"`` and a bare number such as ``"1"``
+    (the usual way to write "no units") all map to pint's dimensionless
+    unit; only dimensions are ever compared, so a number's scale is not
+    kept. Raises :class:`UnitParseError` on anything pint can't parse even
     after :func:`normalize_unit_string`.
     """
     if not unit_str or unit_str.strip().lower() == "dimensionless":
         return _UREG.dimensionless
     normalized = normalize_unit_string(unit_str)
     try:
-        return _UREG.parse_expression(normalized).units
+        parsed = _UREG.parse_expression(normalized)
+        if not hasattr(parsed, "units"):
+            # older pint (before 0.25) returns a bare number for "1"
+            return _UREG.dimensionless
+        return parsed.units
     except Exception as exc:  # pint raises several distinct exception types
         raise UnitParseError(
             f"could not parse unit string {unit_str!r} (normalized: {normalized!r}): {exc}"
@@ -295,7 +301,62 @@ def check(doc: Dict[str, Any], missing_units: str = "skip") -> UnitCheckResult:
                 f"are {dimensionality(scale_units)}; state it once with "
                 f"{{derived: true, formula: \"{name}\"}}"))
 
+    _check_state_coefficients_in_scales(problem, strong_form, result)
     return result
+
+
+def _check_state_coefficients_in_scales(problem, strong_form, result) -> None:
+    """A scale or a dimensionless number named after a coefficient that is a
+    function of the state.
+
+    A coefficient may name the unknowns (a density ``ρw (1 - χ) + ρa χ``).
+    It then has no single value, so a ``density: {derived: true, formula:
+    "ρ"}`` scale, or an ``Re`` built on it, cannot be evaluated and would
+    drop out of ``non_dimensionalize`` without a word. Say which, and how to
+    fix it: derive it from a constant coefficient instead.
+    """
+    try:
+        from ymf.symbolic.notation import tokens
+        from ymf.symbolic.problem import state_coefficients
+    except ImportError:            # no sympy: no formulas are read at all
+        return
+    try:
+        dim = _space_dimension(strong_form.get("domain"))
+    except _Undetermined:
+        dim = 3
+    try:
+        state = state_coefficients(strong_form, dim)
+    except Exception:              # an unreadable spec is reported elsewhere
+        return
+    if not state:
+        return
+    formulas = []
+    for name, spec in (problem.get("characteristic_scales") or {}).items():
+        if isinstance(spec, dict) and spec.get("formula"):
+            formulas.append((f"characteristic_scales[{name}]", spec["formula"]))
+    for name, spec in (problem.get("dimensionless_numbers") or {}).items():
+        if isinstance(spec, dict) and spec.get("formula"):
+            formulas.append((f"dimensionless_numbers[{name}]", spec["formula"]))
+    for location, formula in formulas:
+        try:
+            words = [value for kind, value, _ in tokens(str(formula)) if kind == "NAME"]
+        except Exception:
+            continue
+        named = []
+        for word in words:
+            # "ρU" is ρ·U when it is not itself a name, as in the notation
+            parts = [word] if word in state or len(word) == 1 else list(word)
+            named.extend(p for p in parts if p in state and p not in named)
+        for coefficient in named:
+            result.issues.append(UnitIssue(
+                "warning", location,
+                f"coefficients[{coefficient}] depends on the unknowns "
+                f"({', '.join(state[coefficient])}), so this has no value; derive it "
+                f"from a constant coefficient instead"))
+
+
+#: conditions whose g is a value of the variable itself, like dirichlet's
+_VALUE_KINDS = ("slip", "inflow", "characteristic")
 
 
 #: What :func:`check` does with a boundary condition it cannot check for
@@ -437,7 +498,8 @@ def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckRe
 
     ``units`` on a condition is the units of g, its right-hand side.
 
-    - dirichlet, u = g: ``[g] = [u]``.
+    - dirichlet, u = g: ``[g] = [u]``; so too slip (the normal component
+      of u), inflow and characteristic. open has no g.
     - neumann, q.n = g, where q = -a grad u is the diffusive flux of the
       variable's own equation: ``[g] = [a][u]/[L]``.
     - robin, alpha u + beta q.n = g: ``[alpha][u] = [beta][q.n] = [g]``.
@@ -451,8 +513,13 @@ def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckRe
     ymf[symbolic] to read alpha, beta and the equations; without it they
     are undecided too.
     """
-    bcs = [bc for bc in (strong_form.get("boundary_conditions") or [])
-           if bc.get("type") in ("dirichlet", "neumann", "robin")]
+    from ymf.normalize import boundary_conditions
+    try:
+        conditions = boundary_conditions(strong_form)
+    except ValueError:
+        return                         # an undefined set: reported on load
+    bcs = [bc for bc in conditions
+           if bc.get("type") in ("dirichlet", "neumann", "robin") + _VALUE_KINDS]
     if not bcs:
         return
     dims = _Dimensions()
@@ -483,6 +550,8 @@ def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckRe
     for bc in bcs:
         var, kind = bc.get("variable"), bc["type"]
         location = f"boundary_conditions[region={bc.get('region')!r}, variable={var!r}]"
+        if bc.get("set"):
+            location += f" (set {bc['set']})"
         if var not in unknown_dims:
             continue
         try:
@@ -491,7 +560,7 @@ def _check_boundary_conditions(strong_form: Dict[str, Any], result: "UnitCheckRe
             result.issues.append(UnitIssue("error", location, str(exc)))
             continue
         u = unknown_dims[var]
-        if kind == "dirichlet":
+        if kind == "dirichlet" or kind in _VALUE_KINDS:
             verdict = dims.compare(g, u)
             if verdict and verdict[0] == "error":
                 declared = _unknown_units(unknowns, var)
@@ -629,9 +698,10 @@ def _flux_dimension(strong_form, component, names, dims, space, cache):
     if "equations" not in cache:
         residuals = []
         try:
-            for text in strong_form.get("equations") or []:
+            from ymf.normalize import equations_in_order
+            for text in equations_in_order(strong_form):
                 residuals.extend(parse_equation(text, space))
-        except SymbolicError as exc:
+        except (SymbolicError, ValueError) as exc:
             raise _Undetermined(["the equations do not read: %s" % exc])
         cache["equations"] = residuals
     residuals = cache["equations"]

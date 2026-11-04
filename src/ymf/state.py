@@ -65,7 +65,7 @@ def branches(doc: Dict[str, Any]) -> List[Branch]:
     for entry in _discretizations(doc):
         name = entry.get("name")
         try:
-            lacking = lacks(entry)
+            lacking = lacks(entry, closure._domain_of(doc))
         except ValueError as exc:          # an unknown method
             out.append(Branch(name, "well-posed", (str(exc),)))
             continue
@@ -74,7 +74,7 @@ def branches(doc: Dict[str, Any]) -> List[Branch]:
                 "%s is missing %s: %s" % (name, m.what, m.hint) for m in lacking)))
             continue
         planned = tuple(closure.output_key(doc, name, r)
-                        for r in closure.realizations(entry))
+                        for r in closure.realizations(entry, closure._domain_of(doc)))
         owed = tuple(k for k in planned if k not in present)
         if owed:
             out.append(Branch(name, "discretized", (), planned, owed))
