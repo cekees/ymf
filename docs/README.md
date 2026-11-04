@@ -21,6 +21,7 @@ and lands in `design/` with the code that implements it.
 | Note | Status |
 |---|---|
 | [design/time-outside-space.md](design/time-outside-space.md) | **Implemented** 2026-10-26: archive format 2, one list of instants with the spaces inside each. |
+| [design/domains-beyond-box.md](design/domains-beyond-box.md) | **Implemented** 2026-11-04 (C27 Phase 5): boundary regions by tag, periodic on a region whose faces match, `file` and `discrete` domains; decisions D1-D4. |
 
 ## History
 

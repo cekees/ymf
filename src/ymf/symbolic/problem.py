@@ -423,6 +423,26 @@ def _periodic_axes(where, lower, upper, space: Space, region: str) -> List[int]:
     return axes
 
 
+def _geometry_dimension(region: Dict[str, Any]) -> Optional[int]:
+    """A discrete domain's space dimension, from its geometry's type."""
+    kind = ((region.get("geometry") or {}).get("type") or "").upper()
+    return {"XY": 2, "XYZ": 3}.get(kind)
+
+
+def _inline_nodes(region: Dict[str, Any]) -> Optional[List[List[float]]]:
+    """A discrete domain's node coordinates, when its geometry holds them
+    inline (``values``); None when they are in a file (an HDF5 reference),
+    which the solver reads."""
+    item = (region.get("geometry") or {}).get("data_item") or {}
+    values = item.get("values")
+    if not values:
+        return None
+    flat = [float(v) for v in (values if not isinstance(values[0], (list, tuple))
+                               else [c for row in values for c in row])]
+    dim = _geometry_dimension(region) or int((item.get("dimensions") or [0, 3])[-1])
+    return [flat[i:i + dim] for i in range(0, len(flat), dim)]
+
+
 def _frame(doc: Dict[str, Any]):
     """The strong form's setting, before any equation is read.
 
@@ -436,23 +456,31 @@ def _frame(doc: Dict[str, Any]):
     domain = strong["domain"]
     box = box_bounds(domain)
     region = None
-    if box is None and not isinstance(domain, str) and domain.get("kind") == "file":
+    if box is None and not isinstance(domain, str) and domain.get("kind") in ("file",
+                                                                              "discrete"):
         # someone else's language, which the solver reads (or meshes, a
         # geometry): carried whole. Its bounds set the boundary tolerance's
         # scale; without them the solver takes them from the mesh, so that
         # posing follows meshing for this kind alone (cekees, D2).
+        # A discrete domain is a mesh already (C7.1: a mesh is a type of
+        # domain), solved as it stands; its bounds are its nodes' (D4), when
+        # they are in the document, and the solver's to take otherwise.
         from ymf.closure import plain
         region = plain(domain)
         bounds = region.get("bounds")
+        nodes = _inline_nodes(region) if region["kind"] == "discrete" else None
+        if bounds is None and nodes:
+            bounds = {"lower": [min(c) for c in zip(*nodes)],
+                      "upper": [max(c) for c in zip(*nodes)]}
         if bounds is not None:
             box = [[float(c) for c in bounds["lower"]], [float(c) for c in bounds["upper"]]]
             dim = len(box[0])
-        elif region.get("dimension"):
-            dim = int(region["dimension"])
+        elif region.get("dimension") or _geometry_dimension(region):
+            dim = int(region.get("dimension") or _geometry_dimension(region))
         else:
-            raise SymbolicError("strong_form.domain: a file domain gives its bounds, or at "
+            raise SymbolicError("strong_form.domain: a %s domain gives its bounds, or at "
                                 "least its dimension, so the problem can be posed before "
-                                "the mesh is read")
+                                "the mesh is read" % (region["kind"],))
         if not strong.get("equations"):
             raise SymbolicError("strong_form.equations is needed to run a spec")
         ranks = {}
@@ -577,9 +605,10 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                     "so the region needs where:, not tags:" % (bc["region"],))
             if region is not None and region.get("kind") != "piecewise_linear":
                 raise SymbolicError(
-                    "periodic condition on %s: a %s domain cannot be periodic (Gmsh's "
-                    "Periodic constraint is not carried); a box or a piecewise_linear "
-                    "region whose faces match can" % (bc["region"], region.get("kind")))
+                    "periodic condition on %s: a %s domain cannot be periodic (a mesh's "
+                    "periodic pairing, or Gmsh's Periodic constraint, is not carried); a "
+                    "box or a piecewise_linear region whose faces match can"
+                    % (bc["region"], region.get("kind")))
             axes = _periodic_axes(where, lower, upper, space, bc["region"])
             if region is not None:
                 periodic_faces_match(region, axes, lower, upper, bc["region"])

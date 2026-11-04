@@ -7,6 +7,13 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-04: `discrete` domains are posed (D4).** A mesh as ymf stores
+  one (`topology`, `geometry`, and the tagged `facets` and `provenance` of
+  cekees/ymf#6) is a domain: `adr_problem` poses it whole, with bounds from
+  its inline nodes (or `bounds`, or the solver's, for nodes in a file), its
+  boundary regions by facet tag and `mesh: {levels}` only; periodic is
+  refused. The design note, decided 2026-11-04, lands as
+  `docs/design/domains-beyond-box.md`.
 - **2026-11-04: `file` domains are posed (D2, D3).** `adr_problem` carries
   a file domain whole (`domain.region`) for the solver to read. Optional
   `bounds: {lower, upper}` set the box; without them `lower` and `upper`

@@ -66,7 +66,9 @@ DOMAIN_KINDS: Dict[str, Dict[str, Set[str]]] = {
     },
     "discrete": {
         "required": {"topology", "geometry"},
-        "optional": set(),
+        # a mesh as ymf stores one (ymf.mesh, C7.1): its tagged facets, its
+        # provenance, its attributes; and bounds, for nodes held in a file
+        "optional": {"facets", "provenance", "attributes", "bounds"},
     },
     "file": {
         "required": {"format", "path"},

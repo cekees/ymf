@@ -540,8 +540,16 @@ optional: it sets the scale of the boundary tolerance, and without it the
 solver takes the bounds from the mesh, so for this kind alone posing
 follows meshing; the dimension must then be given. A file's boundary
 regions are naturally its boundary tags. A file domain cannot be periodic
-(Gmsh's `Periodic` constraint is not carried). `discrete` domains validate
-and are carried, and
+(Gmsh's `Periodic` constraint is not carried).
+
+A `discrete` domain is a mesh as ymf stores one (`topology`, `geometry`, and
+optionally tagged `facets` and `provenance`; see `ymf.mesh`): a mesh is a
+type of domain. It is posed whole, like a file. Its bounds are its nodes'
+when the geometry holds them inline; when they are in an HDF5 file the
+solver takes them, or `bounds` gives them, and the dimension comes from the
+geometry's type (`XY`, `XYZ`). Its boundary regions are its facets' tags, a
+discretization gives `mesh: {levels}` only, and it cannot be periodic. The
+design is [design/domains-beyond-box.md](design/domains-beyond-box.md).
 
 **Boundary regions by position or by tag.** A region is named by `where`, a
 predicate on the point that holds on any mesh of the domain, or by `tags`,
@@ -1120,8 +1128,9 @@ These are real limitations of the current schema and code, recorded here so
 nobody has to rediscover them. Gaps that have been closed, and how, are in
 [changes.md](changes.md).
 
-- **`discrete` domains are carried, not solved.** A domain of any kind
-  validates; `adr_problem` refuses `discrete`, saying so.
+- **A solver may not read every domain kind yet.** ymf poses all four;
+  Proteus reads `discrete` domains once cekees/proteus#186 lands, and takes
+  the bounds of a bounds-free file only from tetgen, 2dm and 3dm files.
 - **Periodic conditions only along the axes.** A periodic region names
   two faces of the domain's bounding box, on a box or on a region whose two
   faces match; a rotation, or a shift that is not along an axis, is not
