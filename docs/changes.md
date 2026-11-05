@@ -7,6 +7,17 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-05: a mesh records its fingerprint; a discrete domain loads from
+  a spec file.** cekees, 2026-11-05 (C7.1 round 2): store the mesh's
+  fingerprint in the archive so a restart or a gauge can check the mesh
+  before reading. `provenance(..., fingerprint=)` records `{method:
+  ymf-mesh-1, sha256}`; `ymf.mesh.fingerprint`, `grid_fingerprint` and
+  `check_fingerprint` define and check it (bytes in `archive-format.md`).
+  Two gaps proteus found posing a `discrete` domain from a spec file: the
+  strict schema now takes `attributes` and `provenance` on it (`ymf.domain`
+  already did), and its inline arrays, which strictyaml reads as text, are
+  typed by each item's `data_type` on load (`ymf.domain.type_discrete_block`);
+  the archive itself still refuses text where it expects a number.
 - **2026-11-04: aliases expand into the abstract forms, and closure records
   the expansion.** cekees's review note: `slip`, `open`, `inflow`,
   `characteristic` and condition sets had their meaning only in code

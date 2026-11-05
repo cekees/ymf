@@ -1158,8 +1158,9 @@ nobody has to rediscover them. Gaps that have been closed, and how, are in
 [changes.md](changes.md).
 
 - **A solver may not read every domain kind yet.** ymf poses all four;
-  Proteus reads `discrete` domains once cekees/proteus#186 lands, and takes
-  the bounds of a bounds-free file only from tetgen, 2dm and 3dm files.
+  Proteus reads `discrete` domains of triangles or tetrahedra (in memory,
+  cekees/proteus#200), and takes the bounds of a bounds-free file only from
+  tetgen, 2dm and 3dm files.
 - **Periodic conditions only along the axes.** A periodic region names
   two faces of the domain's bounding box, on a box or on a region whose two
   faces match; a rotation, or a shift that is not along an axis, is not

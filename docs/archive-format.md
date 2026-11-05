@@ -418,6 +418,7 @@ provenance:
   tool: a mesh converter              # free text: the archive names no tools
   version: '0.1'
   files: [{name: square.msh, sha256: 3f5a...}]
+  fingerprint: {method: ymf-mesh-1, sha256: 4631...}   # of the mesh itself
   extra: {...}                        # anything else the writer keeps
 ```
 
@@ -442,6 +443,20 @@ facet a face of some cell.
 each source file's name and SHA-256 (`ymf.mesh.file_provenance(tool, paths)`
 computes them), so a reader can tell whether the mesh still matches the
 files beside it. It takes no other keys; `extra` holds the rest.
+
+**The fingerprint** identifies the mesh itself: `ymf.mesh.fingerprint(nodes,
+cells)` is the SHA-256 of its coordinates (float64, three columns) and its
+cells' node numbers (int64), in the input order, with the shapes and a tag
+naming the method (`ymf-mesh-1`, recorded beside the digest so a later
+definition can be told apart). A writer that stores the rows in another
+order -- a partitioned run writing each rank's rows contiguously -- records
+the digest of the input order, so it does not depend on the rank count. A
+reader that is about to read data on a mesh (a restart, a gauge) recomputes
+it: `ymf.mesh.check_fingerprint(grid, base_dir, digest=None)` returns the
+recorded digest, None when there is none, and raises when the grid holds
+another mesh; `digest` is the input-order digest the caller computed when the
+rows are permuted. Coordinates are hashed exactly: the digest identifies
+these numbers, not a mesh up to round-off.
 
 **Geometry order is the cell type's.** `Tri_6` is a quadratic triangle and
 `Tet_10` a quadratic tetrahedron; there is no separate order field to

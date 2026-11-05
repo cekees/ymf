@@ -100,3 +100,34 @@ def test_a_discrete_domain_is_not_periodic():
                                           "type": "periodic"})
     with pytest.raises(SymbolicError, match="a discrete domain cannot be periodic"):
         adr_problem(doc)
+
+
+# --------------------------------------------------------------------------
+# a discrete domain written in a spec file (C7.1 round 2, two gaps proteus found)
+# --------------------------------------------------------------------------
+
+
+def test_a_mesh_inline_in_a_spec_file_loads_with_its_numbers_and_attributes(tmp_path):
+    """strictyaml reads the mesh's keys as Any, so its scalars came back as text, which the archive refuses;
+    and the schema had no attributes (ymf.domain allows them) or provenance."""
+    from ymf.archive import validate_approximation
+    from ymf.domain import type_discrete_block
+    doc = _on(dict(SQUARE, attributes=[{
+        "name": "elementMaterialTypes", "attribute_type": "Scalar", "center": "Cell",
+        "data_item": _item([1, 2], [2], "Int")}], provenance={"tool": "hand", "files": []}), {"levels": 1})
+    import yaml
+    path = tmp_path / "square.ymf"
+    path.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False, default_flow_style=False),
+                    encoding="utf-8")
+    loaded = load_ymf(path)["model"]["strong_form"]["domain"]
+    assert loaded["topology"]["data_item"]["values"] == [0, 1, 2, 0, 2, 3]
+    assert loaded["geometry"]["data_item"]["values"] == [0.0, 0.0, 2.0, 0.0, 2.0, 1.0, 0.0, 1.0]
+    assert loaded["geometry"]["data_item"]["dimensions"] == [4, 2]
+    assert loaded["attributes"][0]["data_item"]["values"] == [1, 2]
+    grid = dict((k, loaded[k]) for k in ("topology", "geometry", "attributes", "facets"))
+    validate_approximation({"times": [{"time": 0.0, "spaces": {"mesh": grid}}]})
+    with pytest.raises(Exception, match="is not a number"):
+        type_discrete_block({"kind": "discrete", "geometry": {"data_item": {"values": ["x"]}}})
+    with pytest.raises(Exception, match="is not an integer"):
+        type_discrete_block({"kind": "discrete", "topology": {"data_item": {
+            "data_type": "Int", "values": ["1.5"]}}})
