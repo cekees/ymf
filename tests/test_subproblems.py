@@ -119,7 +119,13 @@ SPLIT = ("solution_paths", "discretizations", ("level_set_five",))
     (_set(SPLIT + ("binds",), {"g": {"value": 1.0}}),
      "g is already a name in the model"),
     (_set(SPLIT + ("regularize",), {"sqrt": {"by": "smooth"}}),
-     "only the sharp functions heaviside, sign are regularized"),
+     "only heaviside, sign, inverse are regularized"),
+    (_set(SPLIT + ("regularize",), {"inverse": {"by": "wet_dry_cutoff", "width": "h"}}),
+     "say which unknown's reciprocal"),
+    (_set(SPLIT + ("regularize",), {"inverse": {"by": "wet_dry_cutoff", "of": "ρ", "width": "h"}}),
+     "names 'ρ', which is not an unknown"),
+    (_set(SPLIT + ("regularize",), {"heaviside": {"by": "smoothed_heaviside", "of": "φ"}}),
+     "of is for inverse alone"),
 ])
 def test_a_split_that_does_not_add_up_is_refused(dambreak, change, message):
     with pytest.raises(YmfReferenceError, match=message):

@@ -57,8 +57,11 @@ def test_shallow_water_is_one_adr_system(lake):
     swe = _swe(lake)
     assert swe["unknowns"] == {"h": ["h"], "q": ["q_0", "q_1"]}
     momentum = _equation(swe, "q_0")
-    assert momentum["advection"]["f"][0] == "4.905*h**2 + 1.0*q_0**2/h"
-    assert "q_0*numpy.sqrt(q_0**2 + q_1**2)/h**(7/3)" in momentum["reaction"]["r"]
+    # 1/h read through SW2DCV's one_over_hReg (the numerics' inverse cutoff)
+    assert momentum["advection"]["f"][0] == \
+        "4.905*h**2 + 2.0*h*q_0**2/(h**2 + numpy.maximum(h, hε)**2)"
+    assert "q_0*numpy.sqrt(q_0**2 + q_1**2)/(h**2 + numpy.maximum(h, hε)**2)**(7/3)" in \
+        momentum["reaction"]["r"]
     assert swe["coefficients"]["τb"]["depends_on"] == {
         "h": "nonlinear", "q_0": "nonlinear", "q_1": "nonlinear"}
     # the wall set's slip, expanded: q.n = 0 and no tangential traction
@@ -87,13 +90,15 @@ def test_the_bed_kink_is_not_regularized(lake):
     """Only sharp functions as written are smoothed; the bump's max gives a
     bounded step in ∇Z, which is left as it is."""
     swe = _swe(lake)
-    assert "regularized" not in swe
+    assert set(swe["regularized"]) == {"inverse"}      # no heaviside: none is written
     assert "[0,1/2,1]" in _equation(swe, "q_0")["reaction"]["r"]
 
 
 def test_the_torino_canopy(torino):
     swe = _swe(torino)
-    assert swe["regularized"] == {"heaviside": {"by": "smoothed_heaviside", "width": "he"}}
+    assert swe["regularized"] == {
+        "heaviside": {"by": "smoothed_heaviside", "width": "he"},
+        "inverse": {"by": "wet_dry_cutoff", "width": "hε", "of": "h"}}
     porosity = 1 - 194.0 * math.pi * 0.006 ** 2 / 4
     mass = _equation(swe, "h")["mass"]["m"]
     assert math.isclose(_evaluate(mass, h=1.0, x=7.0, he=0.0725), porosity, rel_tol=1e-12)
@@ -111,9 +116,24 @@ def test_the_torino_drag_is_the_decks_froude_law(torino):
     beta = 1.0 * min(1.0, 0.9 * fr ** -0.8) * 194.0 * 0.006 / 2
     expected = beta * abs(q0) / h * q0
     fd = swe["coefficients"]["Fd"]["code"][0]
-    assert math.isclose(_evaluate(fd, h=h, q_0=q0, q_1=0.0, x=x, he=0.0725), expected,
+    # the cutoff is exact where the depth is above it
+    assert math.isclose(_evaluate(fd, h=h, q_0=q0, q_1=0.0, x=x, he=0.0725, hε=1e-5), expected,
                         rel_tol=1e-12)
-    assert _evaluate(fd, h=h, q_0=q0, q_1=0.0, x=2.0, he=0.0725) == 0.0   # outside
+    assert _evaluate(fd, h=h, q_0=q0, q_1=0.0, x=2.0, he=0.0725, hε=1e-5) == 0.0   # outside
+
+
+def test_a_dry_node_has_bounded_fluxes(lake):
+    """SW2DCV's one_over_hReg: 1/h above hε, 2h/(h² + hε²) below, 0 at h = 0,
+    so q⊗q/h stays bounded as the depth vanishes."""
+    flux = _equation(_swe(lake), "q_0")["advection"]["f"][0]
+    eps = 1e-5
+    for h in (1.0, 2 * eps, eps):
+        assert math.isclose(_evaluate(flux, h=h, q_0=0.3, hε=eps), 4.905 * h ** 2 + 0.09 / h,
+                            rel_tol=1e-12)
+    h = eps / 4
+    assert math.isclose(_evaluate(flux, h=h, q_0=0.3, hε=eps),
+                        4.905 * h ** 2 + 0.09 * 2 * h / (h ** 2 + eps ** 2), rel_tol=1e-12)
+    assert _evaluate(flux, h=0.0, q_0=0.3, hε=eps) == 0.0
 
 
 def test_both_cases_pass_the_unit_check(lake, torino):

@@ -410,8 +410,25 @@ with an unknown.
 under `coefficients` -- its code, what it depends on, and its derivative
 in each unknown (`sharp: true` and no derivative for `heaviside` or `sign`
 of an unknown) -- so a code generator can emit `ρ` once as a function of
-the state rather than its expansion in every term. A problem with no such
-coefficient has no `coefficients` key and reads exactly as before.
+the state rather than its expansion in every term. Each also has its
+`inline` code -- its formula over the state, constants substituted, other
+coefficients of the state kept by name (`uses`) -- and the problem gains
+`named`: the `order` to evaluate those coefficients in (each names only
+earlier ones) and the ADR form's slot values over the names (`m: v_0*ρ`,
+`a: [2*μ, μ]`). The equations are read a second time for it, with each
+coefficient of the state a known field, so a gradient of one is kept (as
+`grad_ρ_0`) rather than lost as a constant's. The derivatives and
+`depends_on` are only in the substituted form, which is exact; in `named` a
+name is held fixed. A problem with no such coefficient has neither key and
+reads exactly as before.
+
+A closed spec (an archive) names them too: closure writes each coefficient
+of the state in the map form with `depends_on`, the unknowns it follows,
+directly or through another coefficient (`ρ: {formula: "ρw (1 − χ) + ρa χ",
+depends_on: [φ]}`). It is read from the formulas' text (`ymf.names`, no
+sympy, so every environment closes a spec alike), checked on load (a
+`depends_on` that is not what the formula says is refused), and does not
+count towards an output's key: the formula it comes from already does.
 
 Tensors follow the continuum-mechanics convention `grad(v)[i, j] =
 ∂v_j/∂x_i`, so `v·∇v` is (v·∇)v and `∇·(μ∇v)` is the vector Laplacian.
@@ -770,7 +787,14 @@ previous step left it, or as an earlier sub-problem of this step left it
 `solver` refines the entry's, which stays required as the default.
 `binds` names the symbols the discretization supplies and the model may not
 use (the element size, a smoothing width), and `regularize` the sharp
-functions it replaces with smooth ones (`heaviside`, `sign`).
+functions it replaces with smooth ones (`heaviside`, `sign`), and the
+reciprocal of an unknown that may vanish: `inverse: {by: wet_dry_cutoff,
+of: h, width: hε}` reads every negative power of the depth `h` (`q⊗q/h`,
+Manning's `h^(-7/3)`) through Proteus SW2DCV's `one_over_hReg`,
+`2h/(h² + max(h, hε)²)`, which is `1/h` wherever `h ≥ hε` and 0 at `h = 0`.
+It is applied before anything is differentiated, so the derivatives are the
+regularized expression's; `of` must name a scalar unknown the sub-problem
+solves for.
 
 Checked on load: sub-problem names are unique; every model equation is
 solved by exactly one sub-problem; every name a sub-problem uses (an
@@ -783,8 +807,21 @@ A sub-problem may give an `equation` of its own, `for` the unknown it
 determines (by default the one it introduces); a lag with `of` reads a
 copy of a field under a name of its own (redistancing reads `φs`, the
 level set before it changes `φ`); and a sub-problem's own `regularize`
-replaces the entry's (redistancing smooths its sign over `0.75 h`, the
-rest their Heaviside over `1.5 h`).
+replaces the entry's for the functions it names (redistancing smooths its
+sign over `0.75 h`, the rest their Heaviside over `1.5 h`).
+
+**A closed spec writes the split out.** What the rules above leave implicit
+is written into each sub-problem when a spec is closed (`ymf.explicit`,
+for the reason the boundary-condition aliases are expanded: two readers
+must not close one spec differently): its `for` (the unknown it
+introduces, when it gives an equation and no `for`); its `solver`, the
+entry's refined by its own; its `regularize`, the entry's with its own
+replacing function by function; and every lag as `{of, via, at,
+carried_by}`, where `carried_by` names the introduced unknown a lagged
+coefficient is read as (`χ: {via: vof, at: previous_step, carried_by:
+χh}`). A `carried_by` that is not the carrier is refused on load. Written
+out or not, the split classifies the same (`split_problem` gives equal
+results for both) and keys its outputs alike.
 
 **Each sub-problem is classified on its own.** `adr_problem` reads a model
 as one system, which this one is not (`v·∇φ` is a Hamiltonian in another
@@ -798,7 +835,9 @@ says so), which the plain data names (`v_0`) and whose gradient it names
 substituted, and the sharp functions are smoothed as Proteus smooths them:
 `heaviside` becomes `gf.H` of `equivalent_polynomials.h`, whose derivative
 is its `gf.D`, and `sign` becomes `2 H_ε − 1`. Each sub-problem also
-carries what it reads and when, its named coefficients, the
+carries what it reads and when, its coefficients of the state by name
+(with `inline` code and its ADR form over them in `named`, as for
+`adr_problem`), the
 regularizations it used, an introduced unknown's initial condition, its
 effective solver, and its **boundary conditions**: those on the unknowns it
 solves for, and those on a coefficient its introduced unknown carries
