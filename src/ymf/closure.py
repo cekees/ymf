@@ -163,13 +163,15 @@ def input_slice(doc: Dict[str, Any], discretization: str,
                 realization: Dict[str, Any]) -> Dict[str, Any]:
     """The part of the input one output depends on (see the module docstring).
 
-    Taken from the document with its boundary-condition aliases and condition
-    sets expanded (ymf.conditions): what is solved is the expansion, so a
-    spec and the archive it closes into, which holds the expansion, key
-    their outputs alike; a spec with no shorthand is unchanged by it.
+    Taken from the document as a closed spec records it (ymf.explicit: the
+    boundary-condition aliases and condition sets expanded, the sub-problems
+    written out), so a spec and the archive it closes into key their outputs
+    alike; a spec with no shorthand is unchanged by it. What closure derives
+    from the input alone (a coefficient's ``depends_on``) is left out: the
+    formula it is read from is in the slice already.
     """
-    from ymf.conditions import expand
-    doc = expand(doc)
+    from ymf.explicit import explicit, without_derived
+    doc = without_derived(explicit(doc))
     paths = doc.get("solution_paths") or {}
     entry = _discretization(doc, discretization)
     return plain({
@@ -320,13 +322,15 @@ def archive_stem(path: str | Path) -> str:
 def write(path: str | Path, spec: Dict[str, Any], outputs: Dict[str, Any]) -> None:
     """Write an archive: ``ymf:``, its ``ymf_state``, the realized spec, then
     ``outputs``. The state is the one the archive reaches (see ymf.state),
-    whatever its input declared. The realized spec has its boundary-condition
-    aliases and condition sets expanded (ymf.conditions)."""
-    from ymf.conditions import expand
+    whatever its input declared. The realized spec is written out
+    (ymf.explicit): boundary-condition aliases and condition sets expanded,
+    the coefficients of the state named with what they follow, every
+    sub-problem with its solver, regularization and lags in full."""
+    from ymf.explicit import explicit
     from ymf.state import reached
-    # the closure records what was solved: the conditions expanded, each
-    # with the alias and the set it came from (ymf.conditions)
-    document = dict(plain(expand(spec)))
+    # the closure records what was solved, with nothing left to a reader's
+    # defaults (ymf.explicit)
+    document = dict(plain(explicit(spec)))
     document.pop("outputs", None)
     document.pop("ymf_state", None)
     document.pop("generated", None)     # it describes the input file, not this one

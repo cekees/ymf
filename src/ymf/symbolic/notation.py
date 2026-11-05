@@ -47,84 +47,13 @@ usable on later lines (``λ = Re/2 - sqrt(Re²/4 + 4π²)``).
 from __future__ import annotations
 
 import re
-import unicodedata
 from typing import Any, Dict, List, Optional, Tuple
 
 import sympy
 
+from ymf.names import _SUPERSCRIPTS, NotationError, tokens
+
 __all__ = ["NotationError", "Parser", "tokens"]
-
-
-class NotationError(ValueError):
-    """A string in a spec does not follow the notation."""
-
-
-_SUPERSCRIPTS = {"²": 2, "³": 3, "⁴": 4}
-_ALIASES = {"−": "-", "⋅": "·", "∙": "·", "–": "-", "∆": "Δ"}
-_OPERATORS = ["**", "^", "+", "-", "*", "/", "(", ")", "[", "]", ",", "=",
-              "·", "⊗", "∇", "Δ", "∂", "×", "∈", ";"] + list(_SUPERSCRIPTS)
-_NUMBER = re.compile(r"\d+(\.\d*)?([eE][+-]?\d+)?|\.\d+([eE][+-]?\d+)?")
-
-
-def _is_letter(ch: str) -> bool:
-    # Δ is a Greek capital letter to Unicode, but here it is the Laplacian
-    return ch != "Δ" and (ch == "_" or unicodedata.category(ch).startswith("L"))
-
-
-def tokens(text: str) -> List[Tuple[str, str, int]]:
-    """(kind, value, position) for each token; kinds NUM, NAME, OP, NL."""
-    out = []
-    i = 0
-    while i < len(text):
-        ch = _ALIASES.get(text[i], text[i])
-        if ch == "\n":
-            out.append(("NL", "\n", i)); i += 1; continue
-        if ch.isspace():
-            i += 1; continue
-        m = _NUMBER.match(text, i)
-        if m and (ch in "0123456789" or ch == "."):
-            out.append(("NUM", m.group(0), i)); i = m.end(); continue
-        if _is_letter(ch):
-            j = i + 1
-            # ASCII digits only: '²'.isdigit() is True, and ² is an operator
-            while j < len(text) and (_is_letter(text[j]) or text[j] in "0123456789"):
-                j += 1
-            out.append(("NAME", text[i:j], i)); i = j; continue
-        for op in _OPERATORS:
-            if text.startswith(op, i) or ch == op:
-                out.append(("OP", op if text.startswith(op, i) else ch, i))
-                i += len(op) if text.startswith(op, i) else 1
-                break
-        else:
-            # The `else` of the `for` above: no operator matched.
-            if _SUBSCRIPTS_START <= ch <= _SUBSCRIPTS_END:
-                # The superscripts ² ³ ⁴ are powers, so a subscript looks as
-                # if it ought to work too. It does not, and the fix is to
-                # spell the index into the name and declare it.
-                run = ch
-                while i + len(run) < len(text) and \
-                        _SUBSCRIPTS_START <= text[i + len(run)] <= _SUBSCRIPTS_END:
-                    run += text[i + len(run)]
-                stem = out[-1][1] if out and out[-1][0] == "NAME" else ""
-                plain = "".join(_SUBSCRIPT_PLAIN.get(c, c) for c in run)
-                raise NotationError(
-                    "%r at %d in %r is a subscript, and the notation has none; "
-                    "write %r and declare it (a coefficient or an unknown)"
-                    % (run, i, text, stem + plain))
-            raise NotationError("unexpected character %r at %d in %r" % (text[i], i, text))
-    return out
-
-
-#: Unicode subscripts, which the notation does not have. Reported on their
-#: own rather than as "unexpected character", because the superscripts
-#: ² ³ ⁴ *are* notation (powers), so a subscript is a reasonable guess.
-_SUBSCRIPTS_START, _SUBSCRIPTS_END = "\u2080", "\u209c"
-_SUBSCRIPT_PLAIN = {chr(0x2080 + d): str(d) for d in range(10)}
-_SUBSCRIPT_PLAIN.update({
-    "\u2090": "a", "\u2091": "e", "\u2092": "o", "\u2093": "x",
-    "\u2095": "h", "\u2096": "k", "\u2097": "l", "\u2098": "m",
-    "\u2099": "n", "\u209a": "p", "\u209b": "s", "\u209c": "t",
-})
 
 #: words that join predicates; never names, never implicit factors
 _KEYWORDS = {"and", "or", "in"}
