@@ -410,8 +410,17 @@ with an unknown.
 under `coefficients` -- its code, what it depends on, and its derivative
 in each unknown (`sharp: true` and no derivative for `heaviside` or `sign`
 of an unknown) -- so a code generator can emit `ρ` once as a function of
-the state rather than its expansion in every term. A problem with no such
-coefficient has no `coefficients` key and reads exactly as before.
+the state rather than its expansion in every term. Each also has its
+`inline` code -- its formula over the state, constants substituted, other
+coefficients of the state kept by name (`uses`) -- and the problem gains
+`named`: the `order` to evaluate those coefficients in (each names only
+earlier ones) and the ADR form's slot values over the names (`m: v_0*ρ`,
+`a: [2*μ, μ]`). The equations are read a second time for it, with each
+coefficient of the state a known field, so a gradient of one is kept (as
+`grad_ρ_0`) rather than lost as a constant's. The derivatives and
+`depends_on` are only in the substituted form, which is exact; in `named` a
+name is held fixed. A problem with no such coefficient has neither key and
+reads exactly as before.
 
 A closed spec (an archive) names them too: closure writes each coefficient
 of the state in the map form with `depends_on`, the unknowns it follows,
@@ -819,7 +828,9 @@ says so), which the plain data names (`v_0`) and whose gradient it names
 substituted, and the sharp functions are smoothed as Proteus smooths them:
 `heaviside` becomes `gf.H` of `equivalent_polynomials.h`, whose derivative
 is its `gf.D`, and `sign` becomes `2 H_ε − 1`. Each sub-problem also
-carries what it reads and when, its named coefficients, the
+carries what it reads and when, its coefficients of the state by name
+(with `inline` code and its ADR form over them in `named`, as for
+`adr_problem`), the
 regularizations it used, an introduced unknown's initial condition, its
 effective solver, and its **boundary conditions**: those on the unknowns it
 solves for, and those on a coefficient its introduced unknown carries

@@ -83,7 +83,8 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
         raise SymbolicError(str(exc)) from exc
     from ymf.discretizations import subproblem_solver
     from ymf.normalize import normalize_equations
-    from ymf.symbolic.problem import _coefficients, _frame, _state_coefficient_data
+    from ymf.symbolic.problem import (_coefficients, _frame, _named_form,
+                                      _state_coefficient_data)
     entries = (doc.get("solution_paths") or {}).get("discretizations") or []
     entry = next((d for d in entries if d.get("name") == discretization), None)
     if entry is None:
@@ -212,7 +213,15 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
         named = _state_coefficient_data(
             {k: v for k, v in values.items() if k in spec and k in used}, space)
         if named:
+            # by name too: each one inline over the state, and the
+            # sub-problem's ADR form over those names (problem._named_form)
+            state = [c for c in spec if c in named]
+            form, inline = _named_form([t for _, t in texts], spec, values, state, dim,
+                                       own, fields, supplied, functions, preset)
+            for name, extra in inline.items():
+                named[name].update(extra)
             record["coefficients"] = named
+            record["named"] = form
         if sub.get("initial_condition"):
             record["initial"] = _initial(sub, own, ranks, values, functions, dim, where)
         if sharp:

@@ -7,6 +7,15 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-05: the plain data keeps a coefficient of the state by name
+  (C42 round 2).** § 7 of the model-family note: substitution is enough for
+  a runner, but the generator (C19) and the dispatcher want `ρ` as one
+  inline function of the state. `adr_problem` and `split_problem` now give
+  each coefficient of the state its `inline` code and `uses`, and `named`
+  (`order` and the slot values over the names) beside the substituted
+  `adr`. Additive, and absent without coefficients of the state; an archive
+  Proteus wrote for such a spec before this reports "the ADR form differs"
+  under `--check`, because `ymf_run` records the whole `adr_problem`.
 - **2026-11-05: closure writes out the split and names the coefficients of
   the state (C42 round 2).** The same reasoning as the alias expansion: a
   closed dam break said `φ: previous_step` and left the sub-problems'

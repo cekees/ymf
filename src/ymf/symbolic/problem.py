@@ -721,6 +721,17 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
         # slot. Absent when there are none, so a problem without them reads
         # exactly as before.
         out["coefficients"] = named
+        # and the problem over those names: rho once, m = rho*v_0 in the
+        # mass, for the generator and the dispatcher (C42 round 2)
+        from ymf.normalize import equations_in_order
+        state = [c for c in (strong.get("coefficients") or {}) if c in named]
+        form, inline = _named_form(equations_in_order(strong),
+                                   strong.get("coefficients") or {}, coefficients, state,
+                                   space.dim, ranks,
+                                   hamiltonian_gradients=hamiltonian_gradients)
+        for name, record in inline.items():
+            named[name].update(record)
+        out["named"] = form
     return out
 
 
@@ -765,6 +776,103 @@ def _state_coefficient_data(coefficients, space: Space) -> Dict[str, Any]:
             record["sharp"] = True
         out[name] = record
     return out
+
+
+#: the keys of an ADR slot that hold its value (its derivatives and flags
+#: are the substituted form's, see _named_form)
+_VALUE_KEYS = {"mass": ("m",), "advection": ("f",), "reaction": ("r",),
+               "hamiltonian": ("H",)}
+
+
+def _values_only(adr: Dict[str, Any]) -> Dict[str, Any]:
+    """An ADR form with each slot's value and nothing else."""
+    out = []
+    for entry in adr["equations"]:
+        kept: Dict[str, Any] = {"component": entry["component"]}
+        for slot, keys in _VALUE_KEYS.items():
+            if slot in entry:
+                kept[slot] = {k: entry[slot][k] for k in keys}
+        if "diffusion" in entry:
+            kept["diffusion"] = {phi: {k: d[k] for k in ("rowptr", "colind", "a")}
+                                 for phi, d in entry["diffusion"].items()}
+        out.append(kept)
+    return {"dim": adr["dim"], "components": adr["components"], "equations": out}
+
+
+def _named_form(texts: Sequence[str], spec: Dict[str, Any], values: Dict[str, Any],
+                state: Sequence[str], dim: int, unknowns: Dict[str, int],
+                fields: Optional[Dict[str, int]] = None,
+                parameters: Sequence[sympy.Symbol] = (),
+                functions: Optional[Dict[str, Any]] = None,
+                preset: Optional[Dict[str, Any]] = None,
+                hamiltonian_gradients=()) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """The problem with each coefficient of the state kept by name.
+
+    The ADR form substitutes ``ρ = ρw (1 − χ) + ρa χ`` into every slot; a
+    kernel generator wants ``m = ρ v`` and ``ρ`` once, as an inline function
+    of the state. So the equations are read a second time with each
+    coefficient of the state a known field (so ``∇ρ`` is not lost, as it
+    would be for a constant), and each coefficient's own formula with the
+    others likewise. Returns ``(named, inline)``:
+
+    * ``named``: ``{"order": [...], "equations": [...]}``, the coefficients
+      of the state in an order in which each names only earlier ones, and
+      the ADR form's slot values (``m``, ``f``, ``a``, ``r``, ``H``) over
+      those names. The derivatives and ``depends_on`` are the substituted
+      form's (``adr``), which are exact: here a name is held fixed.
+    * ``inline``: ``{coefficient: {"inline": code, "uses": [...]}}``, its
+      formula over the unknowns, the fields it reads and the other
+      coefficients of the state it ``uses``; constants are substituted.
+    """
+    from sympy.core.function import AppliedUndef
+    from ymf.symbolic.language import parse_expression
+    preset = preset or {}
+    state = list(state)
+    ranks = {c: (1 if isinstance(values[c], sympy.MatrixBase) else 0) for c in state}
+    constants = {k: v for k, v in values.items() if k not in ranks}
+    named_fields = dict(fields or {})
+    named_fields.update(ranks)
+
+    def stem(name):
+        base, _, index = name.rpartition("_")
+        return base if base in ranks and index.isdigit() else name
+
+    inline: Dict[str, Any] = {}
+    uses: Dict[str, List[str]] = {}
+    for name in state:
+        if name in preset:
+            value = preset[name]
+        else:
+            entry = spec[name]
+            text = entry.get("formula") if isinstance(entry, dict) else str(entry)
+            others = {k: r for k, r in named_fields.items() if k != name}
+            value = parse_expression(text, Space(dim, unknowns, constants, others,
+                                                 parameters, functions))
+        entries = list(value) if isinstance(value, sympy.MatrixBase) else [value]
+        entries = [sympy.sympify(e) for e in entries]
+        used = sorted({stem(f.func.__name__) for e in entries for f in e.atoms(AppliedUndef)}
+                      & set(ranks), key=state.index)
+        uses[name] = used
+        inline[name] = {"inline": ([to_code(e) for e in entries]
+                                   if isinstance(value, sympy.MatrixBase) else to_code(entries[0]))}
+        if used:
+            inline[name]["uses"] = used
+    order: List[str] = []
+    todo = list(state)
+    while todo:
+        ready = [c for c in todo if set(uses[c]) <= set(order)]
+        if not ready:
+            raise SymbolicError("coefficients %s name each other in a cycle"
+                                % ", ".join(todo))
+        order.extend(ready)
+        todo = [c for c in todo if c not in ready]
+
+    space = Space(dim, unknowns, constants, named_fields, parameters, functions)
+    residuals: List[sympy.Expr] = []
+    for text in texts:
+        residuals.extend(parse_equation(text, space))
+    adr = adr_form(residuals, space, hamiltonian_gradients=hamiltonian_gradients)
+    return dict({"order": order}, **_values_only(adr)), inline
 
 
 def _up_to_a_constant(residuals, space, ranks, dirichlet) -> List[str]:

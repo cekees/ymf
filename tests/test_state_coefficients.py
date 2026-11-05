@@ -169,7 +169,8 @@ def test_a_model_declares_the_coefficient_and_a_case_makes_it_state_dependent(tm
 def test_a_state_coefficient_keeps_its_name_in_the_plain_data():
     problem = adr_problem(load_ymf(EXAMPLES / "nonlinear_diffusion.ymf"))
     assert problem["coefficients"] == {
-        "k": {"code": "u**2 + 1", "depends_on": {"u": "nonlinear"}, "d": {"u": "2*u"}}}
+        "k": {"code": "u**2 + 1", "depends_on": {"u": "nonlinear"}, "d": {"u": "2*u"},
+              "inline": "u**2 + 1"}}
 
 
 def test_a_problem_without_one_reads_as_before():
@@ -181,6 +182,9 @@ def test_every_link_of_a_chain_is_named():
                               κ0={"value": 1e-3}))["coefficients"]
     assert set(named) == {"κ", "c"}
     assert named["c"]["d"] == {"T": "2*T"}
+    # by name: κ over c, c over T, in that order
+    assert named["κ"]["inline"] == "0.001*c" and named["κ"]["uses"] == ["c"]
+    assert named["c"]["inline"] == "T**2 + 1"
 
 
 def test_a_vector_coefficient_of_the_state():
