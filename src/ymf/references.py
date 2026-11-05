@@ -160,7 +160,24 @@ def _check_equations(doc: Dict[str, Any]) -> None:
 
 
 #: sharp functions of the notation a discretization may regularize
-SHARP_FUNCTIONS = ("heaviside", "sign")
+SHARP_FUNCTIONS = ("heaviside", "sign", "inverse")
+
+
+def _check_regularize(rules: Dict[str, Any], unknowns, where: str) -> None:
+    for function, rule in (rules or {}).items():
+        if function not in SHARP_FUNCTIONS:
+            raise YmfReferenceError(
+                "%s.regularize.%s: only %s are regularized"
+                % (where, function, ", ".join(SHARP_FUNCTIONS)))
+        of = rule.get("of") if isinstance(rule, dict) else None
+        if function == "inverse":
+            if of is None:
+                raise YmfReferenceError(
+                    "%s.regularize.inverse: say which unknown's reciprocal (of: h)" % (where,))
+            _check(of, sorted(unknowns), "%s.regularize.inverse.of" % (where,), "unknown")
+        elif of is not None:
+            raise YmfReferenceError(
+                "%s.regularize.%s: of is for inverse alone" % (where, function))
 
 
 def _check_split(doc: Dict[str, Any], entry: Dict[str, Any]) -> None:
@@ -179,11 +196,9 @@ def _check_split(doc: Dict[str, Any], entry: Dict[str, Any]) -> None:
             raise YmfReferenceError(
                 "%s.binds.%s: %s is already a name in the model; a discretization "
                 "binds symbols the model leaves to it" % (where, symbol, symbol))
-    for function in entry.get("regularize") or {}:
-        if function not in SHARP_FUNCTIONS:
-            raise YmfReferenceError(
-                "%s.regularize.%s: only the sharp functions %s are regularized"
-                % (where, function, ", ".join(SHARP_FUNCTIONS)))
+    introduced_names = [(s.get("introduces") or {}).get("name") for s in subproblems]
+    _check_regularize(entry.get("regularize"),
+                      set(unknowns) | {n for n in introduced_names if n}, where)
     if not subproblems:
         return
     names = [s["name"] for s in subproblems]
@@ -243,14 +258,19 @@ def _check_split(doc: Dict[str, Any], entry: Dict[str, Any]) -> None:
                        "model unknown, coefficient or introduced unknown")
             if isinstance(lag, dict) and "via" in lag:
                 _check(lag["via"], names, "%s.lags.%s.via" % (here, field), "sub-problem")
+            if isinstance(lag, dict) and lag.get("carried_by") is not None:
+                from ymf.explicit import carriers
+                carrier = carriers(entry).get(lag.get("of", field))
+                if lag["carried_by"] != carrier:
+                    raise YmfReferenceError(
+                        "%s.lags.%s.carried_by is %s, but %s; closure writes carried_by, "
+                        "so remove it" % (here, field, lag["carried_by"],
+                                          "%s carries it" % carrier if carrier else
+                                          "no sub-problem introduces a carrier of it"))
         if "for" in s:
             _check(s["for"], sorted(set(unknowns) | set(introduced)), here + ".for",
                    "model or introduced unknown")
-        for function in s.get("regularize") or {}:
-            if function not in SHARP_FUNCTIONS:
-                raise YmfReferenceError(
-                    "%s.regularize.%s: only the sharp functions %s are regularized"
-                    % (here, function, ", ".join(SHARP_FUNCTIONS)))
+        _check_regularize(s.get("regularize"), set(unknowns) | set(introduced), here)
         for field in s.get("writes_back") or {}:
             _check(field, sorted(set(unknowns) | set(introduced)),
                    "%s.writes_back" % (here,), "model or introduced unknown")
@@ -414,9 +434,29 @@ def _check_regions(doc: Dict[str, Any]) -> None:
                 "needs where:, not tags:" % (where,))
 
 
+def _check_state(doc: Dict[str, Any]) -> None:
+    """A coefficient's ``depends_on`` (which closure writes, ymf.explicit) must
+    be what its formula says: a closed spec extended with a changed formula
+    would otherwise carry a false record."""
+    from ymf.explicit import state_coefficients
+    coefficients = (_problem(doc).get("strong_form") or {}).get("coefficients") or {}
+    stated = {name: list(entry["depends_on"]) for name, entry in coefficients.items()
+              if isinstance(entry, dict) and entry.get("depends_on") is not None}
+    if not stated:
+        return
+    derived = state_coefficients(doc)
+    for name, given in stated.items():
+        if sorted(given) != sorted(derived.get(name, [])):
+            raise YmfReferenceError(
+                "model.strong_form.coefficients.%s.depends_on says %s, but its formula "
+                "follows %s; closure writes depends_on, so remove it (or fix the formula)"
+                % (name, given, derived.get(name) or "no unknown"))
+
+
 def resolve(doc: Dict[str, Any]) -> None:
     """Check every reference, raising :class:`YmfReferenceError` on the first bad one."""
     _check_equations(doc)
+    _check_state(doc)
     _check_regions(doc)
     _check_conditions(doc)
     _check_gauges(doc)

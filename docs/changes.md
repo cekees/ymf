@@ -7,6 +7,50 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-05: a mesh records its fingerprint; a discrete domain loads from
+  a spec file.** cekees, 2026-11-05 (C7.1 round 2): store the mesh's
+  fingerprint in the archive so a restart or a gauge can check the mesh
+  before reading. `provenance(..., fingerprint=)` records `{method:
+  ymf-mesh-1, sha256}`; `ymf.mesh.fingerprint`, `grid_fingerprint` and
+  `check_fingerprint` define and check it (bytes in `archive-format.md`).
+  Two gaps proteus found posing a `discrete` domain from a spec file: the
+  strict schema now takes `attributes` and `provenance` on it (`ymf.domain`
+  already did), and its inline arrays, which strictyaml reads as text, are
+  typed by each item's `data_type` on load (`ymf.domain.type_discrete_block`);
+  the archive itself still refuses text where it expects a number. An
+  inline mesh stored with three coordinates (XYZ) is posed in its
+  `dimension`; it was posed in 3D, which proteus solved with a nan error.
+- **2026-11-05: the wet/dry cutoff (C42 round 2).** The last
+  regularization the model-family note lists (§ 3.1 item 5, `u = q/h` at
+  `h = 0`): `regularize: {inverse: {by: wet_dry_cutoff, of: h, width: hε}}`
+  reads each negative power of `h` through SW2DCV's `one_over_hReg`. The
+  shallow-water numerics fixture binds `hε` (`meaning: dry_depth`, the
+  solver's `1e-5 max(h0)`) and uses it; exact above `hε`, so Torino's drag
+  and porosity still match the deck to 1e-12.
+- **2026-11-05: the plain data keeps a coefficient of the state by name
+  (C42 round 2).** § 7 of the model-family note: substitution is enough for
+  a runner, but the generator (C19) and the dispatcher want `ρ` as one
+  inline function of the state. `adr_problem` and `split_problem` now give
+  each coefficient of the state its `inline` code and `uses`, and `named`
+  (`order` and the slot values over the names) beside the substituted
+  `adr`. Additive, and absent without coefficients of the state; an archive
+  Proteus wrote for such a spec before this reports "the ADR form differs"
+  under `--check`, because `ymf_run` records the whole `adr_problem`.
+- **2026-11-05: closure writes out the split and names the coefficients of
+  the state (C42 round 2).** The same reasoning as the alias expansion: a
+  closed dam break said `φ: previous_step` and left the sub-problems'
+  solvers, regularizations and carriers to `split_problem`'s defaults, and
+  said nothing of which coefficients follow the state. `ymf.explicit`
+  (closure.write, closure.input_slice) now writes each sub-problem's
+  `for`, merged `solver` and `regularize`, and its lags as `{of, via, at,
+  carried_by}`, and gives every coefficient whose formula names an unknown
+  `depends_on`. The names are read without sympy (`ymf.names`, the
+  notation's tokenizer moved out of `ymf.symbolic.notation`, with the
+  parser's rule for a run of letters), so the core closes a spec as the
+  front end does. `depends_on` is checked on load and left out of the key;
+  split specs re-key (the dam break and shallow-water fixtures; no solver
+  ran them), every other spec keeps its keys and, without coefficients of
+  the state, closes to the same document.
 - **2026-11-04: aliases expand into the abstract forms, and closure records
   the expansion.** cekees's review note: `slip`, `open`, `inflow`,
   `characteristic` and condition sets had their meaning only in code

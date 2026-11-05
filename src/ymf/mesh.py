@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .archive import (
+    FINGERPRINT_METHOD,
     QUADRATIC_EDGES,
     YmfArchiveError,
     check_facet_tags,
@@ -30,6 +31,9 @@ from .archive import (
 __all__ = [
     "file_sha256",
     "file_provenance",
+    "fingerprint",
+    "grid_fingerprint",
+    "check_fingerprint",
     "edge_node_permutation",
     "reorder_cells",
     "edge_midpoint_offsets",
@@ -87,6 +91,72 @@ def file_provenance(
     """
     files = [{"name": Path(p).name, "sha256": file_sha256(p)} for p in paths]
     return provenance(tool, version=version, files=files, extra=extra)
+
+
+def fingerprint(nodes, cells) -> str:
+    """The SHA-256 digest that identifies a mesh: its geometry and topology, in
+    the order given (method :data:`ymf.archive.FINGERPRINT_METHOD`).
+
+    The bytes hashed are the tag ``b"ymf mesh fingerprint 1\\0"``; the shapes
+    ``(n_nodes, 3, n_cells, nodes_per_cell)`` as little-endian int64; the
+    nodes as little-endian float64 with three columns (2D nodes get z = 0);
+    the cells' zero-based node numbers as little-endian int64. Coordinates
+    are hashed exactly, so the digest identifies these numbers, not a mesh up
+    to round-off. A writer that stores the rows in another order (a
+    partitioned run writing each rank's rows contiguously) records the
+    digest of the input order, so it does not depend on the rank count.
+    """
+    import numpy as np
+    nodes = np.asarray(nodes, dtype="<f8")
+    if nodes.ndim != 2 or not 1 <= nodes.shape[1] <= 3:
+        raise YmfArchiveError("fingerprint: nodes are (n, 1-3) coordinates, got shape %s"
+                              % (nodes.shape,))
+    if nodes.shape[1] < 3:
+        nodes = np.hstack([nodes, np.zeros((nodes.shape[0], 3 - nodes.shape[1]))])
+    nodes = np.ascontiguousarray(nodes, dtype="<f8")
+    cells = np.ascontiguousarray(cells, dtype="<i8")
+    if cells.ndim != 2:
+        raise YmfArchiveError("fingerprint: cells are (n, nodes per cell), got shape %s"
+                              % (cells.shape,))
+    digest = hashlib.sha256(b"ymf mesh fingerprint 1\0")
+    digest.update(np.array(nodes.shape + cells.shape, dtype="<i8").tobytes())
+    digest.update(nodes.tobytes())
+    digest.update(cells.tobytes())
+    return digest.hexdigest()
+
+
+def grid_fingerprint(grid: Dict[str, Any], base_dir: str | Path = ".") -> str:
+    """:func:`fingerprint` of a uniform grid's mesh, in the order it is stored."""
+    import numpy as np
+    topo, geom = grid["topology"], grid["geometry"]
+    nodes = np.asarray(load_array(geom["data_item"], base_dir), dtype=float)
+    dim = {"XY": 2, "X_Y": 2}.get(str(geom.get("type", "XYZ")).upper(), 3)
+    cells = np.asarray(load_array(topo["data_item"], base_dir)).reshape(
+        int(topo["number_of_elements"]), -1)
+    return fingerprint(nodes.reshape(-1, dim), cells)
+
+
+def check_fingerprint(grid: Dict[str, Any], base_dir: str | Path = ".",
+                      digest: Optional[str] = None) -> Optional[str]:
+    """Check the fingerprint a grid's provenance records.
+
+    ``digest`` is the fingerprint of the mesh in its input order, computed by
+    the caller when the grid's rows are in another order; by default the
+    grid's own (:func:`grid_fingerprint`). Returns the recorded digest, or
+    None when the grid records none; raises when it records another method
+    or another mesh.
+    """
+    recorded = (grid.get("provenance") or {}).get("fingerprint")
+    if recorded is None:
+        return None
+    if recorded.get("method") != FINGERPRINT_METHOD:
+        raise YmfArchiveError("provenance.fingerprint: method %r, but this ymf computes %r"
+                              % (recorded.get("method"), FINGERPRINT_METHOD))
+    actual = digest if digest is not None else grid_fingerprint(grid, base_dir)
+    if actual != recorded["sha256"]:
+        raise YmfArchiveError("provenance.fingerprint: the grid holds mesh %s..., not the "
+                              "recorded %s..." % (actual[:12], recorded["sha256"][:12]))
+    return recorded["sha256"]
 
 
 def edge_node_permutation(topology_type: str,

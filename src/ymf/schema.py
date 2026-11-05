@@ -148,6 +148,11 @@ SymbolBinding = Map({
     Optional("proteus"): Any(),        # an interim hint, see SubproblemDef
 })
 
+#: how one sharp function is made smooth: heaviside: {by: smoothed_heaviside,
+#: width: ε}; inverse: {by: wet_dry_cutoff, of: h, width: hε} reads every
+#: negative power of the unknown h through its regularized reciprocal
+RegularizeDef = Map({"by": Str(), Optional("width"): Str(), Optional("of"): Str()})
+
 SubproblemDef = Map({
     "name": Str(),
     # model equations (by name) this sub-problem solves
@@ -170,15 +175,18 @@ SubproblemDef = Map({
     # what it reads from elsewhere: name -> when, or {via: sub-problem, at:
     # when}; with `of`, the name is a copy of that field under a name of its
     # own (redistancing reads φs, the level set before it changes φ)
+    # carried_by: the introduced unknown a lagged coefficient is read as
+    # (χ via VOF is χh); written by closure (ymf.explicit), checked on load
     Optional("lags"): MapPattern(Str(), LagAtEnum | Map({
-        Optional("via"): Str(), "at": LagAtEnum, Optional("of"): Str()})),
+        Optional("via"): Str(), "at": LagAtEnum, Optional("of"): Str(),
+        Optional("carried_by"): Str()})),
     # what it hands back: name -> replace | add | mass_quadrature | ...
     Optional("writes_back"): MapPattern(Str(), Str()),
     Optional("pseudo_time"): Enum(["steady"]),
     Optional("spin_up"): Bool(),
     Optional("binds"): MapPattern(Str(), SymbolBinding),
     # replaces the entry's regularize: for this sub-problem's sharp functions
-    Optional("regularize"): MapPattern(Str(), Map({"by": Str(), Optional("width"): Str()})),
+    Optional("regularize"): MapPattern(Str(), RegularizeDef),
     Optional("finite_element"): FiniteElementDef,
     Optional("time_integration"): Str(),
     Optional("stabilization"): Any(),
@@ -209,8 +217,7 @@ DiscretizationEntry = Map(
         Optional("binds"): MapPattern(Str(), SymbolBinding),
         # sharp model functions replaced by smooth ones: heaviside -> a
         # smoothed Heaviside of width ε
-        Optional("regularize"): MapPattern(Str(), Map({
-            "by": Str(), Optional("width"): Str()})),
+        Optional("regularize"): MapPattern(Str(), RegularizeDef),
         Optional("step_control"): Map({
             Optional("type"): Str(),
             Optional("cfl"): Float(),
@@ -396,8 +403,11 @@ DomainDef = Str() | Map(
         Optional("segment_flags"): Seq(Int()),
         Optional("facet_flags"): Seq(Int()),
         # kind: discrete -- already a mesh, in the archive's vocabulary
+        # (ymf.domain says which of these it needs; facets is above)
         Optional("topology"): Any(),
         Optional("geometry"): Any(),
+        Optional("attributes"): Any(),
+        Optional("provenance"): Any(),
         # kind: file -- someone else's language
         Optional("format"): Str(),
         Optional("path"): Str(),
@@ -435,6 +445,9 @@ CoefficientMapDef = Map(
         Optional("value"): Float(),
         Optional("units"): Str(),
         Optional("formula"): Str(),
+        # the unknowns a formula follows, directly or through another
+        # coefficient; written by closure (ymf.explicit), checked on load
+        Optional("depends_on"): Seq(Str()),
     }
 )
 

@@ -174,3 +174,62 @@ def box_bounds(domain: Any) -> Optional[List[List[float]]]:
     if isinstance(domain, dict) and domain.get("kind") == "box":
         return [list(domain["lower"]), list(domain["upper"])]
     return None
+
+
+_INTEGER_TYPES = {"Int", "UInt", "Char", "UChar"}
+
+
+def _number(text: Any, integral: bool, where: str) -> Any:
+    if not isinstance(text, str):
+        return text
+    try:
+        value = float(text)
+    except ValueError:
+        raise YmfDomainError("%s: %r is not a number" % (where, text)) from None
+    if integral:
+        if value != int(value):
+            raise YmfDomainError("%s: %r is not an integer" % (where, text))
+        return int(value)
+    return value
+
+
+def type_discrete_block(domain: Any, where: str = "domain") -> Any:
+    """A ``discrete`` domain's mesh with its numbers as numbers.
+
+    The spec schema reads the mesh's keys as ``Any``, so strictyaml gives
+    every scalar of an inline mesh back as text; the archive, which the mesh
+    is written in the vocabulary of, refuses text where it expects numbers.
+    Each data item's ``values`` are read as its ``data_type`` says, and its
+    ``dimensions`` and ``precision``, and a topology's counts, as integers.
+    Anything else is returned as it is.
+    """
+    if not isinstance(domain, dict) or domain.get("kind") != "discrete":
+        return domain
+    def item(d: Any, at: str) -> None:
+        if not isinstance(d, dict):
+            return
+        integral = str(d.get("data_type", "Float")) in _INTEGER_TYPES
+        if isinstance(d.get("values"), list):
+            flat = d["values"]
+            d["values"] = [[_number(v, integral, "%s.values" % at) for v in row] if isinstance(row, list)
+                           else _number(row, integral, "%s.values" % at) for row in flat]
+        if isinstance(d.get("dimensions"), list):
+            d["dimensions"] = [_number(v, True, "%s.dimensions" % at) for v in d["dimensions"]]
+        if "precision" in d:
+            d["precision"] = _number(d["precision"], True, "%s.precision" % at)
+    def topology(t: Any, at: str) -> None:
+        if not isinstance(t, dict):
+            return
+        for key in ("number_of_elements", "nodes_per_element"):
+            if key in t:
+                t[key] = _number(t[key], True, "%s.%s" % (at, key))
+        item(t.get("data_item"), at + ".data_item")
+    topology(domain.get("topology"), where + ".topology")
+    item((domain.get("geometry") or {}).get("data_item"), where + ".geometry.data_item")
+    for i, a in enumerate(domain.get("attributes") or []):
+        item((a or {}).get("data_item"), "%s.attributes[%d].data_item" % (where, i))
+    facets = domain.get("facets")
+    if isinstance(facets, dict):
+        topology(facets.get("topology"), where + ".facets.topology")
+        item((facets.get("tags") or {}).get("data_item"), where + ".facets.tags.data_item")
+    return domain

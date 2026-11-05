@@ -667,25 +667,38 @@ def facets(
     return {"topology": topo, "tags": {"data_item": tags}, "view": view}
 
 
+#: The method name of :func:`ymf.mesh.fingerprint`'s digest, recorded beside
+#: it so that a later definition can be told apart from this one.
+FINGERPRINT_METHOD = "ymf-mesh-1"
+
+
 def provenance(
     tool: str,
     *,
     version: Optional[str] = None,
     files: Iterable[Dict[str, str]] = (),
     extra: Optional[Dict[str, Any]] = None,
+    fingerprint: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Describe where a grid came from: the tool that made it, its version,
-    and the files it was made from with their SHA-256 checksums.
+    the files it was made from with their SHA-256 checksums, and the mesh's
+    own fingerprint.
 
     ``files`` is a list of ``{"name": ..., "sha256": ...}``;
     :func:`ymf.mesh.file_provenance` computes the checksums from paths. The
     tool is free text -- the archive names no tools -- and ``extra`` is a
     mapping the writer may fill with anything else it wants kept.
+    ``fingerprint`` is :func:`ymf.mesh.fingerprint` of the mesh in its input
+    order (a SHA-256 hex digest), recorded as ``{method, sha256}``; a reader
+    recomputes it to check it holds the mesh it expects before reading data
+    on it.
     """
     block: Dict[str, Any] = {"tool": str(tool)}
     if version is not None:
         block["version"] = str(version)
     block["files"] = [dict(f) for f in files]
+    if fingerprint is not None:
+        block["fingerprint"] = {"method": FINGERPRINT_METHOD, "sha256": str(fingerprint).lower()}
     if extra:
         block["extra"] = dict(extra)
     return block
@@ -1075,11 +1088,11 @@ def _canonicalize_facets(f: Dict[str, Any], where: str) -> Dict[str, Any]:
 def _canonicalize_provenance(p: Dict[str, Any], where: str) -> Dict[str, Any]:
     if not isinstance(p, dict) or "tool" not in p:
         raise YmfArchiveError(f"{where}: provenance has no 'tool'")
-    unknown = sorted(set(p) - {"tool", "version", "files", "extra"})
+    unknown = sorted(set(p) - {"tool", "version", "files", "fingerprint", "extra"})
     if unknown:
         raise YmfArchiveError(
-            f"{where}: provenance takes tool, version, files and extra, not "
-            f"{', '.join(unknown)}; put anything else under extra")
+            f"{where}: provenance takes tool, version, files, fingerprint and extra, "
+            f"not {', '.join(unknown)}; put anything else under extra")
     canonical: Dict[str, Any] = {"tool": str(p["tool"])}
     if p.get("version") is not None:
         canonical["version"] = str(p["version"])
@@ -1090,6 +1103,12 @@ def _canonicalize_provenance(p: Dict[str, Any], where: str) -> Dict[str, Any]:
                 f"{where}.files[{i}]: a file is {{name, sha256}}, got {entry!r}")
         files.append({"name": str(entry["name"]), "sha256": str(entry["sha256"]).lower()})
     canonical["files"] = files
+    if p.get("fingerprint") is not None:
+        f = p["fingerprint"]
+        if not isinstance(f, dict) or set(f) != {"method", "sha256"}:
+            raise YmfArchiveError(
+                f"{where}.fingerprint: a fingerprint is {{method, sha256}}, got {f!r}")
+        canonical["fingerprint"] = {"method": str(f["method"]), "sha256": str(f["sha256"]).lower()}
     if p.get("extra"):
         if not isinstance(p["extra"], dict):
             raise YmfArchiveError(f"{where}.extra: must be a mapping")
@@ -1355,6 +1374,11 @@ def _validate_grid_like(g: Dict[str, Any], where: str) -> None:
                 raise YmfArchiveError(
                     f"{where}.provenance.files[{i}].sha256: {entry['sha256']!r} is "
                     "not a SHA-256 digest (64 hexadecimal digits)")
+        f = g["provenance"].get("fingerprint")
+        if f is not None and not _SHA256.match(f["sha256"]):
+            raise YmfArchiveError(
+                f"{where}.provenance.fingerprint.sha256: {f['sha256']!r} is not a "
+                "SHA-256 digest (64 hexadecimal digits)")
 
 
 def _validate_facets(g: Dict[str, Any], where: str) -> None:

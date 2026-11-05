@@ -51,10 +51,19 @@ def smoothed_sign(phi, eps):
     return 2 * smoothed_heaviside(phi, eps) - 1
 
 
-#: sharp function -> {regularization name: f(argument, width)}
+def wet_dry_inverse(h, eps):
+    """Proteus's SW2DCV ``one_over_hReg``: ``2h / (h² + max(h, ε)²)``, which
+    is ``1/h`` where ``h ≥ ε`` and goes to 0 with ``h`` instead of blowing up."""
+    return 2 * h / (h ** 2 + sympy.Max(h, eps) ** 2)
+
+
+#: sharp function -> {regularization name: f(argument, width)}; ``inverse``
+#: is the reciprocal of the unknown its rule names (``of``), not a function
+#: of the notation: every negative power ``h^(-k)`` is read as ``(1/h)_ε^k``
 REGULARIZATIONS = {
     "heaviside": {"smoothed_heaviside": smoothed_heaviside},
     "sign": {"smoothed_sign": smoothed_sign},
+    "inverse": {"wet_dry_cutoff": wet_dry_inverse},
 }
 
 
@@ -83,7 +92,8 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
         raise SymbolicError(str(exc)) from exc
     from ymf.discretizations import subproblem_solver
     from ymf.normalize import normalize_equations
-    from ymf.symbolic.problem import _coefficients, _frame, _state_coefficient_data
+    from ymf.symbolic.problem import (_coefficients, _frame, _named_form,
+                                      _state_coefficient_data)
     entries = (doc.get("solution_paths") or {}).get("discretizations") or []
     entry = next((d for d in entries if d.get("name") == discretization), None)
     if entry is None:
@@ -178,7 +188,8 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
 
         smooth = _regularizations(entry, sub, bound, dim, where)
         functions = {fn: (lambda a, *rest, s=smoother, w=width: s(a, w))
-                     for fn, (_, width, smoother) in smooth.items()}
+                     for fn, (_, width, smoother, _) in smooth.items() if fn != "inverse"}
+        post = _inverse_cutoff(smooth, own, where)
         supplied = [s for s in bound.values() if isinstance(s, sympy.Symbol)]
         coefficients = _coefficients(spec, dim, strict=False, unknowns=own,
                                      fields=fields, preset=preset, functions=functions,
@@ -201,6 +212,12 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
             (spec[c].get("formula") if isinstance(spec[c], dict) else spec[c]) or ""
             for c in used if c not in preset] + [sub.get("initial_condition") or ""]
         sharp = _written(written, smooth)
+        if post is not None:
+            regular = [post(r) for r in residuals]
+            if regular != residuals:
+                sharp.add("inverse")
+            residuals = regular
+            values = {k: (post(v) if k in spec else v) for k, v in values.items()}
         try:
             record["adr"] = adr_form(residuals, space)
         except SymbolicError as exc:
@@ -212,12 +229,22 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
         named = _state_coefficient_data(
             {k: v for k, v in values.items() if k in spec and k in used}, space)
         if named:
+            # by name too: each one inline over the state, and the
+            # sub-problem's ADR form over those names (problem._named_form)
+            state = [c for c in spec if c in named]
+            form, inline = _named_form([t for _, t in texts], spec, values, state, dim,
+                                       own, fields, supplied, functions, preset,
+                                       post=post)
+            for name, extra in inline.items():
+                named[name].update(extra)
             record["coefficients"] = named
+            record["named"] = form
         if sub.get("initial_condition"):
             record["initial"] = _initial(sub, own, ranks, values, functions, dim, where)
         if sharp:
-            record["regularized"] = {fn: {"by": by, "width": to_code(width)}
-                                     for fn, (by, width, _) in smooth.items() if fn in sharp}
+            record["regularized"] = {
+                fn: dict({"by": by, "width": to_code(width)}, **({"of": of} if of else {}))
+                for fn, (by, width, _, of) in smooth.items() if fn in sharp}
         if sub.get("enforces"):
             try:
                 parse_equation(sub["enforces"], space)
@@ -353,7 +380,8 @@ def _describe_bound(binds, values):
 
 
 def _regularizations(entry, sub, bound, dim, where):
-    """{sharp function: (by, width, smoother)} for this sub-problem."""
+    """{sharp function: (by, width, smoother, of)} for this sub-problem
+    (``of``: the unknown whose reciprocal ``inverse`` regularizes, else None)."""
     chosen = dict(entry.get("regularize") or {})
     chosen.update(sub.get("regularize") or {})
     out = {}
@@ -365,8 +393,34 @@ def _regularizations(entry, sub, bound, dim, where):
         if rule.get("width") is None:
             raise SymbolicError("%s: regularizing %s needs a width" % (where, function))
         width = parse_expression(rule["width"], Space(dim, {}, bound))
-        out[function] = (rule["by"], width, smoothers[rule["by"]])
+        out[function] = (rule["by"], width, smoothers[rule["by"]], rule.get("of"))
     return out
+
+
+def _inverse_cutoff(smooth, own, where):
+    """The rewrite ``inverse`` asks for, as a function on expressions, or None.
+
+    Every negative power of the scalar unknown it names (``h^(-1)``,
+    ``h^(-7/3)``) becomes the same power of its regularized reciprocal, before
+    anything is differentiated, so the derivatives are the regularized
+    expression's."""
+    if "inverse" not in smooth:
+        return None
+    _, width, smoother, of = smooth["inverse"]
+    if of is None or own.get(of) != 0:
+        raise SymbolicError("%s: regularize.inverse.of must name a scalar unknown this "
+                            "sub-problem solves for (it names %r; it solves for %s)"
+                            % (where, of, ", ".join(own)))
+    symbol = sympy.Symbol(of, real=True)
+    regular = smoother(symbol, width)
+
+    def rewrite(expr):
+        if isinstance(expr, sympy.MatrixBase):
+            return expr.applyfunc(rewrite)
+        return sympy.sympify(expr).replace(
+            lambda p: p.is_Pow and p.base == symbol and p.exp.is_negative is True,
+            lambda p: regular ** (-p.exp))
+    return rewrite
 
 
 def _written(texts, smooth) -> set:

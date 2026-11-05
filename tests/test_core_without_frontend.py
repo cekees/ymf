@@ -24,7 +24,7 @@ import pytest
 
 #: Importable with pyyaml and nothing else. Proteus imports from every one.
 CORE = ["ymf", "ymf.archive", "ymf.xdmf", "ymf.cli", "ymf.closure",
-        "ymf.domain", "ymf.references"]
+        "ymf.domain", "ymf.references", "ymf.names", "ymf.explicit"]
 
 #: Front end, and honestly so. Asserted as well as CORE: if the blocker below
 #: silently stopped blocking, every CORE assertion would pass for the wrong
