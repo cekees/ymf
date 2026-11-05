@@ -66,7 +66,7 @@ import strictyaml
 import yaml
 
 from ymf.archive import is_archive_text
-from ymf.domain import validate_domain_block
+from ymf.domain import type_discrete_block, validate_domain_block
 from ymf.references import apply_defaults, resolve
 from ymf.schema import _ALLOW_FLOW_STYLE, PARTIAL_YMF_SCHEMA, YMF_SCHEMA
 from ymf.state import check as check_state_of
@@ -476,6 +476,7 @@ def _check_document(doc: Dict[str, Any]) -> None:
     strong = (doc.get("model") or {}).get("strong_form") or {}
     if "domain" in strong:
         validate_domain_block(strong["domain"], "model.strong_form.domain")
+        type_discrete_block(strong["domain"], "model.strong_form.domain")
 
 
 def load_composed(path: str | Path, check_state: bool = True) -> Dict[str, Any]:

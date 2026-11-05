@@ -439,8 +439,21 @@ def _inline_nodes(region: Dict[str, Any]) -> Optional[List[List[float]]]:
         return None
     flat = [float(v) for v in (values if not isinstance(values[0], (list, tuple))
                                else [c for row in values for c in row])]
-    dim = _geometry_dimension(region) or int((item.get("dimensions") or [0, 3])[-1])
-    return [flat[i:i + dim] for i in range(0, len(flat), dim)]
+    width = _geometry_dimension(region) or int((item.get("dimensions") or [0, 3])[-1])
+    rows = [flat[i:i + width] for i in range(0, len(flat), width)]
+    dim = int(region.get("dimension") or width)
+    if dim > width:
+        raise SymbolicError("strong_form.domain: dimension %d, but its nodes have %d coordinates"
+                            % (dim, width))
+    if dim < width:
+        # a planar mesh stored with three coordinates (XYZ), as proteus writes
+        # one: its space is the first `dimension` of them, the rest constant
+        dropped = set(tuple(r[dim:]) for r in rows)
+        if len(dropped) > 1:
+            raise SymbolicError("strong_form.domain: dimension %d, but its nodes vary in "
+                                "coordinate %d" % (dim, dim + 1))
+        rows = [r[:dim] for r in rows]
+    return rows
 
 
 def _frame(doc: Dict[str, Any]):

@@ -403,8 +403,11 @@ DomainDef = Str() | Map(
         Optional("segment_flags"): Seq(Int()),
         Optional("facet_flags"): Seq(Int()),
         # kind: discrete -- already a mesh, in the archive's vocabulary
+        # (ymf.domain says which of these it needs; facets is above)
         Optional("topology"): Any(),
         Optional("geometry"): Any(),
+        Optional("attributes"): Any(),
+        Optional("provenance"): Any(),
         # kind: file -- someone else's language
         Optional("format"): Str(),
         Optional("path"): Str(),
