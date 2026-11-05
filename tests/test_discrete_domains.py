@@ -131,3 +131,17 @@ def test_a_mesh_inline_in_a_spec_file_loads_with_its_numbers_and_attributes(tmp_
     with pytest.raises(Exception, match="is not an integer"):
         type_discrete_block({"kind": "discrete", "topology": {"data_item": {
             "data_type": "Int", "values": ["1.5"]}}})
+
+
+def test_a_planar_mesh_stored_with_three_coordinates_is_two_dimensional():
+    """proteus writes 2D meshes as XYZ with z = 0; `dimension: 2` says the space is the plane."""
+    flat = copy.deepcopy(SQUARE)
+    flat["geometry"] = {"type": "XYZ", "data_item": _item([0, 0, 0, 2, 0, 0, 2, 1, 0, 0, 1, 0], [4, 3])}
+    flat["dimension"] = 2
+    problem = adr_problem(_on(flat, {"levels": 1}))
+    assert problem["adr"]["dim"] == 2
+    assert problem["domain"]["lower"] == [0.0, 0.0] and problem["domain"]["upper"] == [2.0, 1.0]
+    tilted = copy.deepcopy(flat)
+    tilted["geometry"]["data_item"]["values"][2] = 0.5
+    with pytest.raises(SymbolicError, match="vary in coordinate 3"):
+        adr_problem(_on(tilted, {"levels": 1}))
