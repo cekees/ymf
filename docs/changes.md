@@ -7,6 +7,13 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-05: the wet/dry cutoff (C42 round 2).** The last
+  regularization the model-family note lists (§ 3.1 item 5, `u = q/h` at
+  `h = 0`): `regularize: {inverse: {by: wet_dry_cutoff, of: h, width: hε}}`
+  reads each negative power of `h` through SW2DCV's `one_over_hReg`. The
+  shallow-water numerics fixture binds `hε` (`meaning: dry_depth`, the
+  solver's `1e-5 max(h0)`) and uses it; exact above `hε`, so Torino's drag
+  and porosity still match the deck to 1e-12.
 - **2026-11-05: the plain data keeps a coefficient of the state by name
   (C42 round 2).** § 7 of the model-family note: substitution is enough for
   a runner, but the generator (C19) and the dispatcher want `ρ` as one

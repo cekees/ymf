@@ -4,7 +4,8 @@
 # system is one ADR system; Proteus's SW2DCV discretizes the well-balanced
 # non-conservative form θ g h ∇(h + Z), which is the same strong form.
 # Friction and drag are coefficients of the state; a dry node (h = 0) makes
-# q/h singular, which is the discretization's to regularize (SW2DCV's hEps).
+# q/h singular, which is the discretization's to regularize (SW2DCV's hEps:
+# proteus_numerics.ymf reads 1/h as its one_over_hReg).
 ymf_state: abstract
 
 model:

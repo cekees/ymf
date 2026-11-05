@@ -805,7 +805,7 @@ def _named_form(texts: Sequence[str], spec: Dict[str, Any], values: Dict[str, An
                 parameters: Sequence[sympy.Symbol] = (),
                 functions: Optional[Dict[str, Any]] = None,
                 preset: Optional[Dict[str, Any]] = None,
-                hamiltonian_gradients=()) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+                hamiltonian_gradients=(), post=None) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """The problem with each coefficient of the state kept by name.
 
     The ADR form substitutes ``ρ = ρw (1 − χ) + ρa χ`` into every slot; a
@@ -823,7 +823,11 @@ def _named_form(texts: Sequence[str], spec: Dict[str, Any], values: Dict[str, An
     * ``inline``: ``{coefficient: {"inline": code, "uses": [...]}}``, its
       formula over the unknowns, the fields it reads and the other
       coefficients of the state it ``uses``; constants are substituted.
+
+    ``post`` rewrites each expression after it is read (a split
+    discretization's regularized reciprocal, ymf.symbolic.split).
     """
+    post = post or (lambda e: e)
     from sympy.core.function import AppliedUndef
     from ymf.symbolic.language import parse_expression
     preset = preset or {}
@@ -846,8 +850,8 @@ def _named_form(texts: Sequence[str], spec: Dict[str, Any], values: Dict[str, An
             entry = spec[name]
             text = entry.get("formula") if isinstance(entry, dict) else str(entry)
             others = {k: r for k, r in named_fields.items() if k != name}
-            value = parse_expression(text, Space(dim, unknowns, constants, others,
-                                                 parameters, functions))
+            value = post(parse_expression(text, Space(dim, unknowns, constants, others,
+                                                      parameters, functions)))
         entries = list(value) if isinstance(value, sympy.MatrixBase) else [value]
         entries = [sympy.sympify(e) for e in entries]
         used = sorted({stem(f.func.__name__) for e in entries for f in e.atoms(AppliedUndef)}
@@ -870,7 +874,7 @@ def _named_form(texts: Sequence[str], spec: Dict[str, Any], values: Dict[str, An
     space = Space(dim, unknowns, constants, named_fields, parameters, functions)
     residuals: List[sympy.Expr] = []
     for text in texts:
-        residuals.extend(parse_equation(text, space))
+        residuals.extend(post(r) for r in parse_equation(text, space))
     adr = adr_form(residuals, space, hamiltonian_gradients=hamiltonian_gradients)
     return dict({"order": order}, **_values_only(adr)), inline
 

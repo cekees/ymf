@@ -787,7 +787,14 @@ previous step left it, or as an earlier sub-problem of this step left it
 `solver` refines the entry's, which stays required as the default.
 `binds` names the symbols the discretization supplies and the model may not
 use (the element size, a smoothing width), and `regularize` the sharp
-functions it replaces with smooth ones (`heaviside`, `sign`).
+functions it replaces with smooth ones (`heaviside`, `sign`), and the
+reciprocal of an unknown that may vanish: `inverse: {by: wet_dry_cutoff,
+of: h, width: hε}` reads every negative power of the depth `h` (`q⊗q/h`,
+Manning's `h^(-7/3)`) through Proteus SW2DCV's `one_over_hReg`,
+`2h/(h² + max(h, hε)²)`, which is `1/h` wherever `h ≥ hε` and 0 at `h = 0`.
+It is applied before anything is differentiated, so the derivatives are the
+regularized expression's; `of` must name a scalar unknown the sub-problem
+solves for.
 
 Checked on load: sub-problem names are unique; every model equation is
 solved by exactly one sub-problem; every name a sub-problem uses (an

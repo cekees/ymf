@@ -148,6 +148,11 @@ SymbolBinding = Map({
     Optional("proteus"): Any(),        # an interim hint, see SubproblemDef
 })
 
+#: how one sharp function is made smooth: heaviside: {by: smoothed_heaviside,
+#: width: ε}; inverse: {by: wet_dry_cutoff, of: h, width: hε} reads every
+#: negative power of the unknown h through its regularized reciprocal
+RegularizeDef = Map({"by": Str(), Optional("width"): Str(), Optional("of"): Str()})
+
 SubproblemDef = Map({
     "name": Str(),
     # model equations (by name) this sub-problem solves
@@ -181,7 +186,7 @@ SubproblemDef = Map({
     Optional("spin_up"): Bool(),
     Optional("binds"): MapPattern(Str(), SymbolBinding),
     # replaces the entry's regularize: for this sub-problem's sharp functions
-    Optional("regularize"): MapPattern(Str(), Map({"by": Str(), Optional("width"): Str()})),
+    Optional("regularize"): MapPattern(Str(), RegularizeDef),
     Optional("finite_element"): FiniteElementDef,
     Optional("time_integration"): Str(),
     Optional("stabilization"): Any(),
@@ -212,8 +217,7 @@ DiscretizationEntry = Map(
         Optional("binds"): MapPattern(Str(), SymbolBinding),
         # sharp model functions replaced by smooth ones: heaviside -> a
         # smoothed Heaviside of width ε
-        Optional("regularize"): MapPattern(Str(), Map({
-            "by": Str(), Optional("width"): Str()})),
+        Optional("regularize"): MapPattern(Str(), RegularizeDef),
         Optional("step_control"): Map({
             Optional("type"): Str(),
             Optional("cfl"): Float(),
