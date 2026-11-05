@@ -7,6 +7,21 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-05: closure writes out the split and names the coefficients of
+  the state (C42 round 2).** The same reasoning as the alias expansion: a
+  closed dam break said `φ: previous_step` and left the sub-problems'
+  solvers, regularizations and carriers to `split_problem`'s defaults, and
+  said nothing of which coefficients follow the state. `ymf.explicit`
+  (closure.write, closure.input_slice) now writes each sub-problem's
+  `for`, merged `solver` and `regularize`, and its lags as `{of, via, at,
+  carried_by}`, and gives every coefficient whose formula names an unknown
+  `depends_on`. The names are read without sympy (`ymf.names`, the
+  notation's tokenizer moved out of `ymf.symbolic.notation`, with the
+  parser's rule for a run of letters), so the core closes a spec as the
+  front end does. `depends_on` is checked on load and left out of the key;
+  split specs re-key (the dam break and shallow-water fixtures; no solver
+  ran them), every other spec keeps its keys and, without coefficients of
+  the state, closes to the same document.
 - **2026-11-04: aliases expand into the abstract forms, and closure records
   the expansion.** cekees's review note: `slip`, `open`, `inflow`,
   `characteristic` and condition sets had their meaning only in code

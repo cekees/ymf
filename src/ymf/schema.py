@@ -170,8 +170,11 @@ SubproblemDef = Map({
     # what it reads from elsewhere: name -> when, or {via: sub-problem, at:
     # when}; with `of`, the name is a copy of that field under a name of its
     # own (redistancing reads φs, the level set before it changes φ)
+    # carried_by: the introduced unknown a lagged coefficient is read as
+    # (χ via VOF is χh); written by closure (ymf.explicit), checked on load
     Optional("lags"): MapPattern(Str(), LagAtEnum | Map({
-        Optional("via"): Str(), "at": LagAtEnum, Optional("of"): Str()})),
+        Optional("via"): Str(), "at": LagAtEnum, Optional("of"): Str(),
+        Optional("carried_by"): Str()})),
     # what it hands back: name -> replace | add | mass_quadrature | ...
     Optional("writes_back"): MapPattern(Str(), Str()),
     Optional("pseudo_time"): Enum(["steady"]),
@@ -435,6 +438,9 @@ CoefficientMapDef = Map(
         Optional("value"): Float(),
         Optional("units"): Str(),
         Optional("formula"): Str(),
+        # the unknowns a formula follows, directly or through another
+        # coefficient; written by closure (ymf.explicit), checked on load
+        Optional("depends_on"): Seq(Str()),
     }
 )
 

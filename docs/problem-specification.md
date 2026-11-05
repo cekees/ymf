@@ -413,6 +413,14 @@ of an unknown) -- so a code generator can emit `ρ` once as a function of
 the state rather than its expansion in every term. A problem with no such
 coefficient has no `coefficients` key and reads exactly as before.
 
+A closed spec (an archive) names them too: closure writes each coefficient
+of the state in the map form with `depends_on`, the unknowns it follows,
+directly or through another coefficient (`ρ: {formula: "ρw (1 − χ) + ρa χ",
+depends_on: [φ]}`). It is read from the formulas' text (`ymf.names`, no
+sympy, so every environment closes a spec alike), checked on load (a
+`depends_on` that is not what the formula says is refused), and does not
+count towards an output's key: the formula it comes from already does.
+
 Tensors follow the continuum-mechanics convention `grad(v)[i, j] =
 ∂v_j/∂x_i`, so `v·∇v` is (v·∇)v and `∇·(μ∇v)` is the vector Laplacian.
 
@@ -783,8 +791,21 @@ A sub-problem may give an `equation` of its own, `for` the unknown it
 determines (by default the one it introduces); a lag with `of` reads a
 copy of a field under a name of its own (redistancing reads `φs`, the
 level set before it changes `φ`); and a sub-problem's own `regularize`
-replaces the entry's (redistancing smooths its sign over `0.75 h`, the
-rest their Heaviside over `1.5 h`).
+replaces the entry's for the functions it names (redistancing smooths its
+sign over `0.75 h`, the rest their Heaviside over `1.5 h`).
+
+**A closed spec writes the split out.** What the rules above leave implicit
+is written into each sub-problem when a spec is closed (`ymf.explicit`,
+for the reason the boundary-condition aliases are expanded: two readers
+must not close one spec differently): its `for` (the unknown it
+introduces, when it gives an equation and no `for`); its `solver`, the
+entry's refined by its own; its `regularize`, the entry's with its own
+replacing function by function; and every lag as `{of, via, at,
+carried_by}`, where `carried_by` names the introduced unknown a lagged
+coefficient is read as (`χ: {via: vof, at: previous_step, carried_by:
+χh}`). A `carried_by` that is not the carrier is refused on load. Written
+out or not, the split classifies the same (`split_problem` gives equal
+results for both) and keys its outputs alike.
 
 **Each sub-problem is classified on its own.** `adr_problem` reads a model
 as one system, which this one is not (`v·∇φ` is a Hamiltonian in another
