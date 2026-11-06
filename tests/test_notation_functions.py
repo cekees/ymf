@@ -1,4 +1,4 @@
-"""heaviside, sign, min, max, norm and sym in the notation.
+"""heaviside, sign, min, max, hypot, norm and sym in the notation.
 
 The two-phase level-set model writes χ = heaviside(φ); its initial signed
 distance is a min/max/sqrt formula; its momentum equation uses the strain
@@ -29,7 +29,7 @@ def _evaluate(code, **names):
 
 @pytest.mark.parametrize("text", [
     "heaviside(u)", "sign(u - 1)", "min(x, y)", "max(x, y, 0)",
-    "min(max(x - 1.2, y - 0.6), 0)",
+    "min(max(x - 1.2, y - 0.6), 0)", "hypot(x, y - 1)",
 ])
 def test_the_new_functions_round_trip(text):
     space = _space()
@@ -99,3 +99,34 @@ def test_a_sharp_function_of_the_coordinates_is_data():
     reaction = adr_form(residuals, space)["equations"][0]["reaction"]
     assert reaction["depends_on"] == {"u": "linear"}
     assert "numpy.select" in reaction["r"]
+
+
+def test_hypot_is_the_dam_break_column_bit_for_bit():
+    """With hypot, φ0 is damBreakLevelSet.py's phi_init to the last bit, which the sqrt form is not
+    (it rounds twice: at 2 of the 109 nodes of the deck's stored mesh it differs by one ulp), so a run
+    from the spec can reproduce the deck bitwise. hypot(a, 0) is |a| exactly, so one formula covers the
+    three branches."""
+    numpy = pytest.importorskip("numpy")
+    text = "hypot(max(x − 1.2, 0), max(y − 0.6, 0)) + min(max(x − 1.2, y − 0.6), 0)"
+    value = parse_expression(text, _space())
+    code = to_code(value)
+    assert "numpy.hypot(" in code
+    assert parse_expression(to_notation(value), _space()) == value
+
+    def phi_init(x, y):                       # test/TwoPhaseFlow/damBreakLevelSet.py
+        dx, dy = x - 1.2, y - 0.6
+        if dx < 0 and dy < 0:
+            return max(dx, dy)
+        if dx > 0 and dy > 0:
+            return numpy.hypot(dx, dy)
+        return max(dx, dy)
+
+    points = numpy.random.default_rng(0).uniform([0.0, 0.0], [3.22, 1.8], (20000, 2))
+    found = _evaluate(code, x=points[:, 0], y=points[:, 1])
+    assert numpy.array_equal(found, [phi_init(x, y) for x, y in points])
+
+
+def test_hypot_differentiates():
+    space = _space()
+    value = parse_expression("hypot(x, y)", space)
+    assert sympy.simplify(sympy.diff(value, space.x[0]) - space.x[0] / value) == 0
