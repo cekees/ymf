@@ -97,7 +97,7 @@ _SUBSCRIPT_PLAIN.update({
 #: the notation's function names (``ymf.symbolic.notation``'s ``_FUNCTIONS``
 #: and the parser's own; a test checks the two agree)
 FUNCTION_NAMES = frozenset([
-    "sin", "cos", "tan", "exp", "log", "sqrt", "sinh", "cosh", "tanh", "abs",
+    "sin", "cos", "tan", "exp", "log", "sqrt", "sinh", "cosh", "tanh", "abs", "hypot",
     "heaviside", "sign", "min", "max",
     "div", "grad", "lap", "dt", "dot", "outer", "vec", "norm", "sym", "dx", "dy", "dz",
 ])

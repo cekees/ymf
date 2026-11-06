@@ -39,6 +39,7 @@ from __future__ import annotations
 from typing import List
 
 import sympy
+from sympy.codegen.cfunctions import hypot
 
 from ymf.symbolic.language import D, Dt
 from ymf.symbolic.notation import NotationError
@@ -52,7 +53,7 @@ _FUNCTIONS = {
     sympy.log: "log", sympy.sinh: "sinh", sympy.cosh: "cosh", sympy.tanh: "tanh",
     sympy.Abs: "abs", sympy.Heaviside: "heaviside", sympy.sign: "sign",
 }
-_VARIADIC = {sympy.Min: "min", sympy.Max: "max"}
+_VARIADIC = {sympy.Min: "min", sympy.Max: "max", hypot: "hypot"}
 
 # precedence of what a printed form is, for deciding on parentheses
 _ATOM, _POWER, _PRODUCT, _SUM = 4, 3, 2, 1

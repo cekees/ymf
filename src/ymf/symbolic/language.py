@@ -31,6 +31,7 @@ from __future__ import annotations
 from typing import Dict, Iterable, List, Sequence
 
 import sympy
+from sympy.codegen.cfunctions import hypot
 
 __all__ = [
     "D", "Dt", "Space", "SymbolicError", "parse_expression", "parse_equation",
@@ -212,7 +213,7 @@ class Space:
             "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan,
             "exp": sympy.exp, "log": sympy.log, "sqrt": sympy.sqrt,
             "sinh": sympy.sinh, "cosh": sympy.cosh, "tanh": sympy.tanh,
-            "abs": sympy.Abs, "Abs": sympy.Abs,
+            "abs": sympy.Abs, "Abs": sympy.Abs, "hypot": hypot,
             "vec": lambda *xs: sympy.Matrix([sympy.sympify(v) for v in xs]),
             "t": self.t,
         }
