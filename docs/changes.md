@@ -7,6 +7,16 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-06: `hypot(a, b)` in the notation.** C5 step 2 (proteus runs a
+  split discretization from the spec and compares it bitwise with the deck):
+  the dam break's initial signed distance written `sqrt(max(x − 1.2, 0)² +
+  max(y − 0.6, 0)²) + …` rounds twice, and differs from
+  `damBreakLevelSet.py`'s `hypot` by one ulp at 2 of the 109 nodes of its
+  stored mesh, so no run from the spec could match the deck from t = 0.
+  `hypot` is sympy's `codegen.cfunctions.hypot` (differentiable, printed as
+  `numpy.hypot`); `hypot(a, 0)` is `|a|` exactly, so
+  `hypot(max(x − 1.2, 0), max(y − 0.6, 0)) + min(max(x − 1.2, y − 0.6), 0)`
+  is the deck's three branches to the last bit.
 - **2026-11-05: a mesh records its fingerprint; a discrete domain loads from
   a spec file.** cekees, 2026-11-05 (C7.1 round 2): store the mesh's
   fingerprint in the archive so a restart or a gauge can check the mesh

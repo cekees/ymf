@@ -19,7 +19,9 @@ model:
       - {field: p, type: constant, value: 0.0}
       - field: φ
         type: function
-        formula: "sqrt(max(x − 1.2, 0)² + max(y − 0.6, 0)²) + min(max(x − 1.2, y − 0.6), 0)"
+        # hypot, as damBreakLevelSet.py computes it (the sqrt of a sum of
+        # squares rounds twice: one ulp off the deck at some nodes)
+        formula: "hypot(max(x − 1.2, 0), max(y − 0.6, 0)) + min(max(x − 1.2, y − 0.6), 0)"
         units: m
     coefficients:
       ρw: {value: 998.2}

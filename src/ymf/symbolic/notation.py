@@ -50,6 +50,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 import sympy
+from sympy.codegen.cfunctions import hypot
 
 from ymf.names import _SUPERSCRIPTS, NotationError, tokens
 
@@ -62,6 +63,9 @@ _FUNCTIONS = {
     "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan, "exp": sympy.exp,
     "log": sympy.log, "sqrt": sympy.sqrt, "sinh": sympy.sinh, "cosh": sympy.cosh,
     "tanh": sympy.tanh, "abs": sympy.Abs,
+    # sqrt(a² + b²) rounded once (C99 hypot), so that a formula can match code
+    # that computes a distance with it bit for bit
+    "hypot": hypot,
     # sharp functions: their derivatives are Dirac deltas, so a solver needs
     # them regularized (a discretization's business); min and max take any
     # number of arguments
