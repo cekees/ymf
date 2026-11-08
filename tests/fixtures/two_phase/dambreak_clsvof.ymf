@@ -1,0 +1,32 @@
+# The dam break of dambreak.ymf with RANS2P and CLSVOF in place of the four
+# interface solves (damBreakLevelSet.py with interface=1). No sub-problem
+# carries χ here, so the atmosphere's χ inflow (what enters is air) is a
+# condition on the sign of the φ CLSVOF solves (ymf.symbolic.split).
+extends: dambreak.ymf
+
+solution_paths:
+  analytical: []
+  discretizations:
+    - name: level_set_clsvof
+      provenance: proteus_derived
+      mesh: {h: 0.0322}
+      binds:
+        h: {meaning: element_size}
+        ε: {formula: "1.5 h"}
+      regularize:
+        heaviside: {by: smoothed_heaviside, width: ε}
+      step_control: {type: min_cfl, cfl: 0.25, step_exact: true}
+      solver: {type: nonlinear, nonlinear_solver: newton, linear_solver: iterative, max_iterations: 50}
+      subproblems:
+        - name: flow
+          solves: [momentum, continuity]
+          lags: {φ: previous_step, χ: {via: clsvof, at: previous_step}}
+          finite_element: {velocity: {family: CG, order: 1}, pressure: {family: CG, order: 1}}
+          time_integration: backward_euler
+          solver: {max_iterations: 100}
+        - name: clsvof
+          solves: [interface]
+          enforces: "norm(∇φ) = 1"
+          lags: {v: {via: flow, at: current_step}}
+          finite_element: {fields: {family: CG, order: 1}}
+          time_integration: backward_euler

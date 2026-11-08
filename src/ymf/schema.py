@@ -188,6 +188,10 @@ SubproblemDef = Map({
     Optional("writes_back"): MapPattern(Str(), Str()),
     Optional("pseudo_time"): Enum(["steady"]),
     Optional("spin_up"): Bool(),
+    # what it does, a word of ymf.vocabulary.ROLES for the model's family;
+    # read from the structure above and written by closure, so a stated
+    # role is checked against it (ymf.vocabulary.check)
+    Optional("role"): Str(),
     Optional("binds"): MapPattern(Str(), SymbolBinding),
     # replaces the entry's regularize: for this sub-problem's sharp functions
     Optional("regularize"): MapPattern(Str(), RegularizeDef),
@@ -293,6 +297,9 @@ PhysicalModelDef = Map(
         "provenance": ProvenanceEnum,
         Optional("processes"): Seq(Str()),
         Optional("assumptions"): Seq(Str()),
+        # the model family (ymf.vocabulary.FAMILIES) the processes and
+        # assumptions identify; written by closure, checked if stated
+        Optional("family"): Str(),
         Optional("source_document"): Str(),
         Optional("notes"): Str(),
     }

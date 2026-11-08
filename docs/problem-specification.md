@@ -856,6 +856,46 @@ solves for, and those on a coefficient its introduced unknown carries
 expanded. A condition on a field a sub-problem only reads is another's. A solver maps a sub-problem onto its own modules (a
 dispatcher); `proteus:` blocks are interim hints for it, carried as text.
 
+### The words a dispatcher maps
+
+A solver's dispatcher maps the spec onto its modules by the words the spec
+states, and those words are ymf's ([`ymf.vocabulary`](../src/ymf/vocabulary.py)),
+checked on load, so that a second solver reads the same ones:
+
+| kind | words |
+|---|---|
+| model family (`physical_model.family`) | `two_phase_level_set`, `shallow_water`, `dispersive_shallow_water` |
+| sub-problem role (`role`) | two-phase: `velocity_pressure`, `velocity`, `pressure_increment`, `pressure`, `pressure_spin_up`, `volume_fraction`, `level_set`, `level_set_redistanced`, `redistancing`, `mass_correction`; shallow water: `shallow_water` |
+| `time_integration` | `backward_euler`, `bdf2`, `ssp_rk3`, `none` |
+| `stabilization.method` | `ASGS`, `SUPG`, `residual_shock_capturing`, `entropy_viscosity`, `graph_viscosity_smoothness`, `graph_viscosity_entropy_residual` |
+| `discretization.scheme` and its options | `graph_viscosity_convex_limiting`: `entropy_viscosity_coefficient`, `lumped_mass`, `bounds_relaxation` (and `time_integration`, `outputs`, `dt` for every scheme) |
+| `step_control.type` | `min_cfl`, `fixed` |
+| `regularize.*.by` | `smoothed_heaviside`, `smoothed_sign`, `wet_dry_cutoff` |
+| `binds.*.meaning` | `element_size`, `dry_depth` |
+| `writes_back` | `replace`, `add`, `mass_quadrature` |
+| `linear_solver` | `direct`, `iterative`; `superlu`, `mumps`, `umfpack`, `petsc` |
+
+A family is identified by the processes and assumptions of
+`physical_model` (two-phase: `incompressible_flow`, `two_phase_flow`,
+`interface_transport`; shallow water: `hydrostatic`, `depth_averaged`,
+`nondispersive`; dispersive: `depth_averaged`, `dispersive`). A role is
+read from the sub-problem's structure: what it solves (the unknowns its
+equations are for), enforces, introduces and spins up. Both may be stated
+(`family:`, `role:`), and are then checked against what the model and the
+structure say; a closed spec writes both out (`ymf.explicit`), and neither
+counts towards an output's key, since each follows from what does.
+
+Some words were first the dispatch table's, named after a solver's class
+or flag; ymf's word replaces them and the old one is still read as an
+alias (`ymf.vocabulary.ALIASES`, `canonical`): `vbdf` is `bdf2`, `SSP_RK3`
+is `ssp_rk3`, `shock_capturing` (the method) is `residual_shock_capturing`,
+`pressure_initial` is `pressure_spin_up`, `entropy_viscosity_cE` is
+`entropy_viscosity_coefficient`. A spec using an alias
+loads, and is not rewritten: a reader keyed on the old word keeps working
+until it maps the new one. `dispersive_shallow_water` was identified by
+the assumption `hyperbolic_relaxation`, which is how GN_SW2DCV discretizes
+the model, not an assumption of it; that is still recognized.
+
 ## Document state
 
 A YMF document is the record of a progression: from a model, through a

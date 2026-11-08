@@ -3,6 +3,8 @@ asked of the linear solve, shared by every solver path; a package name is a
 request of its kind.
 """
 
+from pathlib import Path
+
 import pytest
 
 from ymf.vocabulary import VocabularyError, linear_solver_kind
@@ -30,3 +32,13 @@ def test_an_unknown_linear_solver_is_refused():
     with pytest.raises(VocabularyError, match="linear_solver hypre: ymf knows direct, iterative"):
         linear_solver_kind({"linear_solver": "hypre"})
 
+
+def test_the_schema_takes_direct_and_iterative():
+    pytest.importorskip("strictyaml")
+    from ymf.schema import load_ymf
+    doc = load_ymf(Path(__file__).parent / "fixtures" / "two_phase" / "dambreak_clsvof.ymf")
+    entry = next(e for e in doc["solution_paths"]["discretizations"]
+                 if e["name"] == "level_set_clsvof")
+    assert entry["solver"]["linear_solver"] == "iterative"
+    from ymf.discretizations import subproblem_solver
+    assert linear_solver_kind(subproblem_solver(entry, entry["subproblems"][0])) == "iterative"

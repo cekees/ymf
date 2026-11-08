@@ -463,6 +463,11 @@ def resolve(doc: Dict[str, Any]) -> None:
     for entry in _paths(doc).get("discretizations") or []:
         if isinstance(entry, dict):
             _check_split(doc, entry)
+    from ymf.vocabulary import VocabularyError, check as check_vocabulary
+    try:
+        check_vocabulary(doc)
+    except VocabularyError as exc:
+        raise YmfReferenceError(str(exc)) from None
     labels = weak_form_labels(doc)
     discretizations = discretization_names(doc)
 
