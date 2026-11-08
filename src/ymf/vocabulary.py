@@ -10,7 +10,7 @@ checks them on load, the closed spec writes the ones it derives, and a
 solver's table only maps them.
 
 Each kind is a mapping ``{word: meaning}``. Where the dispatch table's word
-was a solver's name for the thing (``vbdf``, ``SSP_RK3``),
+was a solver's name for the thing (``vbdf``, ``SSP_RK3``, ``mannings``),
 ymf's word replaces it and the old one is accepted as an alias
 (:data:`ALIASES`): a spec using it still loads, and :func:`canonical` gives
 ymf's word. Aliases are not rewritten on load or in the closed spec yet, so
@@ -27,6 +27,9 @@ What is here:
   :data:`WRITES_BACK`, :data:`INERTIA_FORMS` -- the discretization's words.
 * :data:`LINEAR_SOLVERS` -- ``direct`` and ``iterative``, and the packages a
   spec may still name; :func:`linear_solver_kind`.
+* :data:`COEFFICIENT_ROLES` -- what a coefficient means (``density``,
+  ``gravity``, ``bed_elevation``), so a solver finds the density by its
+  role, not by the name the family file gives it; :func:`coefficient_by_role`.
 
 :func:`check` is called on load (ymf.references). Stdlib only, like the rest
 of the spec core.
@@ -39,9 +42,9 @@ from typing import Any, Dict, Iterable, List, Optional
 
 __all__ = ["FAMILIES", "ROLES", "TIME_INTEGRATION", "STABILIZATION", "SCHEMES",
            "STEP_CONTROL", "REGULARIZATIONS", "BINDING_MEANINGS", "WRITES_BACK",
-           "INERTIA_FORMS", "LINEAR_SOLVERS", "ALIASES",
+           "INERTIA_FORMS", "LINEAR_SOLVERS", "COEFFICIENT_ROLES", "ALIASES",
            "canonical", "family_of", "role_of", "roles_of", "linear_solver_kind",
-           "check", "VocabularyError"]
+           "coefficient_by_role", "coefficient_roles", "check", "VocabularyError"]
 
 
 class VocabularyError(ValueError):
@@ -346,13 +349,43 @@ def linear_solver_kind(solver: Optional[Dict[str, Any]]) -> Optional[str]:
     return LINEAR_SOLVERS[word]["kind"]
 
 
+# ---------------------------------------------------------------------------
+# Coefficient roles
+# ---------------------------------------------------------------------------
+
+#: what a coefficient means, independent of the name a model gives it. A
+#: model gives a coefficient a role (``ρ: {formula: ..., role: density}``) and
+#: a solver that needs the density finds it by the role. ``units`` is the SI
+#: dimension a coefficient of that role has (checked by ymf.units).
+COEFFICIENT_ROLES: Dict[str, Dict[str, str]] = {
+    "density": {"units": "kg/m3", "means": "mass per unit volume (of the mixture, in two-phase "
+                                           "flow)"},
+    "dynamic_viscosity": {"units": "Pa*s", "means": "the dynamic viscosity μ"},
+    "kinematic_viscosity": {"units": "m2/s", "means": "the kinematic viscosity ν = μ/ρ"},
+    "gravity": {"units": "m/s2", "means": "the gravitational acceleration (a vector, or its "
+                                          "magnitude in a depth-averaged model)"},
+    "phase_indicator": {"units": "1", "means": "0 in phase 0, 1 in phase 1: heaviside of the level "
+                                               "set"},
+    "surface_tension": {"units": "N/m", "means": "the surface tension coefficient σ"},
+    "bed_elevation": {"units": "m", "means": "the bed (bathymetry) Z"},
+    "manning_coefficient": {"units": "s/m^(1/3)", "means": "Manning's n in the bed friction"},
+    "porosity": {"units": "1", "means": "the fraction of the volume (or plan area) open to the "
+                                        "flow"},
+    "linear_drag": {"units": "1/s", "means": "the linear (Darcy) drag coefficient α"},
+    "quadratic_drag": {"units": "1/m", "means": "the quadratic (Forchheimer) drag coefficient β"},
+    "bed_friction": {"units": "m2/s2", "means": "the bed shear stress over the density, τb"},
+    "canopy_drag": {"units": "m2/s2", "means": "the drag force of a canopy per unit plan area, "
+                                               "over the density"},
+    "diffusivity": {"units": "m2/s", "means": "a diffusion coefficient"},
+}
+
 #: the words of each kind, for check() and canonical()
 _KINDS: Dict[str, Dict[str, Any]] = {
     "family": FAMILIES, "role": {r: m for fam in ROLES.values() for r, m in fam.items()},
     "time_integration": TIME_INTEGRATION, "stabilization": STABILIZATION, "scheme": SCHEMES,
     "step_control": STEP_CONTROL, "regularization": REGULARIZATIONS,
     "binding_meaning": BINDING_MEANINGS, "writes_back": WRITES_BACK,
-    "linear_solver": LINEAR_SOLVERS,
+    "linear_solver": LINEAR_SOLVERS, "coefficient_role": COEFFICIENT_ROLES,
     "scheme_option": {o: m for s in SCHEMES.values() for o, m in s["options"].items()},
 }
 
@@ -363,6 +396,8 @@ ALIASES: Dict[str, Dict[str, str]] = {
     "stabilization": {"shock_capturing": "residual_shock_capturing"},
     "role": {"pressure_initial": "pressure_spin_up"},
     "scheme_option": {"entropy_viscosity_cE": "entropy_viscosity_coefficient"},
+    "coefficient_role": {"mannings": "manning_coefficient", "bathymetry": "bed_elevation",
+                         "drag_alpha": "linear_drag", "drag_beta": "quadratic_drag"},
 }
 
 
@@ -379,6 +414,21 @@ def canonical(kind: str, word: Any) -> str:
     raise VocabularyError("%s %s: ymf knows %s" % (
         kind.replace("_", " "), word,
         ", ".join(list(words) + ["%s (= %s)" % kv for kv in ALIASES.get(kind, {}).items()])))
+
+
+def coefficient_roles(doc: Dict[str, Any]) -> Dict[str, str]:
+    """``{role: coefficient name}`` of the model's coefficients that state one
+    (roles in ymf's words)."""
+    out = {}
+    for name, entry in (_strong(doc).get("coefficients") or {}).items():
+        if isinstance(entry, dict) and entry.get("role") is not None:
+            out[canonical("coefficient_role", entry["role"])] = name
+    return out
+
+
+def coefficient_by_role(doc: Dict[str, Any], role: str) -> Optional[str]:
+    """The name of the model's coefficient with ``role``, or None."""
+    return coefficient_roles(doc).get(canonical("coefficient_role", role))
 
 
 # ---------------------------------------------------------------------------
@@ -468,7 +518,7 @@ def _check_entry(doc: Dict[str, Any], entry: Dict[str, Any], family: Optional[st
 def check(doc: Dict[str, Any]) -> None:
     """Every vocabulary word the document states is ymf's (or an alias of
     one); a stated family or sub-problem role agrees with what the model and
-    the sub-problem's structure say.
+    the sub-problem's structure say; a coefficient role is used once.
     Raises :class:`VocabularyError`."""
     physical = _physical(doc)
     family = None
@@ -483,6 +533,14 @@ def check(doc: Dict[str, Any]) -> None:
     else:
         found = families_of(doc)
         family = found[0] if len(found) == 1 else None
+    seen: Dict[str, str] = {}
+    for name, entry in (_strong(doc).get("coefficients") or {}).items():
+        if isinstance(entry, dict) and entry.get("role") is not None:
+            where = "model.strong_form.coefficients.%s.role" % (name,)
+            role = _word("coefficient_role", entry["role"], where)
+            if role in seen:
+                raise VocabularyError("%s: %s is already the role of %s" % (where, role, seen[role]))
+            seen[role] = name
     for entry in ((doc.get("solution_paths") or {}).get("discretizations") or []):
         if isinstance(entry, dict):
             _check_entry(doc, entry, family)

@@ -459,6 +459,10 @@ CoefficientMapDef = Map(
         # the unknowns a formula follows, directly or through another
         # coefficient; written by closure (ymf.explicit), checked on load
         Optional("depends_on"): Seq(Str()),
+        # what the coefficient means, a word of
+        # ymf.vocabulary.COEFFICIENT_ROLES (density, gravity, bed_elevation):
+        # a solver finds a coefficient by its role, not its name
+        Optional("role"): Str(),
     }
 )
 

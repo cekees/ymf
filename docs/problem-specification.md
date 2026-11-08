@@ -874,6 +874,7 @@ checked on load, so that a second solver reads the same ones:
 | `binds.*.meaning` | `element_size`, `dry_depth` |
 | `writes_back` | `replace`, `add`, `mass_quadrature` |
 | `linear_solver` | `direct`, `iterative`; `superlu`, `mumps`, `umfpack`, `petsc` |
+| coefficient `role` | `density`, `dynamic_viscosity`, `kinematic_viscosity`, `gravity`, `phase_indicator`, `surface_tension`, `bed_elevation`, `manning_coefficient`, `porosity`, `linear_drag`, `quadratic_drag`, `bed_friction`, `canopy_drag`, `diffusivity` |
 
 A family is identified by the processes and assumptions of
 `physical_model` (two-phase: `incompressible_flow`, `two_phase_flow`,
@@ -885,12 +886,22 @@ equations are for), enforces, introduces and spins up. Both may be stated
 structure say; a closed spec writes both out (`ymf.explicit`), and neither
 counts towards an output's key, since each follows from what does.
 
+A **coefficient role** says what a coefficient means whatever the model
+calls it: `ρ: {formula: "ρw (1 − χ) + ρa χ", units: kg/m3, role: density}`.
+A solver that needs the density, the gravity or the bed finds it by its
+role (`ymf.vocabulary.coefficient_by_role(doc, "density")`), not by the
+name the family file happens to use. A role is used by one coefficient of
+a model, and `ymf.units.check` refuses units of another dimension than the
+role's.
+
 Some words were first the dispatch table's, named after a solver's class
 or flag; ymf's word replaces them and the old one is still read as an
 alias (`ymf.vocabulary.ALIASES`, `canonical`): `vbdf` is `bdf2`, `SSP_RK3`
 is `ssp_rk3`, `shock_capturing` (the method) is `residual_shock_capturing`,
 `pressure_initial` is `pressure_spin_up`, `entropy_viscosity_cE` is
-`entropy_viscosity_coefficient`. A spec using an alias
+`entropy_viscosity_coefficient`, and the coefficient roles `mannings`,
+`bathymetry`, `drag_alpha`, `drag_beta` are `manning_coefficient`,
+`bed_elevation`, `linear_drag`, `quadratic_drag`. A spec using an alias
 loads, and is not rewritten: a reader keyed on the old word keeps working
 until it maps the new one. `dispersive_shallow_water` was identified by
 the assumption `hyperbolic_relaxation`, which is how GN_SW2DCV discretizes

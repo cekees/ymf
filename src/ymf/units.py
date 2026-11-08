@@ -183,6 +183,8 @@ def check(doc: Dict[str, Any], missing_units: str = "skip") -> UnitCheckResult:
       is the diffusive flux of the variable's equation.
     - Each ``initial_conditions[].units`` is dimensionally compatible with
       the ``unknowns[].units`` of the field it initializes.
+    - A coefficient with a ``role`` (ymf.vocabulary.COEFFICIENT_ROLES) and
+      ``units`` has the role's dimension.
     - A ``density`` or ``viscosity`` scale given as a number while a ``rho``
       (``ρ``) or ``mu`` (``μ``) coefficient is also given: ``error`` if they differ,
       ``warning`` if they agree. Derive the scale from the coefficient
@@ -245,6 +247,18 @@ def check(doc: Dict[str, Any], missing_units: str = "skip") -> UnitCheckResult:
                 to_pint_unit(spec["units"])
             except UnitParseError as exc:
                 result.issues.append(UnitIssue("error", f"coefficients[{name}]", str(exc)))
+                continue
+            role = spec.get("role")
+            if role is not None:
+                from ymf.vocabulary import COEFFICIENT_ROLES, VocabularyError, canonical
+                try:
+                    expected = COEFFICIENT_ROLES[canonical("coefficient_role", role)]["units"]
+                except VocabularyError:
+                    continue                     # refused on load (ymf.references)
+                if not units_compatible(spec["units"], expected):
+                    result.issues.append(UnitIssue(
+                        "error", f"coefficients[{name}]",
+                        f"units {spec['units']} are not those of its role {role} ({expected})"))
 
     # A scale stated as a number beside a coefficient for the same quantity
     # is one value written twice, and the copies drift apart when someone

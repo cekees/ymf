@@ -172,6 +172,14 @@ DISPATCH_TABLE_LABELS = [
     ("step_control", "min_cfl", "min_cfl"),
     ("regularization", "smoothed_heaviside", "smoothed_heaviside"),
     ("binding_meaning", "element_size", "element_size"),
+    ("coefficient_role", "density", "density"),
+    ("coefficient_role", "dynamic_viscosity", "dynamic_viscosity"),
+    ("coefficient_role", "gravity", "gravity"),
+    ("coefficient_role", "mannings", "manning_coefficient"),
+    ("coefficient_role", "porosity", "porosity"),
+    ("coefficient_role", "drag_alpha", "linear_drag"),
+    ("coefficient_role", "drag_beta", "quadratic_drag"),
+    ("coefficient_role", "bathymetry", "bed_elevation"),
 ]
 
 
