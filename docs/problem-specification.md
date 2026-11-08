@@ -233,7 +233,8 @@ may be omitted when the document has only one — see
 `fields`, or `velocity` and `pressure` for mixed problems, each as
 `{family: CG|DG|RT|BDM|RTF|N1curl, order: n}`. The `solver` block takes
 `type` (`linear | nonlinear | time_marching | saddle_point`),
-`linear_solver` (`petsc | mumps | umfpack | superlu`), `petsc_options`,
+`linear_solver` (`direct | iterative`, or a package: `petsc | mumps | umfpack
+| superlu`), `petsc_options`,
 `nonlinear_solver` (`newton | broyden | line_search`), `tolerance` and
 `max_iterations`. `petsc_options` are PETSc options without the leading
 dash, as strings (`{ksp_type: cg, pc_type: gamg, ksp_rtol: "1e-10"}`; an
@@ -243,6 +244,15 @@ serial LU, `mumps` a direct solve through PETSc, and `petsc` a PETSc
 Krylov solve set by `petsc_options` (PETSc's defaults without them);
 `umfpack` is refused, as it has no Proteus solver. Omitted, Proteus picks
 its serial LU, or MUMPS when the operator has a null space.
+`direct` and `iterative` say what is asked of the linear solve rather than
+which package does it: a direct factorization (serial or distributed, the
+solver's choice), or a Krylov method with a preconditioner that
+`petsc_options` refine. Every solver path of a solver reads the same two
+words and maps them to its own options, and refuses what it cannot honour
+instead of overriding the spec. A package name is a request of its kind
+(`superlu`, `mumps` and `umfpack` direct; `petsc` iterative, unless
+`petsc_options` give `pc_type: lu` or `cholesky` with `ksp_type: preonly`):
+`ymf.vocabulary.linear_solver_kind` says which.
 `mesh: {cells, levels}` gives the meshes: cells along each side of the
 domain's box, and levels of uniform refinement (the solution is on the
 finest). A region that is not a box (`kind: piecewise_linear`) gives

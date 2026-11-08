@@ -98,7 +98,11 @@ SolverConfig = Map(
             ["linear", "nonlinear", "time_marching", "saddle_point"]
         ),
         Optional("nonlinear_solver"): Enum(["newton", "broyden", "line_search"]),
-        Optional("linear_solver"): Enum(["petsc", "mumps", "umfpack", "superlu"]),
+        # direct or iterative: what is asked of the linear solve, which each
+        # solver maps to its own options (or refuses); or a package, which
+        # is a request of its kind (ymf.vocabulary.LINEAR_SOLVERS)
+        Optional("linear_solver"): Enum(["direct", "iterative",
+                                         "petsc", "mumps", "umfpack", "superlu"]),
         # PETSc options, without the leading dash, for linear_solver petsc
         # or mumps: {ksp_type: cg, pc_type: gamg}. Values are passed as
         # written; an option that takes none is given "".
