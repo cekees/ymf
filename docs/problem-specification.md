@@ -374,6 +374,18 @@ solution_paths:
 | `y = 0 or x = 0 and y = H` | a boundary region; `∂Ω` is the whole boundary |
 | `Ω = [a, b] × [c, d],  t ∈ (t0, t1]` | the domain, a box, and the time interval of a transient problem |
 
+**Decimals are kept as written.** A numeral is an IEEE double, and a
+formula that must match code computing the same thing should compute it the
+same way. sympy before 1.14 rewrites a power of a sum with a decimal in it
+by factoring out the largest coefficient (`(x − 47.5)²` as
+`2256.25 (0.0210526 x − 1)²`, `sqrt` of a sum of such squares as `47.5
+sqrt(...)`): the same number, other arithmetic. The notation builds such a
+power as written, so `sqrt((x − 47.5)² + (y − 15)²)` prints as itself
+whichever sympy runs (Proteus pins 1.13). What sympy derives from it later,
+a derivative in an ADR form for example, it evaluates itself, so on sympy
+1.13 a derivative of such a power may still be factored; a spec that needs
+those bitwise as well writes the decimal as a ratio (`95/2`).
+
 Names are the coordinates `x y z`, time `t`, `π`, the unknowns and the
 coefficients. A coefficient may be any name, Greek or not (`κ`, `ρ`, `μ`,
 `G`), and a coefficient's value may itself be a formula in the others and
