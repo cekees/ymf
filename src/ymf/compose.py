@@ -404,6 +404,20 @@ def _read_text(path: Path) -> str:
     return text
 
 
+_OUTPUTS_LINE = re.compile(r"^outputs:", re.M)
+
+
+def _as_written(text: str) -> Dict[str, Any]:
+    """An archive's mappings and lists with every scalar the string it is
+    written as (pyyaml's base loader), up to its top-level ``outputs:``: the
+    writer puts them last, and they hold the arrays."""
+    m = _OUTPUTS_LINE.search(text)
+    head = text[:m.start()] if m else text
+    loader = getattr(yaml, "CBaseLoader", yaml.BaseLoader)
+    data = yaml.load(head, Loader=loader)
+    return data if isinstance(data, dict) else {}
+
+
 def _read(path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     """Validate one file against the partial schema; return (data, outputs).
 
@@ -421,8 +435,15 @@ def _read(path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     document = read_document(path)
     outputs = document.pop("outputs", None)
     document.pop("ymf", None)
-    spec_text = _dump(document, allow_unicode=True, sort_keys=False,
-                               default_flow_style=False, width=1000)
+    # The specification part as written, every scalar a string: strictyaml
+    # types what the schema types, and a free-form (Any) value stays the text
+    # it was in the spec. Re-dumping pyyaml's typed values instead gave
+    # "1.0e6" back as "1000000.0", another input digest (C5 finding Y1).
+    spec_part = _as_written(text)
+    spec_part.pop("ymf", None)
+    spec_part.pop("outputs", None)
+    spec_text = _dump(spec_part, allow_unicode=True, sort_keys=False,
+                      default_flow_style=False, width=1000)
     data = strictyaml.dirty_load(spec_text, PARTIAL_YMF_SCHEMA, label=str(path),
                                  allow_flow_style=_ALLOW_FLOW_STYLE).data
     if "composition" in document:
