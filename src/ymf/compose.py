@@ -88,7 +88,13 @@ def _refuse_old_kind(text: str, path: Path) -> None:
             "'ymf_state: abstract' for 'kind: model', and drop 'kind: problem' "
             "(or write 'ymf_state: well-posed'). See ymf.state." % (path,))
 #: Keys that identify an entry in a list of mappings, in order of preference.
-_IDENTITY_KEYS = ("label", "name")
+_IDENTITY_KEYS = ("label", "name", "field")
+
+#: identity keys whose entries an extending file replaces whole rather than
+#: merges key by key: an initial condition is one statement, and merging
+#: {type: function, formula} onto {type: constant, value} would keep a value
+#: that no longer means anything
+_REPLACED_WHOLE = ("field",)
 
 
 class YmfCompositionError(ValueError):
@@ -257,7 +263,14 @@ def _merge(parent: Any, child: Any, path: str, source: str,
                 key = _identity(entry)[1]
                 where = "%s[%s]" % (path, key)
                 _note_writer(provenance, where, source)
-                if key in index:
+                if key in index and _identity(entry)[0] in _REPLACED_WHOLE:
+                    i = index[key]
+                    if parent[i] != entry:
+                        overrides.append({"path": where, "was": parent[i], "now": entry,
+                                          "set_by": source})
+                    merged[i] = entry
+                    _record_paths(entry, where, source, provenance)
+                elif key in index:
                     i = index[key]
                     merged[i] = _merge(parent[i], entry, where, source,
                                        overrides, provenance)

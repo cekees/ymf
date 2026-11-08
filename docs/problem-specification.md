@@ -1034,7 +1034,11 @@ solution_paths: {...}
 
 **Merge rules.** Mappings merge key by key. Lists of entries with a
 `label` or `name` (unknowns, weak forms, discretizations, boundary regions)
-merge entry by entry on it, and new entries are appended. Lists of strings
+merge entry by entry on it, and new entries are appended. Initial
+conditions pair up by `field`: an extending file that states the initial
+condition of one field replaces that entry whole (its type and value go
+together) and leaves the others as inherited, and `remove:` can name one
+(`model.strong_form.initial_conditions[φ]`). Lists of strings
 (`processes`, `assumptions`) are unioned. Anything else the child sets
 replaces the parent's value. Every file in a chain is checked against the
 partial schema as it is read, so an error is reported against the file and
