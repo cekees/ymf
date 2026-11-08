@@ -853,8 +853,20 @@ regularizations it used, an introduced unknown's initial condition, its
 effective solver, and its **boundary conditions**: those on the unknowns it
 solves for, and those on a coefficient its introduced unknown carries
 (atmosphere's `χ` inflow is VOF's `χh` inflow), with condition sets
-expanded. A condition on a field a sub-problem only reads is another's. A solver maps a sub-problem onto its own modules (a
-dispatcher); `proteus:` blocks are interim hints for it, carried as text.
+expanded. A condition on a field a sub-problem only reads is another's.
+A condition on a **phase indicator no sub-problem carries** (`χ :=
+heaviside(φ)` with no VOF, as when CLSVOF solves the level set alone) is a
+condition on the sign of the level set, given to the sub-problem that
+solves it: `heaviside(φ) = 1` says `φ > 0` and no more. Its entry has
+`variable: φ`, `sign` (`1` for χ = 1, `-1` for 0, `0` for 1/2), the
+indicator's own `{variable, value}` and no `value`; a solver that imposes a
+Dirichlet value picks one with that sign. So the atmosphere's `χ` inflow
+of 1 (what enters is air) is VOF's `χh` inflow in `level_set_five` and the
+positive `φ` inflow of CLSVOF in `level_set_clsvof`
+([`dambreak_clsvof.ymf`](../tests/fixtures/two_phase/dambreak_clsvof.ymf)).
+Anything else on such an indicator (a formula, another value) is refused.
+A solver maps a sub-problem onto its own modules (a dispatcher); `proteus:`
+blocks are interim hints for it, carried as text.
 
 ### The words a dispatcher maps
 
