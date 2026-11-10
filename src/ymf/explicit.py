@@ -23,7 +23,11 @@ boundary conditions; C42 round 2 for the rest):
   refined by its own), its regularization (the entry's, function by
   function replaced by its own), and each lag as ``{at, via, of,
   carried_by}``, where ``carried_by`` names the introduced unknown that
-  carries a lagged coefficient (``χ`` via VOF is read as ``χh``).
+  carries a lagged coefficient (``χ`` via VOF is read as ``χh``);
+* the model's **family** (``physical_model.family``) when its processes and
+  assumptions identify one, and each sub-problem's **role** in it
+  (ymf.vocabulary), so a dispatcher maps the words the spec states instead
+  of reading them off the structure itself.
 
 Applying it twice changes nothing, and a spec with none of the shorthand
 (no aliases, no coefficients of the state, no sub-problems) is returned
@@ -41,6 +45,11 @@ __all__ = ["explicit", "without_derived", "state_coefficients", "split_out", "ca
 #: keys explicit() derives from what the input already says, which therefore
 #: do not count towards an output's key (ymf.closure.input_slice)
 DERIVED_KEYS = ("depends_on",)
+
+#: the same, on a sub-problem; and the model's family when its processes and
+#: assumptions identify exactly one (a family stated to choose between
+#: several is input)
+DERIVED_SUBPROBLEM_KEYS = ("role",)
 
 
 def _strong(doc: Dict[str, Any]) -> Dict[str, Any]:
@@ -142,19 +151,63 @@ def explicit(doc: Dict[str, Any]) -> Dict[str, Any]:
         paths["discretizations"] = [split_out(e) if isinstance(e, dict) else e
                                     for e in entries]
         doc["solution_paths"] = paths
+    return _name_roles(doc)
+
+
+def _name_roles(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """The model's family and each sub-problem's role, written out."""
+    from ymf.vocabulary import VocabularyError, family_of, role_of
+    try:
+        family = family_of(doc)
+    except VocabularyError:
+        return doc                           # several: refused on load, or stated
+    if family is None:
+        return doc
+    doc = dict(doc)
+    model = dict(doc["model"])
+    model["physical_model"] = dict(model.get("physical_model") or {}, family=family)
+    doc["model"] = model
+    entries = (doc.get("solution_paths") or {}).get("discretizations") or []
+    if any(isinstance(e, dict) and e.get("subproblems") for e in entries):
+        out = []
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("subproblems"):
+                entry = dict(entry)
+                subs = []
+                for sub in entry["subproblems"]:
+                    role = role_of(sub, doc, family)
+                    subs.append(dict(sub, role=role) if role else sub)
+                entry["subproblems"] = subs
+            out.append(entry)
+        doc["solution_paths"] = dict(doc["solution_paths"], discretizations=out)
     return doc
 
 
 def without_derived(doc: Dict[str, Any]) -> Dict[str, Any]:
     """``doc`` with the keys :func:`explicit` derives from the rest removed."""
+    from ymf.vocabulary import families_of
     strong = _strong(doc)
     coefficients = strong.get("coefficients") or {}
-    if not any(isinstance(e, dict) and any(k in e for k in DERIVED_KEYS)
-               for e in coefficients.values()):
+    physical = (doc.get("model") or {}).get("physical_model") or {}
+    family = physical.get("family") is not None and len(families_of(doc)) == 1
+    entries = (doc.get("solution_paths") or {}).get("discretizations") or []
+    roles = any(isinstance(s, dict) and any(k in s for k in DERIVED_SUBPROBLEM_KEYS)
+                for e in entries if isinstance(e, dict) for s in e.get("subproblems") or [])
+    if not family and not roles and not any(
+            isinstance(e, dict) and any(k in e for k in DERIVED_KEYS)
+            for e in coefficients.values()):
         return doc
     doc = copy.deepcopy(doc)
-    for entry in doc["model"]["strong_form"]["coefficients"].values():
+    for entry in ((doc["model"].get("strong_form") or {}).get("coefficients") or {}).values():
         if isinstance(entry, dict):
             for key in DERIVED_KEYS:
                 entry.pop(key, None)
+    if family:
+        doc["model"]["physical_model"].pop("family")
+    for entry in (doc.get("solution_paths") or {}).get("discretizations") or []:
+        if isinstance(entry, dict):
+            for sub in entry.get("subproblems") or []:
+                if isinstance(sub, dict):
+                    for key in DERIVED_SUBPROBLEM_KEYS:
+                        sub.pop(key, None)
     return doc

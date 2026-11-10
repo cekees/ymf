@@ -7,6 +7,25 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-08: C42 round 3, the words a dispatcher maps (C5 decisions
+  16, 18-21 of 2026-11-06).** proteus's DispatchTable coined the labels it
+  matched on; they are `ymf.vocabulary` now, stated by the spec, checked on
+  load, and the derived ones (a model's `family`, each sub-problem's
+  `role`) written by closure without counting towards a key. Renamed where
+  ymf had a better word, the old one kept as an alias: `vbdf` -> `bdf2`,
+  `SSP_RK3` -> `ssp_rk3`, `shock_capturing` -> `residual_shock_capturing`,
+  `pressure_initial` -> `pressure_spin_up`, `entropy_viscosity_cE` ->
+  `entropy_viscosity_coefficient`. Coefficients carry a `role` (`density`,
+  `gravity`, `bed_elevation`, ...), so a solver stops looking them up by
+  name. `linear_solver: direct | iterative`, shared by every solver path. A
+  condition on a phase indicator no sub-problem carries (χ with no VOF) is a
+  condition on its level set's sign, so CLSVOF gets the atmosphere's air
+  inflow. Three fixes: an archive's spec part reads back as written (`1.0e6`
+  had come back `'1000000.0'`, another input digest: `--check` broke); a
+  power of a sum keeps its decimals on sympy 1.13 (`(x − 47.5)²` had become
+  `2256.25 (0.0210526 x − 1)²`); `extends` pairs `initial_conditions` by
+  `field`.
+
 - **2026-11-06: `hypot(a, b)` in the notation.** C5 step 2 (proteus runs a
   split discretization from the spec and compares it bitwise with the deck):
   the dam break's initial signed distance written `sqrt(max(x − 1.2, 0)² +

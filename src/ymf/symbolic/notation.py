@@ -59,9 +59,32 @@ __all__ = ["NotationError", "Parser", "tokens"]
 #: words that join predicates; never names, never implicit factors
 _KEYWORDS = {"and", "or", "in"}
 
+def _pow(base, exponent):
+    """``base ** exponent``, keeping the decimals of a sum as written.
+
+    sympy before 1.14 rewrites a power of a sum whose terms have a decimal
+    coefficient by factoring out the largest one: ``(x − 47.5)²`` becomes
+    ``2256.25 (0.0210526 x − 1)²``, and ``sqrt`` of a sum of such squares
+    ``47.5 sqrt(...)``. The same number, other arithmetic, so a formula could
+    not match code that computes it as written (C5 finding Y2; proteus pins
+    sympy 1.13). Such a power is built unevaluated; sympy 1.14 leaves it as
+    written anyway, so this changes nothing there. What sympy derives from
+    it later (a derivative, a substitution) it evaluates itself.
+    """
+    exponent = sympy.sympify(exponent)
+    if (isinstance(base, sympy.Add) and exponent.is_Number and exponent not in (0, 1, -1)
+            and any(c.is_Float for c, _ in (a.as_coeff_Mul() for a in base.args))):
+        return sympy.Pow(base, exponent, evaluate=False)
+    return base ** exponent
+
+
+def _sqrt(a):
+    return _pow(a, sympy.S.Half) if isinstance(a, sympy.Add) else sympy.sqrt(a)
+
+
 _FUNCTIONS = {
     "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan, "exp": sympy.exp,
-    "log": sympy.log, "sqrt": sympy.sqrt, "sinh": sympy.sinh, "cosh": sympy.cosh,
+    "log": sympy.log, "sqrt": _sqrt, "sinh": sympy.sinh, "cosh": sympy.cosh,
     "tanh": sympy.tanh, "abs": sympy.Abs,
     # sqrt(a² + b²) rounded once (C99 hypot), so that a formula can match code
     # that computes a distance with it bit for bit
@@ -79,7 +102,7 @@ def _norm(v):
     if isinstance(v, sympy.MatrixBase):
         if v.shape[1] != 1:
             raise ValueError("norm needs a vector, got a %dx%d tensor" % v.shape)
-        return sympy.sqrt(sum(e ** 2 for e in v))
+        return _sqrt(sum(_pow(e, 2) for e in v))
     return sympy.Abs(v)
 
 
@@ -208,9 +231,9 @@ class Parser:
         while True:
             tok = self._peek()
             if tok[1] in _SUPERSCRIPTS:
-                self._take(); base = base ** _SUPERSCRIPTS[tok[1]]
+                self._take(); base = _pow(base, _SUPERSCRIPTS[tok[1]])
             elif tok[1] in ("^", "**"):
-                self._take(); base = base ** self._unary()
+                self._take(); base = _pow(base, self._unary())
             else:
                 return base
 

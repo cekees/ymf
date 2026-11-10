@@ -233,7 +233,8 @@ may be omitted when the document has only one — see
 `fields`, or `velocity` and `pressure` for mixed problems, each as
 `{family: CG|DG|RT|BDM|RTF|N1curl, order: n}`. The `solver` block takes
 `type` (`linear | nonlinear | time_marching | saddle_point`),
-`linear_solver` (`petsc | mumps | umfpack | superlu`), `petsc_options`,
+`linear_solver` (`direct | iterative`, or a package: `petsc | mumps | umfpack
+| superlu`), `petsc_options`,
 `nonlinear_solver` (`newton | broyden | line_search`), `tolerance` and
 `max_iterations`. `petsc_options` are PETSc options without the leading
 dash, as strings (`{ksp_type: cg, pc_type: gamg, ksp_rtol: "1e-10"}`; an
@@ -243,6 +244,15 @@ serial LU, `mumps` a direct solve through PETSc, and `petsc` a PETSc
 Krylov solve set by `petsc_options` (PETSc's defaults without them);
 `umfpack` is refused, as it has no Proteus solver. Omitted, Proteus picks
 its serial LU, or MUMPS when the operator has a null space.
+`direct` and `iterative` say what is asked of the linear solve rather than
+which package does it: a direct factorization (serial or distributed, the
+solver's choice), or a Krylov method with a preconditioner that
+`petsc_options` refine. Every solver path of a solver reads the same two
+words and maps them to its own options, and refuses what it cannot honour
+instead of overriding the spec. A package name is a request of its kind
+(`superlu`, `mumps` and `umfpack` direct; `petsc` iterative, unless
+`petsc_options` give `pc_type: lu` or `cholesky` with `ksp_type: preonly`):
+`ymf.vocabulary.linear_solver_kind` says which.
 `mesh: {cells, levels}` gives the meshes: cells along each side of the
 domain's box, and levels of uniform refinement (the solution is on the
 finest). A region that is not a box (`kind: piecewise_linear`) gives
@@ -363,6 +373,18 @@ solution_paths:
 | `lhs = rhs  in Ω` | an equation; the `in ...` clause is ignored |
 | `y = 0 or x = 0 and y = H` | a boundary region; `∂Ω` is the whole boundary |
 | `Ω = [a, b] × [c, d],  t ∈ (t0, t1]` | the domain, a box, and the time interval of a transient problem |
+
+**Decimals are kept as written.** A numeral is an IEEE double, and a
+formula that must match code computing the same thing should compute it the
+same way. sympy before 1.14 rewrites a power of a sum with a decimal in it
+by factoring out the largest coefficient (`(x − 47.5)²` as
+`2256.25 (0.0210526 x − 1)²`, `sqrt` of a sum of such squares as `47.5
+sqrt(...)`): the same number, other arithmetic. The notation builds such a
+power as written, so `sqrt((x − 47.5)² + (y − 15)²)` prints as itself
+whichever sympy runs (Proteus pins 1.13). What sympy derives from it later,
+a derivative in an ADR form for example, it evaluates itself, so on sympy
+1.13 a derivative of such a power may still be factored; a spec that needs
+those bitwise as well writes the decimal as a ratio (`95/2`).
 
 Names are the coordinates `x y z`, time `t`, `π`, the unknowns and the
 coefficients. A coefficient may be any name, Greek or not (`κ`, `ρ`, `μ`,
@@ -843,8 +865,71 @@ regularizations it used, an introduced unknown's initial condition, its
 effective solver, and its **boundary conditions**: those on the unknowns it
 solves for, and those on a coefficient its introduced unknown carries
 (atmosphere's `χ` inflow is VOF's `χh` inflow), with condition sets
-expanded. A condition on a field a sub-problem only reads is another's. A solver maps a sub-problem onto its own modules (a
-dispatcher); `proteus:` blocks are interim hints for it, carried as text.
+expanded. A condition on a field a sub-problem only reads is another's.
+A condition on a **phase indicator no sub-problem carries** (`χ :=
+heaviside(φ)` with no VOF, as when CLSVOF solves the level set alone) is a
+condition on the sign of the level set, given to the sub-problem that
+solves it: `heaviside(φ) = 1` says `φ > 0` and no more. Its entry has
+`variable: φ`, `sign` (`1` for χ = 1, `-1` for 0, `0` for 1/2), the
+indicator's own `{variable, value}` and no `value`; a solver that imposes a
+Dirichlet value picks one with that sign. So the atmosphere's `χ` inflow
+of 1 (what enters is air) is VOF's `χh` inflow in `level_set_five` and the
+positive `φ` inflow of CLSVOF in `level_set_clsvof`
+([`dambreak_clsvof.ymf`](../tests/fixtures/two_phase/dambreak_clsvof.ymf)).
+Anything else on such an indicator (a formula, another value) is refused.
+A solver maps a sub-problem onto its own modules (a dispatcher); `proteus:`
+blocks are interim hints for it, carried as text.
+
+### The words a dispatcher maps
+
+A solver's dispatcher maps the spec onto its modules by the words the spec
+states, and those words are ymf's ([`ymf.vocabulary`](../src/ymf/vocabulary.py)),
+checked on load, so that a second solver reads the same ones:
+
+| kind | words |
+|---|---|
+| model family (`physical_model.family`) | `two_phase_level_set`, `shallow_water`, `dispersive_shallow_water` |
+| sub-problem role (`role`) | two-phase: `velocity_pressure`, `velocity`, `pressure_increment`, `pressure`, `pressure_spin_up`, `volume_fraction`, `level_set`, `level_set_redistanced`, `redistancing`, `mass_correction`; shallow water: `shallow_water` |
+| `time_integration` | `backward_euler`, `bdf2`, `ssp_rk3`, `none` |
+| `stabilization.method` | `ASGS`, `SUPG`, `residual_shock_capturing`, `entropy_viscosity`, `graph_viscosity_smoothness`, `graph_viscosity_entropy_residual` |
+| `discretization.scheme` and its options | `graph_viscosity_convex_limiting`: `entropy_viscosity_coefficient`, `lumped_mass`, `bounds_relaxation` (and `time_integration`, `outputs`, `dt` for every scheme) |
+| `step_control.type` | `min_cfl`, `fixed` |
+| `regularize.*.by` | `smoothed_heaviside`, `smoothed_sign`, `wet_dry_cutoff` |
+| `binds.*.meaning` | `element_size`, `dry_depth` |
+| `writes_back` | `replace`, `add`, `mass_quadrature` |
+| `linear_solver` | `direct`, `iterative`; `superlu`, `mumps`, `umfpack`, `petsc` |
+| coefficient `role` | `density`, `dynamic_viscosity`, `kinematic_viscosity`, `gravity`, `phase_indicator`, `surface_tension`, `bed_elevation`, `manning_coefficient`, `porosity`, `linear_drag`, `quadratic_drag`, `bed_friction`, `canopy_drag`, `diffusivity` |
+
+A family is identified by the processes and assumptions of
+`physical_model` (two-phase: `incompressible_flow`, `two_phase_flow`,
+`interface_transport`; shallow water: `hydrostatic`, `depth_averaged`,
+`nondispersive`; dispersive: `depth_averaged`, `dispersive`). A role is
+read from the sub-problem's structure: what it solves (the unknowns its
+equations are for), enforces, introduces and spins up. Both may be stated
+(`family:`, `role:`), and are then checked against what the model and the
+structure say; a closed spec writes both out (`ymf.explicit`), and neither
+counts towards an output's key, since each follows from what does.
+
+A **coefficient role** says what a coefficient means whatever the model
+calls it: `ρ: {formula: "ρw (1 − χ) + ρa χ", units: kg/m3, role: density}`.
+A solver that needs the density, the gravity or the bed finds it by its
+role (`ymf.vocabulary.coefficient_by_role(doc, "density")`), not by the
+name the family file happens to use. A role is used by one coefficient of
+a model, and `ymf.units.check` refuses units of another dimension than the
+role's.
+
+Some words were first the dispatch table's, named after a solver's class
+or flag; ymf's word replaces them and the old one is still read as an
+alias (`ymf.vocabulary.ALIASES`, `canonical`): `vbdf` is `bdf2`, `SSP_RK3`
+is `ssp_rk3`, `shock_capturing` (the method) is `residual_shock_capturing`,
+`pressure_initial` is `pressure_spin_up`, `entropy_viscosity_cE` is
+`entropy_viscosity_coefficient`, and the coefficient roles `mannings`,
+`bathymetry`, `drag_alpha`, `drag_beta` are `manning_coefficient`,
+`bed_elevation`, `linear_drag`, `quadratic_drag`. A spec using an alias
+loads, and is not rewritten: a reader keyed on the old word keeps working
+until it maps the new one. `dispersive_shallow_water` was identified by
+the assumption `hyperbolic_relaxation`, which is how GN_SW2DCV discretizes
+the model, not an assumption of it; that is still recognized.
 
 ## Document state
 
@@ -949,7 +1034,11 @@ solution_paths: {...}
 
 **Merge rules.** Mappings merge key by key. Lists of entries with a
 `label` or `name` (unknowns, weak forms, discretizations, boundary regions)
-merge entry by entry on it, and new entries are appended. Lists of strings
+merge entry by entry on it, and new entries are appended. Initial
+conditions pair up by `field`: an extending file that states the initial
+condition of one field replaces that entry whole (its type and value go
+together) and leaves the others as inherited, and `remove:` can name one
+(`model.strong_form.initial_conditions[φ]`). Lists of strings
 (`processes`, `assumptions`) are unioned. Anything else the child sets
 replaces the parent's value. Every file in a chain is checked against the
 partial schema as it is read, so an error is reported against the file and
