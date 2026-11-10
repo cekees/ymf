@@ -109,7 +109,8 @@ def test_explicit_is_idempotent_and_leaves_plain_specs_alone():
 def test_the_closed_dam_break_names_its_coefficients_of_the_state():
     closed = explicit(load_composed(DAMBREAK))
     coefficients = closed["model"]["strong_form"]["coefficients"]
-    assert coefficients["χ"] == {"formula": "heaviside(φ)", "units": "1", "depends_on": ["φ"]}
+    assert coefficients["χ"] == {"formula": "heaviside(φ)", "units": "1", "role": "phase_indicator",
+                                "depends_on": ["φ"]}
     assert coefficients["ρ"]["depends_on"] == ["φ"]
     assert coefficients["μ"]["depends_on"] == ["φ"]
     assert "depends_on" not in coefficients["ρw"]

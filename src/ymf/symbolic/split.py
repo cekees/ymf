@@ -110,6 +110,10 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
     approximates = {s["introduces"]["approximates"]: s["introduces"]["name"]
                     for s in subproblems if (s.get("introduces") or {}).get("approximates")}
     entry_bound = _bind(entry.get("binds") or {}, {}, dim, "the discretization's binds")
+    # phase indicators (χ := heaviside(φ)) no sub-problem carries: a condition
+    # on one is the sub-problem solving its level set's (C5 decision 18)
+    from ymf.vocabulary import heaviside_of
+    uncarried = {c: u for c, u in heaviside_of(doc).items() if c not in approximates}
 
     numbers = _coefficients(spec, dim, strict=False)
     domain = strong["domain"]
@@ -252,8 +256,9 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
                 raise SymbolicError("%s, enforces: %s" % (where, exc)) from exc
         carried = {(s.get("introduces") or {}).get("approximates"): sub["introduces"]["name"]
                    for s in [sub] if (s.get("introduces") or {}).get("approximates")}
+        indicators = {c: u for c, u in uncarried.items() if u in own}
         record["boundary_conditions"] = _conditions(strong, own, carried, space, dim,
-                                                    lower, upper, where)
+                                                    lower, upper, where, indicators)
         out_subs.append(record)
 
     initial = {}
@@ -277,12 +282,25 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
             "initial": initial, "subproblems": out_subs}
 
 
-def _conditions(strong, own, carried, space, dim, lower, upper, where) -> List[Dict[str, Any]]:
+#: a phase indicator's value -> the sign of its level set there
+_INDICATOR_SIGN = {0.0: -1, 0.5: 0, 1.0: 1}
+
+
+def _conditions(strong, own, carried, space, dim, lower, upper, where,
+                indicators=None) -> List[Dict[str, Any]]:
     """The boundary conditions one sub-problem imposes, as plain data.
 
     Those on its own unknowns, and those on a coefficient its introduced
     unknown carries (atmosphere's χ inflow is VOF's χh inflow). Conditions on
-    what it only reads are another sub-problem's. Each entry has ``type``,
+    what it only reads are another sub-problem's.
+
+    ``indicators`` maps a phase indicator no sub-problem carries to the level
+    set this one solves (χ := heaviside(φ), with no VOF): a condition on χ is
+    then a condition on φ's sign, since heaviside(φ) = 1 says φ > 0 and no
+    more. Such an entry has ``variable`` φ, ``sign`` (1, -1, or 0 for χ =
+    1/2), ``indicator: {variable: χ, value}`` and no ``value``: a solver that
+    imposes a value picks one with that sign. Atmosphere's χ inflow of 1
+    (air enters) is CLSVOF's φ inflow, positive. Each entry has ``type``,
     ``variable``, ``region``, ``where`` (boolean code using ``tol``, None for
     the whole boundary), ``set`` if it came from one, the ``components`` it
     acts on, and its data: ``value`` (code; per component for a vector,
@@ -305,6 +323,10 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where) -> List[D
             target, rank = variable, own[variable]
         elif variable in carried:
             target, rank = carried[variable], 0
+        elif variable in (indicators or {}):
+            out.append(_indicator_condition(bc, indicators[variable], regions, strong,
+                                            space, where))
+            continue
         else:
             continue
         here = "%s, boundary condition %s on %s" % (where, bc["type"], bc["region"])
@@ -347,6 +369,32 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where) -> List[D
                 entry["value"] = _components(value, target, rank, space, here)
         out.append(entry)
     return out
+
+
+def _indicator_condition(bc, level_set, regions, strong, space, where) -> Dict[str, Any]:
+    """A condition on a phase indicator, as the condition on its level set's
+    sign (see :func:`_conditions`)."""
+    from ymf.symbolic.problem import _selector
+    here = "%s, boundary condition %s on %s" % (where, bc["type"], bc["region"])
+    if bc["type"] != "dirichlet" or bc.get("value") is None or bc.get("component"):
+        raise SymbolicError(
+            "%s: %s is heaviside(%s), and no sub-problem carries it, so the condition is on "
+            "%s's sign; only a constant value (0, 1/2 or 1, inflow or dirichlet) says one"
+            % (here, bc["variable"], level_set, level_set))
+    value = float(bc["value"])
+    if value not in _INDICATOR_SIGN:
+        raise SymbolicError(
+            "%s: %s is heaviside(%s), whose values are 0, 1/2 and 1; %g says no sign of %s"
+            % (here, bc["variable"], level_set, value, level_set))
+    entry: Dict[str, Any] = {"type": "dirichlet", "variable": level_set, "region": bc["region"],
+                             **_selector(regions[bc["region"]], strong["domain"], space)}
+    for key in ("only", "imposed", "expanded_from"):
+        if bc.get(key) is not None:
+            entry[key] = bc[key]
+    entry["components"] = [level_set]
+    entry["sign"] = _INDICATOR_SIGN[value]
+    entry["indicator"] = {"variable": bc["variable"], "value": value}
+    return entry
 
 
 def _bind(binds: Dict[str, Any], outer: Dict[str, Any], dim: int, where: str) -> Dict[str, Any]:

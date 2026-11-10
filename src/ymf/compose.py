@@ -88,7 +88,13 @@ def _refuse_old_kind(text: str, path: Path) -> None:
             "'ymf_state: abstract' for 'kind: model', and drop 'kind: problem' "
             "(or write 'ymf_state: well-posed'). See ymf.state." % (path,))
 #: Keys that identify an entry in a list of mappings, in order of preference.
-_IDENTITY_KEYS = ("label", "name")
+_IDENTITY_KEYS = ("label", "name", "field")
+
+#: identity keys whose entries an extending file replaces whole rather than
+#: merges key by key: an initial condition is one statement, and merging
+#: {type: function, formula} onto {type: constant, value} would keep a value
+#: that no longer means anything
+_REPLACED_WHOLE = ("field",)
 
 
 class YmfCompositionError(ValueError):
@@ -257,7 +263,14 @@ def _merge(parent: Any, child: Any, path: str, source: str,
                 key = _identity(entry)[1]
                 where = "%s[%s]" % (path, key)
                 _note_writer(provenance, where, source)
-                if key in index:
+                if key in index and _identity(entry)[0] in _REPLACED_WHOLE:
+                    i = index[key]
+                    if parent[i] != entry:
+                        overrides.append({"path": where, "was": parent[i], "now": entry,
+                                          "set_by": source})
+                    merged[i] = entry
+                    _record_paths(entry, where, source, provenance)
+                elif key in index:
                     i = index[key]
                     merged[i] = _merge(parent[i], entry, where, source,
                                        overrides, provenance)
@@ -404,6 +417,20 @@ def _read_text(path: Path) -> str:
     return text
 
 
+_OUTPUTS_LINE = re.compile(r"^outputs:", re.M)
+
+
+def _as_written(text: str) -> Dict[str, Any]:
+    """An archive's mappings and lists with every scalar the string it is
+    written as (pyyaml's base loader), up to its top-level ``outputs:``: the
+    writer puts them last, and they hold the arrays."""
+    m = _OUTPUTS_LINE.search(text)
+    head = text[:m.start()] if m else text
+    loader = getattr(yaml, "CBaseLoader", yaml.BaseLoader)
+    data = yaml.load(head, Loader=loader)
+    return data if isinstance(data, dict) else {}
+
+
 def _read(path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     """Validate one file against the partial schema; return (data, outputs).
 
@@ -421,8 +448,15 @@ def _read(path: Path) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
     document = read_document(path)
     outputs = document.pop("outputs", None)
     document.pop("ymf", None)
-    spec_text = _dump(document, allow_unicode=True, sort_keys=False,
-                               default_flow_style=False, width=1000)
+    # The specification part as written, every scalar a string: strictyaml
+    # types what the schema types, and a free-form (Any) value stays the text
+    # it was in the spec. Re-dumping pyyaml's typed values instead gave
+    # "1.0e6" back as "1000000.0", another input digest (C5 finding Y1).
+    spec_part = _as_written(text)
+    spec_part.pop("ymf", None)
+    spec_part.pop("outputs", None)
+    spec_text = _dump(spec_part, allow_unicode=True, sort_keys=False,
+                      default_flow_style=False, width=1000)
     data = strictyaml.dirty_load(spec_text, PARTIAL_YMF_SCHEMA, label=str(path),
                                  allow_flow_style=_ALLOW_FLOW_STYLE).data
     if "composition" in document:

@@ -98,7 +98,11 @@ SolverConfig = Map(
             ["linear", "nonlinear", "time_marching", "saddle_point"]
         ),
         Optional("nonlinear_solver"): Enum(["newton", "broyden", "line_search"]),
-        Optional("linear_solver"): Enum(["petsc", "mumps", "umfpack", "superlu"]),
+        # direct or iterative: what is asked of the linear solve, which each
+        # solver maps to its own options (or refuses); or a package, which
+        # is a request of its kind (ymf.vocabulary.LINEAR_SOLVERS)
+        Optional("linear_solver"): Enum(["direct", "iterative",
+                                         "petsc", "mumps", "umfpack", "superlu"]),
         # PETSc options, without the leading dash, for linear_solver petsc
         # or mumps: {ksp_type: cg, pc_type: gamg}. Values are passed as
         # written; an option that takes none is given "".
@@ -184,6 +188,10 @@ SubproblemDef = Map({
     Optional("writes_back"): MapPattern(Str(), Str()),
     Optional("pseudo_time"): Enum(["steady"]),
     Optional("spin_up"): Bool(),
+    # what it does, a word of ymf.vocabulary.ROLES for the model's family;
+    # read from the structure above and written by closure, so a stated
+    # role is checked against it (ymf.vocabulary.check)
+    Optional("role"): Str(),
     Optional("binds"): MapPattern(Str(), SymbolBinding),
     # replaces the entry's regularize: for this sub-problem's sharp functions
     Optional("regularize"): MapPattern(Str(), RegularizeDef),
@@ -289,6 +297,9 @@ PhysicalModelDef = Map(
         "provenance": ProvenanceEnum,
         Optional("processes"): Seq(Str()),
         Optional("assumptions"): Seq(Str()),
+        # the model family (ymf.vocabulary.FAMILIES) the processes and
+        # assumptions identify; written by closure, checked if stated
+        Optional("family"): Str(),
         Optional("source_document"): Str(),
         Optional("notes"): Str(),
     }
@@ -448,6 +459,10 @@ CoefficientMapDef = Map(
         # the unknowns a formula follows, directly or through another
         # coefficient; written by closure (ymf.explicit), checked on load
         Optional("depends_on"): Seq(Str()),
+        # what the coefficient means, a word of
+        # ymf.vocabulary.COEFFICIENT_ROLES (density, gravity, bed_elevation):
+        # a solver finds a coefficient by its role, not its name
+        Optional("role"): Str(),
     }
 )
 
