@@ -1,5 +1,6 @@
 [build-system]
-requires = ["setuptools>=68", "wheel", "setuptools_scm>=8"]
+# setuptools>=77 for the SPDX `license` expression and `license-files` (PEP 639).
+requires = ["setuptools>=77", "setuptools_scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,8 +9,27 @@ dynamic = ["version"]
 description = "YAML Modeling Format for computational physics — problem specification, VVUQ, and multi-backend dispatch."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+# Where the version comes from: setuptools_scm, from the git tag (`v0.3.0`,
+# `v0.3.0rc1`). A tagged commit builds exactly the tag; any other commit builds
+# a `.devN+gHASH` version, which PyPI and TestPyPI refuse (release.yml checks
+# that the tag and the built version agree before it uploads).
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "cekees" }]
+keywords = ["yaml", "simulation", "computational-physics", "pde", "verification", "uncertainty-quantification"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Physics",
+]
 # Core runtime dependency, kept to exactly one on purpose: a solver that
 # writes YMF archives (see ymf.archive) must not inherit the validation
 # stack. Everything heavier sits behind the extras below, which only the
@@ -17,6 +37,13 @@ authors = [{ name = "cekees" }]
 dependencies = [
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/proteustoolkit/ymf"
+Documentation = "https://github.com/proteustoolkit/ymf/tree/main/docs"
+Source = "https://github.com/proteustoolkit/ymf"
+Issues = "https://github.com/proteustoolkit/ymf/issues"
+Changelog = "https://github.com/proteustoolkit/ymf/blob/main/docs/changes.md"
 
 [project.scripts]
 # Converts a .ymf archive to the .xmf a viewer reads. In the core, so it
@@ -39,6 +66,18 @@ frontend = ["strictyaml>=1.7", "pint>=0.23", "sympy>=1.12"]
 # What examples/write_archive.py and read_archive.py need to make and read
 # the HDF5 side of an archive. A solver brings its own.
 examples = ["numpy", "h5py"]
+# Tests: what `pytest tests` needs so that nothing skips (CI's `dev` leg).
+# There is no `docs` extra on purpose: docs/ is plain markdown with no build
+# step, so there is nothing for one to install.
+test = [
+    "pytest>=7.0",
+    "pytest-cov",
+    "strictyaml>=1.7",
+    "pint>=0.23",
+    "numpy",
+    "h5py",
+    "sympy>=1.12",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
