@@ -84,11 +84,25 @@ WeakFormDef = Map(
     }
 )
 
+# A space: family and order, and where they apply the basis, the nodes of a
+# Lagrange basis and the Bernstein operator (ymf.spaces, checked on load).
+SpaceDef = Map(
+    {
+        "family": FEFamilyEnum,
+        "order": Int(),
+        Optional("basis"): Str(),
+        Optional("nodes"): Str(),
+        Optional("bernstein_operator"): Bool(),
+    }
+)
+
 FiniteElementDef = Map(
     {
-        Optional("velocity"): Map({"family": FEFamilyEnum, "order": Int()}),
-        Optional("pressure"): Map({"family": FEFamilyEnum, "order": Int()}),
-        Optional("fields"): Map({"family": FEFamilyEnum, "order": Int()}),
+        Optional("velocity"): SpaceDef,
+        Optional("pressure"): SpaceDef,
+        Optional("fields"): SpaceDef,
+        # the polynomial degree of the mesh map: 1 = affine, 2 = quadratic ... (ymf.spaces)
+        Optional("geometry_order"): Int(),
     }
 )
 

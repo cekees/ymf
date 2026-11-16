@@ -231,7 +231,12 @@ usually `finite_element` and `from_weak_form` (a weak form's label, which
 may be omitted when the document has only one — see
 [Branching](#branching-one-problem-several-solution-paths)). `finite_element` takes
 `fields`, or `velocity` and `pressure` for mixed problems, each as
-`{family: CG|DG|RT|BDM|RTF|N1curl, order: n}`. The `solver` block takes
+`{family: CG|DG|RT|BDM|RTF|N1curl, order: n}`, and, where they apply, `basis`
+(`lagrange | bernstein | monomial`), `nodes` (`gll | equispaced`, Lagrange basis) and
+`bernstein_operator` (Bernstein basis); `finite_element` also takes `geometry_order` (the degree of
+the mesh map, 1 = affine). The words, their defaults and the order numbering of the vector
+families (RT0 is `order: 0`, BDM1 is `order: 1`) are in `ymf.spaces`, which checks them on load.
+The `solver` block takes
 `type` (`linear | nonlinear | time_marching | saddle_point`),
 `linear_solver` (`direct | iterative`, or a package: `petsc | mumps | umfpack
 | superlu`), `petsc_options`,
