@@ -78,7 +78,7 @@ def describe(path: Path) -> bool:
             if str(disc.get("from_weak_form")) in (wf["label"], str(index)):
                 fe = disc.get("finite_element", {})
                 spaces = ", ".join("%s %s%s" % (k, v["family"], v["order"])
-                                   for k, v in fe.items())
+                                   for k, v in fe.items() if isinstance(v, dict))
                 print("      discretization %r: %s; %s solver"
                       % (disc["name"], spaces or "-", disc["solver"].get("type", "-")))
     for exact in paths["analytical"]:

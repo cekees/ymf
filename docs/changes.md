@@ -7,6 +7,16 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-16: C42 round 4, the spaces vocabulary (C8's choices).** A `finite_element` entry stated only family and
+  order; C8 (proteus FemTools rounds 1-5) added the basis, the node set, the Bernstein operator and the geometry order as
+  choices a run depends on. `ymf.spaces`: `basis` (`lagrange`, `bernstein`, `monomial`), `nodes` (`gll`, `equispaced`),
+  `bernstein_operator`, and `geometry_order` beside the spaces, each checked on load (nodes only with a Lagrange basis,
+  the Bernstein operator only with a Bernstein basis, the vector families RT/BDM/RTF/N1curl take neither, lowest orders
+  RT0, BDM1, N1curl0, geometry order >= 1); `resolve` fills the defaults proteus uses (`lagrange`, `gll`, exact
+  Bernstein conversion, affine geometry), so two spellings of one space resolve equal. `implemented_in_proteus` records
+  what FemTools has (information, never a refusal). Existing specs are unchanged. proteus CI installs ymf from
+  `proteustoolkit/ymf@main`, so proteus sees this only after the ymf merge.
+
 - **2026-11-08: C42 round 3, the words a dispatcher maps (C5 decisions
   16, 18-21 of 2026-11-06).** proteus's DispatchTable coined the labels it
   matched on; they are `ymf.vocabulary` now, stated by the spec, checked on

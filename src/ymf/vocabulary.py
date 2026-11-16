@@ -450,6 +450,14 @@ def _stabilization_method(s: Any) -> Any:
     return None
 
 
+def _check_spaces(block: Any, where: str) -> None:
+    from ymf.spaces import SpaceError, check_finite_element
+    try:
+        check_finite_element(block, where)
+    except SpaceError as exc:
+        raise VocabularyError(str(exc)) from None
+
+
 def _check_solver(solver: Any, where: str) -> None:
     if isinstance(solver, dict) and solver.get("linear_solver") is not None:
         _word("linear_solver", solver["linear_solver"], where + ".solver.linear_solver")
@@ -476,6 +484,7 @@ def _check_entry(doc: Dict[str, Any], entry: Dict[str, Any], family: Optional[st
                     "%s.discretization: the scheme %s has no option %s; its options are %s"
                     % (where, scheme, ", ".join(unread),
                        ", ".join(list(SCHEMES[scheme]["options"]) + list(SCHEME_COMMON))))
+    _check_spaces(entry.get("finite_element"), where + ".finite_element")
     for label, binding in list((entry.get("binds") or {}).items()):
         if isinstance(binding, dict) and binding.get("meaning") is not None:
             _word("binding_meaning", binding["meaning"], "%s.binds.%s.meaning" % (where, label))
@@ -491,6 +500,7 @@ def _check_entry(doc: Dict[str, Any], entry: Dict[str, Any], family: Optional[st
         if method is not None:
             _word("stabilization", method, here + ".stabilization.method")
         _check_solver(sub.get("solver"), here)
+        _check_spaces(sub.get("finite_element"), here + ".finite_element")
         for label, binding in (sub.get("binds") or {}).items():
             if isinstance(binding, dict) and binding.get("meaning") is not None:
                 _word("binding_meaning", binding["meaning"], "%s.binds.%s.meaning" % (here, label))

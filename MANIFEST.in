@@ -1,0 +1,7 @@
+# What the sdist ships: setuptools_scm adds every git-tracked file (source,
+# tests with their fixtures, examples, docs, README, LICENSE), so this only
+# prunes. Nothing generated or local may ride along.
+prune .github
+global-exclude *.pyc __pycache__ *.log .coverage .DS_Store
+# What ymf_run and the examples write beside themselves
+global-exclude examples/*.archive.ymf
