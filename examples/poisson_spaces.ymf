@@ -1,0 +1,37 @@
+# ============================================================
+# YMF Example: Poisson on the unit square, the space stated in full
+#
+# Extends poisson.ymf with discretizations that say which space they use
+# beyond its family and order (ymf.spaces): the basis, where a Lagrange
+# basis puts its nodes, how Bernstein data is imposed, the degree of the
+# mesh map, and the mixed form's H(div) pair. Every default is the one
+# proteus's FemTools uses, so P3_gll is `{family: CG, order: 3}` written out.
+#
+#     python -c "import ymf.spaces as s; print(s.resolve({'family': 'CG', 'order': 3}))"
+# ============================================================
+
+extends: poisson.ymf
+
+solution_paths:
+  discretizations:
+    - name: "P3_gll"
+      provenance: human_specified
+      finite_element:
+        fields: {family: CG, order: 3, basis: lagrange, nodes: gll}
+        geometry_order: 1
+      mesh: {cells: [4, 8, 16]}
+      solver: {type: linear, linear_solver: petsc, tolerance: 1.0e-12}
+
+    - name: "P4_equispaced"                    # for comparison: the Lebesgue constant grows from p = 4
+      provenance: human_specified
+      finite_element:
+        fields: {family: CG, order: 4, basis: lagrange, nodes: equispaced}
+      mesh: {cells: [4, 8]}
+      solver: {type: linear, linear_solver: petsc, tolerance: 1.0e-12}
+
+    - name: "P3_bernstein_exact"               # bounds-preserving basis, data converted exactly (order p + 1)
+      provenance: human_specified
+      finite_element:
+        fields: {family: CG, order: 3, basis: bernstein, bernstein_operator: false}
+      mesh: {cells: [4, 8, 16]}
+      solver: {type: linear, linear_solver: petsc, tolerance: 1.0e-12}
