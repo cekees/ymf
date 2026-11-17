@@ -112,13 +112,19 @@ def porous():
     return load_ymf(POROUS)
 
 
+@pytest.fixture(scope="module")
+def porous_split(porous):
+    """The porous dam break's sub-problems by name: sympy takes ~30 s over them, so once."""
+    return {s["name"]: s for s in split_problem(porous, "level_set_five")["subproblems"]}
+
+
 def test_the_two_phase_model_states_its_porosity_by_role(porous):
     assert coefficient_by_role(porous, "porosity") == "θ"
     assert coefficient_by_role(load_ymf(DAMBREAK), "porosity") is None
 
 
-def test_the_sub_problems_say_which_use_the_porosity(porous):
-    split = {s["name"]: s for s in split_problem(porous, "level_set_five")["subproblems"]}
+def test_the_sub_problems_say_which_use_the_porosity(porous_split):
+    split = porous_split
     assert {n for n, s in split.items() if "porosity" in s.get("coefficient_roles", {})} == {"flow", "vof", "mcorr"}
     assert split["flow"]["coefficient_roles"]["density"] == "ρ"
     # NCLS has none, and the plain dam break none anywhere
@@ -126,10 +132,10 @@ def test_the_sub_problems_say_which_use_the_porosity(porous):
     assert not any("porosity" in s.get("coefficient_roles", {}) for s in plain.values())
 
 
-def test_vof_carries_the_porosity_in_its_mass_and_its_flux_as_the_generator_spikes_hand_made_form_did(porous):
+def test_vof_carries_the_porosity_in_its_mass_and_its_flux_as_the_generator_spikes_hand_made_form_did(porous_split):
     # generator/make_inputs.py wrote "∂(ε*χ)/∂t + ∇·(ε*χ*v) = 0" in a Space by hand (porosity ε a per-point field);
     # the spec now states it, with θ inlined as the expression of the coordinates it is
-    split = {s["name"]: s for s in split_problem(porous, "level_set_five")["subproblems"]}
+    split = porous_split
     eq = split["vof"]["adr"]["equations"][0]
     assert eq["mass"]["m"].startswith("χh*(") and "numpy.select" in eq["mass"]["m"]
     numpy = pytest.importorskip("numpy")
@@ -143,9 +149,9 @@ def test_vof_carries_the_porosity_in_its_mass_and_its_flux_as_the_generator_spik
     assert split["ncls"]["adr"] == plain["ncls"]["adr"]
 
 
-def test_the_porosity_is_one_where_it_is_one_and_below_one_in_the_block(porous):
+def test_the_porosity_is_one_where_it_is_one_and_below_one_in_the_block(porous_split):
     numpy = pytest.importorskip("numpy")
-    split = {s["name"]: s for s in split_problem(porous, "level_set_five")["subproblems"]}
+    split = porous_split
     m = split["vof"]["adr"]["equations"][0]["mass"]["dm"]["χh"]
     env = {"numpy": numpy, "h": 0.0322}
     at = lambda x, y: eval(m, {"__builtins__": {}}, dict(env, x=x, y=y))  # noqa: S307
@@ -160,14 +166,14 @@ def test_the_porosity_survives_the_archive(tmp_path):
     assert subproblem(again, "level_set_five", "vof")["equation"] == "∂(θ χh)/∂t + ∇·(θ v χh) = 0"
 
 
-def test_the_specs_vof_is_the_form_the_generator_spike_built_by_hand_with_the_porosity_a_field(porous):
+def test_the_specs_vof_is_the_form_the_generator_spike_built_by_hand_with_the_porosity_a_field(porous_split):
     # make_inputs.py: Space(2, {χ: 0}, {}, fields={v: 1, ε: 0}), "∂(ε*χ)/∂t + ∇·(ε*χ*v) = 0": ε is a per-point input.
     # The spec inlines θ(x, y); with ε := θ(x, y) the two forms agree to round-off (m, dm, f, df).
     numpy = pytest.importorskip("numpy")
     from ymf.symbolic import Space, adr_form, parse_equation
     space = Space(2, {"χ": 0}, {}, fields={"v": 1, "ε": 0})
     by_hand = adr_form(parse_equation("∂(ε*χ)/∂t + ∇·(ε*χ*v) = 0", space), space)["equations"][0]
-    spec = {s["name"]: s for s in split_problem(porous, "level_set_five")["subproblems"]}["vof"]["adr"]["equations"][0]
+    spec = porous_split["vof"]["adr"]["equations"][0]
     theta = lambda x, y: 1 - 0.4 * (x > 2.2 + 1.5 * 0.0322) * (y < 0.3 - 1.5 * 0.0322)      # away from the smoothed edges
     x, y, h = 3.0, 0.1, 0.0322
     v = (0.7, -0.3)
