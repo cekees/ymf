@@ -41,7 +41,7 @@ import re
 from typing import Any, Dict, Iterable, List, Optional
 
 __all__ = ["FAMILIES", "ROLES", "TIME_INTEGRATION", "STABILIZATION", "TAU_FORMS", "STABILIZATION_KEYS",
-           "SHOCK_CAPTURING_KEYS", "SCHEMES",
+           "SHOCK_CAPTURING_KEYS", "LAG_WHEN", "SCHEMES",
            "STEP_CONTROL", "REGULARIZATIONS", "BINDING_MEANINGS", "WRITES_BACK",
            "INERTIA_FORMS", "LINEAR_SOLVERS", "COEFFICIENT_ROLES", "ALIASES",
            "canonical", "family_of", "role_of", "roles_of", "linear_solver_kind",
@@ -283,6 +283,15 @@ SHOCK_CAPTURING_KEYS: Dict[str, str] = {
     "lagged": "the viscosity is taken from the previous step (true) or the current iterate (false)",
 }
 
+#: when a lagged coefficient is evaluated (a sub-problem's ``lagged_coefficients``). A time lag and a Newton lag are
+#: different things for a kernel: the first is a constant of the step (the coefficient at the old state, no
+#: derivative in the Jacobian at all), the second a constant of the iteration (a Picard step: the Jacobian drops the
+#: coefficient's dependence on the unknown, and the residual is evaluated at the new iterate's other terms).
+LAG_WHEN: Dict[str, str] = {
+    "previous_step": "evaluated at the state of the previous time step; a constant of the step",
+    "previous_iterate": "evaluated at the previous Newton iterate; the Jacobian drops its dependence on the unknown",
+}
+
 #: an algebraic scheme stated in a discretization's ``discretization:`` block:
 #: its name, and the options it reads (option -> meaning). ``time_integration``,
 #: ``outputs`` and ``dt`` are read for every scheme.
@@ -409,7 +418,7 @@ _KINDS: Dict[str, Dict[str, Any]] = {
     "step_control": STEP_CONTROL, "regularization": REGULARIZATIONS,
     "binding_meaning": BINDING_MEANINGS, "writes_back": WRITES_BACK,
     "linear_solver": LINEAR_SOLVERS, "coefficient_role": COEFFICIENT_ROLES,
-    "tau_form": TAU_FORMS, "stabilization_key": STABILIZATION_KEYS,
+    "lag_when": LAG_WHEN, "tau_form": TAU_FORMS, "stabilization_key": STABILIZATION_KEYS,
     "shock_capturing_key": SHOCK_CAPTURING_KEYS,
     "scheme_option": {o: m for s in SCHEMES.values() for o, m in s["options"].items()},
 }
@@ -480,6 +489,25 @@ def _check_stabilization(block: Any, where: str) -> None:
         raise VocabularyError(str(exc)) from None
 
 
+def _check_lagged_coefficients(doc: Dict[str, Any], sub: Dict[str, Any], where: str) -> None:
+    """``lagged_coefficients: {name: when}``: each name a coefficient of the model (not a field the sub-problem already
+    reads from another, which ``lags`` lags), each ``when`` a LAG_WHEN word."""
+    lagged = sub.get("lagged_coefficients")
+    if not lagged:
+        return
+    coefficients = _strong(doc).get("coefficients") or {}
+    read = set(sub.get("lags") or {})
+    for name, when in lagged.items():
+        here = "%s.lagged_coefficients.%s" % (where, name)
+        _word("lag_when", when, here)
+        if name in read:
+            raise VocabularyError("%s: %s is a field this sub-problem reads through lags, which already says when" % (
+                here, name))
+        if name not in coefficients:
+            raise VocabularyError("%s: %s is not a coefficient of the model; its coefficients are %s" % (
+                here, name, ", ".join(coefficients) or "none"))
+
+
 def _check_spaces(block: Any, where: str) -> None:
     from ymf.spaces import SpaceError, check_finite_element
     try:
@@ -528,6 +556,7 @@ def _check_entry(doc: Dict[str, Any], entry: Dict[str, Any], family: Optional[st
         if sub.get("time_integration") is not None:
             _word("time_integration", sub["time_integration"], here + ".time_integration")
         _check_stabilization(sub.get("stabilization"), here + ".stabilization")
+        _check_lagged_coefficients(doc, sub, here)
         _check_solver(sub.get("solver"), here)
         _check_spaces(sub.get("finite_element"), here + ".finite_element")
         for label, binding in (sub.get("binds") or {}).items():

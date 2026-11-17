@@ -33,6 +33,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import sympy
 
 from ymf.stabilization import for_subproblem
+from ymf.vocabulary import canonical
 from ymf.symbolic.adr import adr_form, to_code
 from ymf.symbolic.language import Space, SymbolicError, parse_equation, parse_expression
 
@@ -247,6 +248,13 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
                 named[name].update(extra)
             record["coefficients"] = named
             record["named"] = form
+        if sub.get("lagged_coefficients"):
+            # each name -> when; a state coefficient (named) says it where a kernel reads its dependence
+            lagged = {k: canonical("lag_when", v) for k, v in sub["lagged_coefficients"].items()}
+            record["lagged_coefficients"] = lagged
+            for name, when in lagged.items():
+                if name in record.get("coefficients", {}):
+                    record["coefficients"][name]["lagged"] = when
         if sub.get("initial_condition"):
             record["initial"] = _initial(sub, own, ranks, values, functions, dim, where)
         if sharp:

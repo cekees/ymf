@@ -238,6 +238,9 @@ SubproblemDef = Map({
     Optional("finite_element"): FiniteElementDef,
     Optional("time_integration"): Str(),
     Optional("stabilization"): StabilizationDef,
+    # coefficients of the model this sub-problem freezes: name -> previous_step
+    # | previous_iterate (ymf.vocabulary.LAG_WHEN), checked on load
+    Optional("lagged_coefficients"): MapPattern(Str(), Str()),
     Optional("solver"): SolverConfig,
     # options a dispatcher cannot infer yet, for one solver: an interim hint
     # it checks against what it infers, and drops once it covers them
