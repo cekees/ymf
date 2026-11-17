@@ -27,7 +27,7 @@ not this module's: ``ymf_state`` must not depend on what is installed.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 __all__ = ["Missing", "Method", "METHODS", "DEFAULT", "method_of", "missing",
            "subproblem_solver"]
@@ -104,7 +104,7 @@ class Method:
             # the key format archives were first written with: cells or h,
             # then levels only when it is not 1
             size = "cells" if "cells" in realization else "h"
-            parts = ["%s=%s" % (size, realization[size])]
+            parts = ["%s=%s" % (size, cells_text(realization[size]) if size == "cells" else realization[size])]
             if realization.get("levels", 1) != 1:
                 parts.append("levels=%s" % (realization["levels"],))
         else:
@@ -126,6 +126,87 @@ def mesh_from_domain(domain: Any) -> bool:
         return False
     return domain.get("kind") == "discrete" or (
         domain.get("kind") == "file" and domain.get("format") in MESH_FILE_FORMATS)
+
+
+#: the axes of a box, in order: ``cells: {x: 80, y: 40}`` says cells along each
+AXES = ("x", "y", "z")
+
+
+class CellsError(ValueError):
+    """A cells-per-axis a spec states that does not make sense."""
+
+
+def domain_dim(domain: Any) -> Optional[int]:
+    """The number of space dimensions of a box domain, or None when this module cannot tell (a domain that is not a
+    box: its cells are a mesh's, not a box's). The notation short form is read by its factors."""
+    if isinstance(domain, dict):
+        return len(domain["lower"]) if domain.get("kind") == "box" and "lower" in domain else None
+    if isinstance(domain, str) and "=" in domain:
+        import re
+        space = re.split(r",\s*t\s*∈", domain.split("=", 1)[1])[0]
+        power = re.search(r"\]\s*\^\s*(\d+)\s*$", space.strip())      # [0, 1]^3
+        if power:
+            return int(power.group(1))
+        return space.count("×") + 1 if "[" in space else None
+    return None
+
+
+def cells_per_axis(cells: Any, dim: Optional[int] = None, where: str = "mesh.cells") -> List[int]:
+    """The cells along each axis of a box, in axis order: ``cells: 49`` (one count for every axis) and ``cells: {x: 80,
+    y: 40}`` (one per axis) are the two ways a spec states them. ``dim`` is the box's dimension (``domain_dim``); a
+    single count needs it, a map is checked against it. A list is a *study* (one realization per value): ``cells:
+    [10, 20]`` is two meshes, and ``cells: [{x: 80, y: 40}, {x: 160, y: 80}]`` two more; ask for one value's axes.
+    Raises :class:`CellsError`."""
+    if isinstance(cells, dict):
+        unknown = sorted(set(map(str, cells)) - set(AXES))
+        if unknown:
+            raise CellsError("%s: no axis %s; the axes are %s" % (where, ", ".join(unknown), ", ".join(AXES)))
+        stated = [a for a in AXES if a in cells]
+        if dim is not None and stated != list(AXES[:dim]):
+            raise CellsError("%s: a %dD box has the axes %s, and this gives %s" % (
+                where, dim, ", ".join(AXES[:dim]), ", ".join(stated)))
+        if dim is None and stated != list(AXES[:len(stated)]):
+            raise CellsError("%s: the axes are x, then y, then z, with none skipped; this gives %s" % (
+                where, ", ".join(stated)))
+        counts = []
+        for axis in stated:
+            counts.append(_count(cells[axis], "%s.%s" % (where, axis)))
+        return counts
+    if isinstance(cells, (list, tuple)):
+        raise CellsError("%s: a list is a study, and has no axes; give one value" % (where,))
+    if dim is None:
+        raise CellsError("%s: one count for every axis needs the box's dimension" % (where,))
+    return [_count(cells, where)] * dim
+
+
+def _count(value: Any, where: str) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        raise CellsError("%s: %r is not a whole number of cells" % (where, value)) from None
+    if n < 1 or str(n) != str(value).strip():
+        raise CellsError("%s: %r is not a whole number of cells, at least 1" % (where, value))
+    return n
+
+
+def cells_text(cells: Any) -> str:
+    """How a cells value reads in an output key: ``49``, or ``80x40`` for one per axis (axis order)."""
+    if isinstance(cells, dict):
+        return "x".join(str(cells[a]) for a in AXES if a in cells)
+    return str(cells)
+
+
+def check_cells(entry: Dict[str, Any], domain: Any = None) -> None:
+    """Every ``mesh.cells`` value of an entry (one, or each of a study) agrees with the box's dimension."""
+    mesh = entry.get("mesh")
+    cells = mesh.get("cells") if isinstance(mesh, dict) else None
+    if cells is None:
+        return
+    values = cells if isinstance(cells, (list, tuple)) else [cells]
+    dim = domain_dim(domain)
+    where = "discretization %s mesh.cells" % (entry.get("name", "?"),)
+    for value in values:
+        cells_per_axis(value, dim, where)
 
 
 def _mesh_lacks(entry: Dict[str, Any], domain: Any = None) -> List[Missing]:

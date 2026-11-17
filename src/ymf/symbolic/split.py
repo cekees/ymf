@@ -32,6 +32,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import sympy
 
+from ymf.stabilization import for_subproblem
+from ymf.vocabulary import canonical
 from ymf.symbolic.adr import adr_form, to_code
 from ymf.symbolic.language import Space, SymbolicError, parse_equation, parse_expression
 
@@ -132,9 +134,15 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
         bound = _bind(sub.get("binds") or {}, entry_bound, dim, where + " binds")
         record: Dict[str, Any] = {"name": sub["name"]}
         for key in ("solves", "enforces", "writes_back", "pseudo_time", "spin_up",
-                    "finite_element", "time_integration", "stabilization", "proteus"):
+                    "finite_element", "time_integration", "proteus"):
             if key in sub:
                 record[key] = sub[key]
+        if sub.get("dispersion") is not None:
+            from ymf.dispersion import resolve as resolve_dispersion
+            record["dispersion"] = resolve_dispersion(sub["dispersion"], where + " dispersion")
+        stabilization = for_subproblem(entry, sub)
+        if stabilization is not None:
+            record["stabilization"] = stabilization
         record["solver"] = subproblem_solver(entry, sub)
 
         # its unknowns, and the text of every equation it classifies
@@ -174,6 +182,11 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
                 fields[carrier] = 0
                 read["carried_by"] = carrier
             reads[name] = read
+        # the coefficients a dispersion closure computes (Pd, Qd) are fields the solver supplies at each point, with their
+        # gradients (the dispersive pressure's gradient is a force), as a field read from another sub-problem is
+        for name in (sub.get("dispersion") or {}).get("closes") or []:
+            fields[name] = 0
+            reads[name] = {"via": "dispersion", "at": "current_step"}
         known = Space(dim, own, {}, fields).known
         for name, read in reads.items():
             field = read.get("carried_by", name)
@@ -230,6 +243,12 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
                                      ["%s_%d" % (name, i) for i in range(dim)])
                               for name, rank in own.items()}
         record["reads"] = reads
+        # what the coefficients this sub-problem uses mean (density, porosity, ...): a generator finds the porosity by
+        # its role, whatever the model calls it
+        from ymf.vocabulary import coefficient_roles
+        roles = {role: name for role, name in coefficient_roles(doc).items() if name in used}
+        if roles:
+            record["coefficient_roles"] = roles
         named = _state_coefficient_data(
             {k: v for k, v in values.items() if k in spec and k in used}, space)
         if named:
@@ -243,6 +262,13 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
                 named[name].update(extra)
             record["coefficients"] = named
             record["named"] = form
+        if sub.get("lagged_coefficients"):
+            # each name -> when; a state coefficient (named) says it where a kernel reads its dependence
+            lagged = {k: canonical("lag_when", v) for k, v in sub["lagged_coefficients"].items()}
+            record["lagged_coefficients"] = lagged
+            for name, when in lagged.items():
+                if name in record.get("coefficients", {}):
+                    record["coefficients"][name]["lagged"] = when
         if sub.get("initial_condition"):
             record["initial"] = _initial(sub, own, ranks, values, functions, dim, where)
         if sharp:
@@ -338,6 +364,7 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
         for key in ("component", "only", "imposed", "expanded_from"):
             if bc.get(key) is not None:
                 entry[key] = bc[key]
+        _kind(entry, bc)
         entry["components"] = ([target] if rank == 0 else
                                ["%s_%d" % (target, i) for i in range(dim)])
         kind = bc["type"]
@@ -371,6 +398,15 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
     return out
 
 
+def _kind(entry: Dict[str, Any], bc: Dict[str, Any]) -> None:
+    """The condition's boundary kind (strong, weak, none; ymf.boundaries), and a weak one's penalty and form."""
+    from ymf.boundaries import kind_of
+    entry["kind"] = kind_of(bc)
+    for key in ("penalty", "form"):
+        if bc.get(key) is not None:
+            entry[key] = float(bc[key]) if key == "penalty" else bc[key]
+
+
 def _indicator_condition(bc, level_set, regions, strong, space, where) -> Dict[str, Any]:
     """A condition on a phase indicator, as the condition on its level set's
     sign (see :func:`_conditions`)."""
@@ -391,6 +427,7 @@ def _indicator_condition(bc, level_set, regions, strong, space, where) -> Dict[s
     for key in ("only", "imposed", "expanded_from"):
         if bc.get(key) is not None:
             entry[key] = bc[key]
+    _kind(entry, bc)
     entry["components"] = [level_set]
     entry["sign"] = _INDICATOR_SIGN[value]
     entry["indicator"] = {"variable": bc["variable"], "value": value}
@@ -501,12 +538,14 @@ def _used(texts: List[str], spec: Dict[str, Any], declared: set, carried=()) -> 
     formulas; not through a ``carried`` one, which is read rather than
     computed. A run of letters that is not a declared name counts for each
     letter, as the notation reads an undeclared ``ρU`` as ``ρ·U``."""
-    from ymf.symbolic.notation import tokens
+    from ymf.symbolic.notation import _FUNCTIONS, tokens
+    functions = set(_FUNCTIONS) | {"norm", "sym", "div", "grad", "lap"}
 
     def names(text):
         out = set()
         for kind, value, _ in tokens(str(text)):
-            if kind == "NAME":
+            # a function's name is not a run of coefficients (sign(φs) is not s·i·g·n)
+            if kind == "NAME" and value not in functions:
                 out.update([value] if value in declared or len(value) == 1 else value)
         return out & set(spec)
 

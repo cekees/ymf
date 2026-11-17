@@ -96,6 +96,32 @@ SpaceDef = Map(
     }
 )
 
+# A stabilization: the method alone (``SUPG``) or a block (ymf.stabilization,
+# checked on load): its length scale, the lag of its subgrid error, and the
+# shock-capturing viscosity with its parameters (or ``none``, stated).
+ShockCapturingDef = Str() | Map(
+    {
+        Optional("factor"): Float(),
+        Optional("beta"): Float(),
+        Optional("reference"): Float(),
+        Optional("lagged"): Bool(),
+        # the older spellings proteus's dispatcher reads (ymf.vocabulary.ALIASES)
+        Optional("lag"): Bool(),
+        Optional("sc_beta"): Float(),
+        Optional("sc_uref"): Float(),
+    }
+)
+
+StabilizationDef = Str() | Map(
+    {
+        "method": Str(),
+        Optional("tau"): Str(),
+        Optional("lagged"): Bool(),
+        Optional("lag"): Bool(),
+        Optional("shock_capturing"): ShockCapturingDef,
+    }
+)
+
 FiniteElementDef = Map(
     {
         Optional("velocity"): SpaceDef,
@@ -211,7 +237,18 @@ SubproblemDef = Map({
     Optional("regularize"): MapPattern(Str(), RegularizeDef),
     Optional("finite_element"): FiniteElementDef,
     Optional("time_integration"): Str(),
-    Optional("stabilization"): Any(),
+    Optional("stabilization"): StabilizationDef,
+    # coefficients of the model this sub-problem freezes: name -> previous_step
+    # | previous_iterate (ymf.vocabulary.LAG_WHEN), checked on load
+    Optional("lagged_coefficients"): MapPattern(Str(), Str()),
+    # the dispersive family's closure, the coefficients it supplies and the
+    # auxiliary unknowns it introduces (ymf.dispersion, checked on load)
+    Optional("dispersion"): Map({
+        "closure": Str(),
+        Optional("closes"): Seq(Str()),
+        Optional("auxiliaries"): Seq(Map({
+            "name": Str(), "role": Str(), Optional("units"): Str(), Optional("initial"): Str()})),
+    }),
     Optional("solver"): SolverConfig,
     # options a dispatcher cannot infer yet, for one solver: an interim hint
     # it checks against what it infers, and drops once it covers them
@@ -230,6 +267,8 @@ DiscretizationEntry = Map(
         Optional("from_weak_form"): Str(),
         Optional("finite_element"): FiniteElementDef,
         Optional("discretization"): Any(),
+        # with sub-problems, the default of each one's stabilization
+        Optional("stabilization"): StabilizationDef,
         # with sub-problems, the default each one's own solver: refines
         "solver": SolverConfig,
         # split into sub-problems, solved in this order each step
@@ -262,7 +301,9 @@ DiscretizationEntry = Map(
         # coarsest mesh. A list is a study: each value is one realization
         # (see ymf.closure).
         Optional("mesh"): Map({
-            Optional("cells"): Int() | Seq(Int()),
+            # cells: one count for every axis, a study of counts, one count per
+            # axis ({x: 80, y: 40}), or a study of those (ymf.discretizations)
+            Optional("cells"): Int() | MapPattern(Str(), Int()) | Seq(Int() | MapPattern(Str(), Int())),
             Optional("h"): Float() | Seq(Float()),
             Optional("levels"): Int() | Seq(Int()),
         }),
@@ -358,7 +399,11 @@ _CONDITION_FIELDS = {
     # imposed (C12: a property of each condition), and what it expanded from.
     Optional("component"): Enum(["normal", "tangential"]),
     Optional("only"): Enum(["inflow", "incoming_characteristics"]),
-    Optional("imposed"): Enum(["strong", "weak"]),
+    Optional("imposed"): Enum(["strong", "weak", "none"]),
+    # a weak (Nitsche) condition's penalty, over h, and its adjoint term
+    # (ymf.boundaries); checked on load against the condition's type
+    Optional("penalty"): Float(),
+    Optional("form"): Enum(["symmetric", "nonsymmetric", "incomplete"]),
     Optional("expanded_from"): Map({Optional("type"): Str(), Optional("set"): Str()}),
     Optional("value"): Float(),
     # A value that varies along the boundary or in time: an expression

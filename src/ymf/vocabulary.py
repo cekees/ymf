@@ -40,7 +40,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
-__all__ = ["FAMILIES", "ROLES", "TIME_INTEGRATION", "STABILIZATION", "SCHEMES",
+__all__ = ["FAMILIES", "ROLES", "TIME_INTEGRATION", "STABILIZATION", "TAU_FORMS", "STABILIZATION_KEYS",
+           "SHOCK_CAPTURING_KEYS", "LAG_WHEN", "SCHEMES",
            "STEP_CONTROL", "REGULARIZATIONS", "BINDING_MEANINGS", "WRITES_BACK",
            "INERTIA_FORMS", "LINEAR_SOLVERS", "COEFFICIENT_ROLES", "ALIASES",
            "canonical", "family_of", "role_of", "roles_of", "linear_solver_kind",
@@ -260,6 +261,37 @@ STABILIZATION: Dict[str, str] = {
     "graph_viscosity_entropy_residual": "graph viscosity scaled by the entropy residual",
 }
 
+#: the length scale of the stabilization (a sub-problem's ``stabilization.tau``)
+TAU_FORMS: Dict[str, str] = {
+    "metric": "the element metric G (the inverse of the element's map, squared): "
+              "tau = 1/sqrt(4 dm_t² + a·G a + ...); proteus useMetrics = 1",
+    "element_size": "the element size h: tau = 1/sqrt(4 dm_t² + (2|a|/h)² + ...); proteus useMetrics = 0",
+}
+
+#: the keys of a ``stabilization`` block beside ``method`` (ymf.stabilization says which method reads which)
+STABILIZATION_KEYS: Dict[str, str] = {
+    "tau": "the length scale, a TAU_FORMS word",
+    "lagged": "the subgrid (tau) error is taken from the previous step (proteus SubgridError lag)",
+    "shock_capturing": "the residual-based shock-capturing viscosity: a block of SHOCK_CAPTURING_KEYS, or none",
+}
+
+#: the keys of a ``shock_capturing`` block
+SHOCK_CAPTURING_KEYS: Dict[str, str] = {
+    "factor": "the coefficient of the viscosity, >= 0 (proteus shockCapturingFactor)",
+    "beta": "the exponent the gradient is scaled by, in [1, 2]: 1 is the classical scaling (proteus sc_beta)",
+    "reference": "the reference value of the unknown, > 0 (proteus sc_uref)",
+    "lagged": "the viscosity is taken from the previous step (true) or the current iterate (false)",
+}
+
+#: when a lagged coefficient is evaluated (a sub-problem's ``lagged_coefficients``). A time lag and a Newton lag are
+#: different things for a kernel: the first is a constant of the step (the coefficient at the old state, no
+#: derivative in the Jacobian at all), the second a constant of the iteration (a Picard step: the Jacobian drops the
+#: coefficient's dependence on the unknown, and the residual is evaluated at the new iterate's other terms).
+LAG_WHEN: Dict[str, str] = {
+    "previous_step": "evaluated at the state of the previous time step; a constant of the step",
+    "previous_iterate": "evaluated at the previous Newton iterate; the Jacobian drops its dependence on the unknown",
+}
+
 #: an algebraic scheme stated in a discretization's ``discretization:`` block:
 #: its name, and the options it reads (option -> meaning). ``time_integration``,
 #: ``outputs`` and ``dt`` are read for every scheme.
@@ -377,6 +409,11 @@ COEFFICIENT_ROLES: Dict[str, Dict[str, str]] = {
     "canopy_drag": {"units": "m2/s2", "means": "the drag force of a canopy per unit plan area, "
                                                "over the density"},
     "diffusivity": {"units": "m2/s", "means": "a diffusion coefficient"},
+    # the dispersive family's two coefficients a closure supplies (ymf.dispersion)
+    "dispersive_pressure": {"units": "m3/s2", "means": "the non-hydrostatic part of the depth-integrated pressure "
+                                                      "(ymf.dispersion: supplied by the closure)"},
+    "dispersive_bed_force": {"units": "m2/s2", "means": "the topography-dispersion force per unit mass along the bed "
+                                                       "gradient (supplied by the closure)"},
 }
 
 #: the words of each kind, for check() and canonical()
@@ -386,6 +423,8 @@ _KINDS: Dict[str, Dict[str, Any]] = {
     "step_control": STEP_CONTROL, "regularization": REGULARIZATIONS,
     "binding_meaning": BINDING_MEANINGS, "writes_back": WRITES_BACK,
     "linear_solver": LINEAR_SOLVERS, "coefficient_role": COEFFICIENT_ROLES,
+    "lag_when": LAG_WHEN, "tau_form": TAU_FORMS, "stabilization_key": STABILIZATION_KEYS,
+    "shock_capturing_key": SHOCK_CAPTURING_KEYS,
     "scheme_option": {o: m for s in SCHEMES.values() for o, m in s["options"].items()},
 }
 
@@ -396,6 +435,9 @@ ALIASES: Dict[str, Dict[str, str]] = {
     "stabilization": {"shock_capturing": "residual_shock_capturing"},
     "role": {"pressure_initial": "pressure_spin_up"},
     "scheme_option": {"entropy_viscosity_cE": "entropy_viscosity_coefficient"},
+    # the keys proteus's dispatcher already reads from a stabilization block
+    "stabilization_key": {"lag": "lagged"},
+    "shock_capturing_key": {"lag": "lagged", "sc_beta": "beta", "sc_uref": "reference"},
     "coefficient_role": {"mannings": "manning_coefficient", "bathymetry": "bed_elevation",
                          "drag_alpha": "linear_drag", "drag_beta": "quadratic_drag"},
 }
@@ -442,12 +484,64 @@ def _word(kind: str, word: Any, where: str) -> str:
         raise VocabularyError("%s: %s" % (where, exc)) from None
 
 
-def _stabilization_method(s: Any) -> Any:
-    if isinstance(s, str):
-        return s
-    if isinstance(s, dict):
-        return s.get("method")
-    return None
+def _check_stabilization(block: Any, where: str) -> None:
+    if block is None:
+        return
+    from ymf.stabilization import StabilizationError, check as check_stabilization
+    try:
+        check_stabilization(block, where)
+    except StabilizationError as exc:
+        raise VocabularyError(str(exc)) from None
+
+
+def _check_lagged_coefficients(doc: Dict[str, Any], sub: Dict[str, Any], where: str) -> None:
+    """``lagged_coefficients: {name: when}``: each name a coefficient of the model (not a field the sub-problem already
+    reads from another, which ``lags`` lags), each ``when`` a LAG_WHEN word."""
+    lagged = sub.get("lagged_coefficients")
+    if not lagged:
+        return
+    coefficients = _strong(doc).get("coefficients") or {}
+    read = set(sub.get("lags") or {})
+    for name, when in lagged.items():
+        here = "%s.lagged_coefficients.%s" % (where, name)
+        _word("lag_when", when, here)
+        if name in read:
+            raise VocabularyError("%s: %s is a field this sub-problem reads through lags, which already says when" % (
+                here, name))
+        if name not in coefficients:
+            raise VocabularyError("%s: %s is not a coefficient of the model; its coefficients are %s" % (
+                here, name, ", ".join(coefficients) or "none"))
+
+
+def _check_boundary_kinds(strong: Dict[str, Any]) -> None:
+    """``imposed``, ``penalty`` and ``form`` of every condition (written, or a member of a condition set) agree with its
+    type (ymf.boundaries)."""
+    from ymf.boundaries import BoundaryError, check_condition
+    conditions = [("boundary_conditions[%d]" % i, bc) for i, bc in enumerate(strong.get("boundary_conditions") or [])]
+    for name, members in (strong.get("condition_sets") or {}).items():
+        conditions += [("condition_sets.%s[%d]" % (name, i), bc) for i, bc in enumerate(members or [])]
+    for label, bc in conditions:
+        if isinstance(bc, dict):
+            try:
+                check_condition(bc, "model.strong_form.%s (%s on %s)" % (label, bc.get("type"), bc.get("variable")))
+            except BoundaryError as exc:
+                raise VocabularyError(str(exc)) from None
+
+
+def _check_dispersion(doc: Dict[str, Any], block: Any, family: Optional[str], where: str) -> None:
+    from ymf.dispersion import DispersionError, check as check_dispersion
+    try:
+        check_dispersion(block, doc, family, where)
+    except DispersionError as exc:
+        raise VocabularyError(str(exc)) from None
+
+
+def _check_cells(entry: Dict[str, Any], domain: Any) -> None:
+    from ymf.discretizations import CellsError, check_cells
+    try:
+        check_cells(entry, domain)
+    except CellsError as exc:
+        raise VocabularyError(str(exc)) from None
 
 
 def _check_spaces(block: Any, where: str) -> None:
@@ -484,6 +578,8 @@ def _check_entry(doc: Dict[str, Any], entry: Dict[str, Any], family: Optional[st
                     "%s.discretization: the scheme %s has no option %s; its options are %s"
                     % (where, scheme, ", ".join(unread),
                        ", ".join(list(SCHEMES[scheme]["options"]) + list(SCHEME_COMMON))))
+    _check_stabilization(entry.get("stabilization"), where + ".stabilization")
+    _check_cells(entry, _strong(doc).get("domain"))
     _check_spaces(entry.get("finite_element"), where + ".finite_element")
     for label, binding in list((entry.get("binds") or {}).items()):
         if isinstance(binding, dict) and binding.get("meaning") is not None:
@@ -496,9 +592,10 @@ def _check_entry(doc: Dict[str, Any], entry: Dict[str, Any], family: Optional[st
         here = "%s.subproblems[%s]" % (where, sub.get("name", "?"))
         if sub.get("time_integration") is not None:
             _word("time_integration", sub["time_integration"], here + ".time_integration")
-        method = _stabilization_method(sub.get("stabilization"))
-        if method is not None:
-            _word("stabilization", method, here + ".stabilization.method")
+        _check_stabilization(sub.get("stabilization"), here + ".stabilization")
+        _check_lagged_coefficients(doc, sub, here)
+        if sub.get("dispersion") is not None:
+            _check_dispersion(doc, sub["dispersion"], family, here + ".dispersion")
         _check_solver(sub.get("solver"), here)
         _check_spaces(sub.get("finite_element"), here + ".finite_element")
         for label, binding in (sub.get("binds") or {}).items():
@@ -543,6 +640,7 @@ def check(doc: Dict[str, Any]) -> None:
     else:
         found = families_of(doc)
         family = found[0] if len(found) == 1 else None
+    _check_boundary_kinds(_strong(doc))
     seen: Dict[str, str] = {}
     for name, entry in (_strong(doc).get("coefficients") or {}).items():
         if isinstance(entry, dict) and entry.get("role") is not None:

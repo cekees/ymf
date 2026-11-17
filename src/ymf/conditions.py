@@ -44,7 +44,7 @@ _VALUE_KEYS = ("value", "formula", "series", "units")
 
 #: the order an expanded condition's keys are written in
 _ORDER = ("region", "variable", "type", "component", "only", "value", "formula", "series",
-          "alpha", "beta", "units", "imposed", "source", "source_url", "temporal",
+          "alpha", "beta", "units", "imposed", "penalty", "form", "source", "source_url", "temporal",
           "expanded_from")
 
 
@@ -119,10 +119,14 @@ def expand_condition(bc: Dict[str, Any], rank: int = 0) -> List[Dict[str, Any]]:
     given = {k: bc[k] for k in _VALUE_KEYS if bc.get(k) is not None}
     shared = {k: v for k, v in bc.items()
               if k not in _VALUE_KEYS and k not in ("type", "set", "expanded_from")}
+    # how a condition is imposed is the Dirichlet part's (ymf.boundaries): the natural parts stay natural
+    kind_keys = {k: shared.pop(k) for k in ("imposed", "penalty", "form") if k in shared}
     out = []
     for part in alias["components"]:
         entry = dict(shared)
         entry.update({k: v for k, v in part.items() if k not in ("takes", "default")})
+        if part["type"] == "dirichlet":
+            entry.update(kind_keys)
         if part.get("takes"):
             if given:
                 entry.update(given)
