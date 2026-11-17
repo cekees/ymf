@@ -241,6 +241,14 @@ SubproblemDef = Map({
     # coefficients of the model this sub-problem freezes: name -> previous_step
     # | previous_iterate (ymf.vocabulary.LAG_WHEN), checked on load
     Optional("lagged_coefficients"): MapPattern(Str(), Str()),
+    # the dispersive family's closure, the coefficients it supplies and the
+    # auxiliary unknowns it introduces (ymf.dispersion, checked on load)
+    Optional("dispersion"): Map({
+        "closure": Str(),
+        Optional("closes"): Seq(Str()),
+        Optional("auxiliaries"): Seq(Map({
+            "name": Str(), "role": Str(), Optional("units"): Str(), Optional("initial"): Str()})),
+    }),
     Optional("solver"): SolverConfig,
     # options a dispatcher cannot infer yet, for one solver: an interim hint
     # it checks against what it infers, and drops once it covers them

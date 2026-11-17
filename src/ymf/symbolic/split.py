@@ -137,6 +137,9 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
                     "finite_element", "time_integration", "proteus"):
             if key in sub:
                 record[key] = sub[key]
+        if sub.get("dispersion") is not None:
+            from ymf.dispersion import resolve as resolve_dispersion
+            record["dispersion"] = resolve_dispersion(sub["dispersion"], where + " dispersion")
         stabilization = for_subproblem(entry, sub)
         if stabilization is not None:
             record["stabilization"] = stabilization
@@ -179,6 +182,11 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
                 fields[carrier] = 0
                 read["carried_by"] = carrier
             reads[name] = read
+        # the coefficients a dispersion closure computes (Pd, Qd) are fields the solver supplies at each point, with their
+        # gradients (the dispersive pressure's gradient is a force), as a field read from another sub-problem is
+        for name in (sub.get("dispersion") or {}).get("closes") or []:
+            fields[name] = 0
+            reads[name] = {"via": "dispersion", "at": "current_step"}
         known = Space(dim, own, {}, fields).known
         for name, read in reads.items():
             field = read.get("carried_by", name)

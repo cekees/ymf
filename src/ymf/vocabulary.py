@@ -409,6 +409,11 @@ COEFFICIENT_ROLES: Dict[str, Dict[str, str]] = {
     "canopy_drag": {"units": "m2/s2", "means": "the drag force of a canopy per unit plan area, "
                                                "over the density"},
     "diffusivity": {"units": "m2/s", "means": "a diffusion coefficient"},
+    # the dispersive family's two coefficients a closure supplies (ymf.dispersion)
+    "dispersive_pressure": {"units": "m3/s2", "means": "the non-hydrostatic part of the depth-integrated pressure "
+                                                      "(ymf.dispersion: supplied by the closure)"},
+    "dispersive_bed_force": {"units": "m2/s2", "means": "the topography-dispersion force per unit mass along the bed "
+                                                       "gradient (supplied by the closure)"},
 }
 
 #: the words of each kind, for check() and canonical()
@@ -523,6 +528,14 @@ def _check_boundary_kinds(strong: Dict[str, Any]) -> None:
                 raise VocabularyError(str(exc)) from None
 
 
+def _check_dispersion(doc: Dict[str, Any], block: Any, family: Optional[str], where: str) -> None:
+    from ymf.dispersion import DispersionError, check as check_dispersion
+    try:
+        check_dispersion(block, doc, family, where)
+    except DispersionError as exc:
+        raise VocabularyError(str(exc)) from None
+
+
 def _check_spaces(block: Any, where: str) -> None:
     from ymf.spaces import SpaceError, check_finite_element
     try:
@@ -572,6 +585,8 @@ def _check_entry(doc: Dict[str, Any], entry: Dict[str, Any], family: Optional[st
             _word("time_integration", sub["time_integration"], here + ".time_integration")
         _check_stabilization(sub.get("stabilization"), here + ".stabilization")
         _check_lagged_coefficients(doc, sub, here)
+        if sub.get("dispersion") is not None:
+            _check_dispersion(doc, sub["dispersion"], family, here + ".dispersion")
         _check_solver(sub.get("solver"), here)
         _check_spaces(sub.get("finite_element"), here + ".finite_element")
         for label, binding in (sub.get("binds") or {}).items():
