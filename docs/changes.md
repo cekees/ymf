@@ -7,6 +7,21 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-17: C42 round 5, the formulation a generator and a dispatcher read (C19 spike report, C5 step 4 part 2).**
+  The generator spike could not generate what the spec did not say (stabilization, shock capturing, lagging, boundary
+  kind, porosity) and C5 could not state a dispersive model or a mesh of a box that is not square. Now the spec states
+  each, checked on load, carried by `split_problem`, and part of an archive's key: `stabilization: {method, tau, lagged,
+  shock_capturing: {factor, beta, reference, lagged}}` (`ymf.stabilization`; proteus's `lag`, `sc_beta`, `sc_uref` are
+  aliases; nothing is defaulted); `lagged_coefficients: {name: previous_step | previous_iterate}`; `imposed: strong |
+  weak | none` with a weak condition's `penalty` and `form` (`ymf.boundaries`; the kind of an alias goes to its Dirichlet
+  part; `split_problem` gives every condition its `kind`); a two-phase model with a `porosity` coefficient
+  (`dambreak_porous.ymf`) and `coefficient_roles` in each sub-problem's record; `dispersion: {closure:
+  hyperbolic_relaxation, closes, auxiliaries}` with the roles `relaxed_depth`, `relaxed_divergence`, `relaxed_bed_flux`
+  (`ymf.dispersion`; coefficient roles `dispersive_pressure`, `dispersive_bed_force`); `mesh: {cells: {x: 80, y: 40}}`
+  (`cells_per_axis`). One fix on the way: `_used` read the function `sign` as the coefficients `s i g n` and put the
+  gravity among RDLS's. Not done, listed in the handoff: a condition whose value is another sub-problem's trace, the
+  relaxed equations of the closure, `atan`, a state imposed on part of a boundary.
+
 - **2026-11-16: C42 round 4, the spaces vocabulary (C8's choices).** A `finite_element` entry stated only family and
   order; C8 (proteus FemTools rounds 1-5) added the basis, the node set, the Bernstein operator and the geometry order as
   choices a run depends on. `ymf.spaces`: `basis` (`lagrange`, `bernstein`, `monomial`), `nodes` (`gll`, `equispaced`),

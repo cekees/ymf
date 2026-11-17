@@ -1,0 +1,35 @@
+# test/SWFlow/dam3Bumps.py as a spec, on the deck's structured mesh: a dam
+# break over three conical bumps, 75 m × 30 m. At refinement 4 the deck has
+# nnx = (6 − 1)·2⁴ + 1 = 81 nodes along x and nny = (nnx − 1)/2 + 1 = 41 along
+# y: 80 × 40 cells, one count per axis (the box is not square, so no single
+# count says it). The dam is at x = 16.05, not the deck's 16: the deck writes
+# the jump as x <= 16 and ymf's heaviside is 1/2 there, so they agree off the
+# jump only (as in proteus's test/dispatch/dam3bumps.ymf).
+extends: proteus_numerics.ymf
+
+model:
+  name: "Dam break over three bumps, 75 m × 30 m (dam3Bumps), structured 80 × 40"
+  physical_model: {provenance: human_specified}
+  strong_form:
+    domain: "Ω = [0, 75] × [0, 30],  t ∈ (0, 20]"
+    boundary_regions:
+      - {name: all, where: "∂Ω"}
+    boundary_sets:
+      - {region: all, set: wall}
+    initial_conditions:
+      - {field: h, type: function, formula: "max(1.875 heaviside(16.05 − x) − Z, 0)", units: m}
+      - {field: q, type: constant, value: 0.0}
+    coefficients:
+      g: {value: 9.81}
+      n: {value: 0.02}
+      θ: {value: 1.0}
+      Z: {formula: "max(0, 1 − sqrt((x − 30)² + (y − 6)²)/8, 1 − sqrt((x − 30)² + (y − 24)²)/8, 3 − 3 sqrt((x − 47.5)² + (y − 15)²)/10)"}
+      α: {value: 0.0}
+      β: {value: 0.0}
+
+solution_paths:
+  analytical: []
+  discretizations:
+    - name: convex_limited
+      mesh: {cells: {x: 80, y: 40}}
+      step_control: {type: min_cfl, cfl: 0.25}

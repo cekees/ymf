@@ -246,7 +246,7 @@ def test_a_condition_on_a_coefficient_goes_to_its_carrier(split):
     assert inflow == {"type": "dirichlet", "only": "inflow", "variable": "χ", "region": "top",
                       "where": "(abs(y - 1.8) <= tol)", "carried_by": "χh",
                       "expanded_from": {"type": "inflow", "set": "atmosphere"},
-                      "components": ["χh"], "value": "1.0"}
+                      "components": ["χh"], "value": "1.0", "kind": "strong"}
 
 
 def test_a_condition_reaches_every_sub_problem_that_solves_for_its_variable(dambreak):

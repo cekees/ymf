@@ -1,0 +1,32 @@
+# The dam break with a porous block on the floor of the right half of the
+# tank: the two-phase model with porosity θ (the fraction of the volume open
+# to the flow), as RANS2P, VOF and MCorr carry it. θ is a coefficient with
+# the role `porosity` (ymf.vocabulary), so a generator finds it by its role:
+#   mass      ∇·(θ v) = 0
+#   momentum  θ times the density, the viscous stress and the pressure force
+#   VOF       ∂(θ χh)/∂t + ∇·(θ v χh) = 0
+#   MCorr     the reaction is θ (H(φ + φc) − χh)
+# NCLS carries no porosity (its Hamiltonian is v·∇φ).
+extends: dambreak_formulation.ymf
+
+model:
+  name: "Dam break with a porous block (2-D)"
+  strong_form:
+    equations:
+      - name: momentum
+        for: v
+        equation: "∂(θ ρ v)/∂t + ∇·(θ ρ v⊗v) − ∇·(2θ μ sym(∇v)) + θ ∇p = θ ρ g  in Ω"
+      - name: continuity
+        for: p
+        equation: "∇·(θ v) = 0  in Ω"
+    coefficients:
+      θ: {formula: "1 − 0.4 heaviside(x − 2.2) heaviside(0.3 − y)", units: "1", role: porosity}
+
+solution_paths:
+  discretizations:
+    - name: level_set_five
+      subproblems:
+        - name: vof
+          equation: "∂(θ χh)/∂t + ∇·(θ v χh) = 0"
+        - name: mcorr
+          equation: "θ (heaviside(φ + φc) − χh) − ∇·(εd ∇φc) = 0"

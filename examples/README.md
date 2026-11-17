@@ -20,6 +20,19 @@ python examples/read_archive.py /tmp/ymf-demo/heat.ymf    # read one back
 | [nonlinear_diffusion.ymf](nonlinear_diffusion.ymf) | A coefficient that is a function of the state: the conductivity `k = 1 + u²` names the unknown, so the problem is nonlinear and solved by Newton. Manufactured exact solution; P1 and P2 rates 2 and 3. |
 | [kovasznay_flow.ymf](kovasznay_flow.ymf) | Branching: Navier–Stokes with two weak forms (Taylor–Hood, stabilized equal-order), a discretization for each, a Reynolds number computed from the scales, and a verification plan against the exact solution. |
 
+### The formulation a generator and a dispatcher read (C42 round 5)
+
+Worked specs live with the tests, because they extend the family files there:
+
+| File | Shows |
+|---|---|
+| [two_phase/dambreak_formulation.ymf](../tests/fixtures/two_phase/dambreak_formulation.ymf) | The dam break with `stabilization` (ASGS, SUPG, shock capturing and their parameters per sub-problem) and `imposed` boundary kinds stated. |
+| [two_phase/dambreak_porous.ymf](../tests/fixtures/two_phase/dambreak_porous.ymf) | The two-phase model with a porosity coefficient (`role: porosity`) in continuity, momentum, VOF and MCorr. |
+| [shallow_water/circular_dam_dispersive.ymf](../tests/fixtures/shallow_water/circular_dam_dispersive.ymf) | The dispersive family: `dispersion` with the hyperbolic-relaxation closure and its three auxiliary unknowns (and [dispersive.ymf](../tests/fixtures/shallow_water/dispersive.ymf), [dispersive_numerics.ymf](../tests/fixtures/shallow_water/dispersive_numerics.ymf) it extends). |
+| [shallow_water/dam3bumps.ymf](../tests/fixtures/shallow_water/dam3bumps.ymf) | Cells per axis: `mesh: {cells: {x: 80, y: 40}}`. |
+
+`lagged_coefficients` has no fixture (no solver of the dam break freezes a coefficient); `tests/test_lagging.py` sets it.
+
 ### Composed from several files: [navier_stokes/](navier_stokes/)
 
 One model, extended into three problems with `extends`, and one archive extended. See
