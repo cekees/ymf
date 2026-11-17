@@ -40,7 +40,8 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List, Optional
 
-__all__ = ["FAMILIES", "ROLES", "TIME_INTEGRATION", "STABILIZATION", "SCHEMES",
+__all__ = ["FAMILIES", "ROLES", "TIME_INTEGRATION", "STABILIZATION", "TAU_FORMS", "STABILIZATION_KEYS",
+           "SHOCK_CAPTURING_KEYS", "SCHEMES",
            "STEP_CONTROL", "REGULARIZATIONS", "BINDING_MEANINGS", "WRITES_BACK",
            "INERTIA_FORMS", "LINEAR_SOLVERS", "COEFFICIENT_ROLES", "ALIASES",
            "canonical", "family_of", "role_of", "roles_of", "linear_solver_kind",
@@ -260,6 +261,28 @@ STABILIZATION: Dict[str, str] = {
     "graph_viscosity_entropy_residual": "graph viscosity scaled by the entropy residual",
 }
 
+#: the length scale of the stabilization (a sub-problem's ``stabilization.tau``)
+TAU_FORMS: Dict[str, str] = {
+    "metric": "the element metric G (the inverse of the element's map, squared): "
+              "tau = 1/sqrt(4 dm_t² + a·G a + ...); proteus useMetrics = 1",
+    "element_size": "the element size h: tau = 1/sqrt(4 dm_t² + (2|a|/h)² + ...); proteus useMetrics = 0",
+}
+
+#: the keys of a ``stabilization`` block beside ``method`` (ymf.stabilization says which method reads which)
+STABILIZATION_KEYS: Dict[str, str] = {
+    "tau": "the length scale, a TAU_FORMS word",
+    "lagged": "the subgrid (tau) error is taken from the previous step (proteus SubgridError lag)",
+    "shock_capturing": "the residual-based shock-capturing viscosity: a block of SHOCK_CAPTURING_KEYS, or none",
+}
+
+#: the keys of a ``shock_capturing`` block
+SHOCK_CAPTURING_KEYS: Dict[str, str] = {
+    "factor": "the coefficient of the viscosity, >= 0 (proteus shockCapturingFactor)",
+    "beta": "the exponent the gradient is scaled by, in [1, 2]: 1 is the classical scaling (proteus sc_beta)",
+    "reference": "the reference value of the unknown, > 0 (proteus sc_uref)",
+    "lagged": "the viscosity is taken from the previous step (true) or the current iterate (false)",
+}
+
 #: an algebraic scheme stated in a discretization's ``discretization:`` block:
 #: its name, and the options it reads (option -> meaning). ``time_integration``,
 #: ``outputs`` and ``dt`` are read for every scheme.
@@ -386,6 +409,8 @@ _KINDS: Dict[str, Dict[str, Any]] = {
     "step_control": STEP_CONTROL, "regularization": REGULARIZATIONS,
     "binding_meaning": BINDING_MEANINGS, "writes_back": WRITES_BACK,
     "linear_solver": LINEAR_SOLVERS, "coefficient_role": COEFFICIENT_ROLES,
+    "tau_form": TAU_FORMS, "stabilization_key": STABILIZATION_KEYS,
+    "shock_capturing_key": SHOCK_CAPTURING_KEYS,
     "scheme_option": {o: m for s in SCHEMES.values() for o, m in s["options"].items()},
 }
 
@@ -396,6 +421,9 @@ ALIASES: Dict[str, Dict[str, str]] = {
     "stabilization": {"shock_capturing": "residual_shock_capturing"},
     "role": {"pressure_initial": "pressure_spin_up"},
     "scheme_option": {"entropy_viscosity_cE": "entropy_viscosity_coefficient"},
+    # the keys proteus's dispatcher already reads from a stabilization block
+    "stabilization_key": {"lag": "lagged"},
+    "shock_capturing_key": {"lag": "lagged", "sc_beta": "beta", "sc_uref": "reference"},
     "coefficient_role": {"mannings": "manning_coefficient", "bathymetry": "bed_elevation",
                          "drag_alpha": "linear_drag", "drag_beta": "quadratic_drag"},
 }
@@ -442,12 +470,14 @@ def _word(kind: str, word: Any, where: str) -> str:
         raise VocabularyError("%s: %s" % (where, exc)) from None
 
 
-def _stabilization_method(s: Any) -> Any:
-    if isinstance(s, str):
-        return s
-    if isinstance(s, dict):
-        return s.get("method")
-    return None
+def _check_stabilization(block: Any, where: str) -> None:
+    if block is None:
+        return
+    from ymf.stabilization import StabilizationError, check as check_stabilization
+    try:
+        check_stabilization(block, where)
+    except StabilizationError as exc:
+        raise VocabularyError(str(exc)) from None
 
 
 def _check_spaces(block: Any, where: str) -> None:
@@ -484,6 +514,7 @@ def _check_entry(doc: Dict[str, Any], entry: Dict[str, Any], family: Optional[st
                     "%s.discretization: the scheme %s has no option %s; its options are %s"
                     % (where, scheme, ", ".join(unread),
                        ", ".join(list(SCHEMES[scheme]["options"]) + list(SCHEME_COMMON))))
+    _check_stabilization(entry.get("stabilization"), where + ".stabilization")
     _check_spaces(entry.get("finite_element"), where + ".finite_element")
     for label, binding in list((entry.get("binds") or {}).items()):
         if isinstance(binding, dict) and binding.get("meaning") is not None:
@@ -496,9 +527,7 @@ def _check_entry(doc: Dict[str, Any], entry: Dict[str, Any], family: Optional[st
         here = "%s.subproblems[%s]" % (where, sub.get("name", "?"))
         if sub.get("time_integration") is not None:
             _word("time_integration", sub["time_integration"], here + ".time_integration")
-        method = _stabilization_method(sub.get("stabilization"))
-        if method is not None:
-            _word("stabilization", method, here + ".stabilization.method")
+        _check_stabilization(sub.get("stabilization"), here + ".stabilization")
         _check_solver(sub.get("solver"), here)
         _check_spaces(sub.get("finite_element"), here + ".finite_element")
         for label, binding in (sub.get("binds") or {}).items():

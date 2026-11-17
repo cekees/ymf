@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import sympy
 
+from ymf.stabilization import for_subproblem
 from ymf.symbolic.adr import adr_form, to_code
 from ymf.symbolic.language import Space, SymbolicError, parse_equation, parse_expression
 
@@ -132,9 +133,12 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
         bound = _bind(sub.get("binds") or {}, entry_bound, dim, where + " binds")
         record: Dict[str, Any] = {"name": sub["name"]}
         for key in ("solves", "enforces", "writes_back", "pseudo_time", "spin_up",
-                    "finite_element", "time_integration", "stabilization", "proteus"):
+                    "finite_element", "time_integration", "proteus"):
             if key in sub:
                 record[key] = sub[key]
+        stabilization = for_subproblem(entry, sub)
+        if stabilization is not None:
+            record["stabilization"] = stabilization
         record["solver"] = subproblem_solver(entry, sub)
 
         # its unknowns, and the text of every equation it classifies

@@ -1,0 +1,38 @@
+# The dam break of dambreak.ymf with the formulation stated: what the
+# generator (C19) and the dispatcher (C5) used to take from the model's
+# name or from Parameters.py. Round 5 (C42) states, in the order the files
+# add it:
+#   stabilization   SUPG or ASGS per sub-problem, its length scale, and the
+#                   shock-capturing viscosity with its parameters
+# Every value is the one proteus's DispatchTable (cekees/main 92f24ad9)
+# uses for the cell, so the spec states what the dispatcher already did.
+extends: dambreak.ymf
+
+solution_paths:
+  discretizations:
+    - name: level_set_five
+      subproblems:
+        - name: flow
+          stabilization:
+            method: ASGS
+            tau: metric
+            lagged: true                      # RANS2P's subgrid error from the previous step
+            shock_capturing: {factor: 0.5, lagged: true}
+        - name: vof
+          stabilization:
+            method: SUPG
+            tau: metric
+            lagged: false
+            shock_capturing: {factor: 0.5, beta: 1.5, reference: 1.0, lagged: true}
+        - name: ncls
+          stabilization:
+            method: SUPG
+            tau: metric
+            lagged: false
+            shock_capturing: {factor: 0.5, beta: 1.5, reference: 1.0, lagged: true}
+        - name: rdls
+          stabilization:
+            method: SUPG
+            tau: metric
+            lagged: false
+            shock_capturing: {factor: 0.9, lagged: false}   # redistancing's is not lagged
