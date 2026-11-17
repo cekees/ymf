@@ -536,6 +536,14 @@ def _check_dispersion(doc: Dict[str, Any], block: Any, family: Optional[str], wh
         raise VocabularyError(str(exc)) from None
 
 
+def _check_cells(entry: Dict[str, Any], domain: Any) -> None:
+    from ymf.discretizations import CellsError, check_cells
+    try:
+        check_cells(entry, domain)
+    except CellsError as exc:
+        raise VocabularyError(str(exc)) from None
+
+
 def _check_spaces(block: Any, where: str) -> None:
     from ymf.spaces import SpaceError, check_finite_element
     try:
@@ -571,6 +579,7 @@ def _check_entry(doc: Dict[str, Any], entry: Dict[str, Any], family: Optional[st
                     % (where, scheme, ", ".join(unread),
                        ", ".join(list(SCHEMES[scheme]["options"]) + list(SCHEME_COMMON))))
     _check_stabilization(entry.get("stabilization"), where + ".stabilization")
+    _check_cells(entry, _strong(doc).get("domain"))
     _check_spaces(entry.get("finite_element"), where + ".finite_element")
     for label, binding in list((entry.get("binds") or {}).items()):
         if isinstance(binding, dict) and binding.get("meaning") is not None:

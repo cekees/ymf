@@ -301,7 +301,9 @@ DiscretizationEntry = Map(
         # coarsest mesh. A list is a study: each value is one realization
         # (see ymf.closure).
         Optional("mesh"): Map({
-            Optional("cells"): Int() | Seq(Int()),
+            # cells: one count for every axis, a study of counts, one count per
+            # axis ({x: 80, y: 40}), or a study of those (ymf.discretizations)
+            Optional("cells"): Int() | MapPattern(Str(), Int()) | Seq(Int() | MapPattern(Str(), Int())),
             Optional("h"): Float() | Seq(Float()),
             Optional("levels"): Int() | Seq(Int()),
         }),
