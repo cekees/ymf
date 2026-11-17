@@ -158,3 +158,30 @@ def test_the_porosity_survives_the_archive(tmp_path):
     spec, again, _ = roundtrip(tmp_path, POROUS, "level_set_five", {"h": 0.0322})
     assert coefficient_by_role(again, "porosity") == "θ"
     assert subproblem(again, "level_set_five", "vof")["equation"] == "∂(θ χh)/∂t + ∇·(θ v χh) = 0"
+
+
+def test_the_specs_vof_is_the_form_the_generator_spike_built_by_hand_with_the_porosity_a_field(porous):
+    # make_inputs.py: Space(2, {χ: 0}, {}, fields={v: 1, ε: 0}), "∂(ε*χ)/∂t + ∇·(ε*χ*v) = 0": ε is a per-point input.
+    # The spec inlines θ(x, y); with ε := θ(x, y) the two forms agree to round-off (m, dm, f, df).
+    numpy = pytest.importorskip("numpy")
+    from ymf.symbolic import Space, adr_form, parse_equation
+    space = Space(2, {"χ": 0}, {}, fields={"v": 1, "ε": 0})
+    by_hand = adr_form(parse_equation("∂(ε*χ)/∂t + ∇·(ε*χ*v) = 0", space), space)["equations"][0]
+    spec = {s["name"]: s for s in split_problem(porous, "level_set_five")["subproblems"]}["vof"]["adr"]["equations"][0]
+    theta = lambda x, y: 1 - 0.4 * (x > 2.2 + 1.5 * 0.0322) * (y < 0.3 - 1.5 * 0.0322)      # away from the smoothed edges
+    x, y, h = 3.0, 0.1, 0.0322
+    v = (0.7, -0.3)
+
+    def run(code, **extra):
+        env = {"numpy": numpy, "x": x, "y": y, "h": h, "v_0": v[0], "v_1": v[1]}
+        env.update(extra)
+        return eval(code, {"__builtins__": {}}, env)  # noqa: S307
+
+    eps = theta(x, y)
+    for u in (0.3, 0.9):
+        assert run(spec["mass"]["m"], χh=u) == pytest.approx(run(by_hand["mass"]["m"], χ=u, ε=eps))
+        assert run(spec["mass"]["dm"]["χh"], χh=u) == pytest.approx(run(by_hand["mass"]["dm"]["χ"], χ=u, ε=eps))
+        for k in (0, 1):
+            assert run(spec["advection"]["f"][k], χh=u) == pytest.approx(run(by_hand["advection"]["f"][k], χ=u, ε=eps))
+            assert run(spec["advection"]["df"]["χh"][k], χh=u) == pytest.approx(
+                run(by_hand["advection"]["df"]["χ"][k], χ=u, ε=eps))

@@ -903,7 +903,12 @@ checked on load, so that a second solver reads the same ones:
 | `binds.*.meaning` | `element_size`, `dry_depth` |
 | `writes_back` | `replace`, `add`, `mass_quadrature` |
 | `linear_solver` | `direct`, `iterative`; `superlu`, `mumps`, `umfpack`, `petsc` |
-| coefficient `role` | `density`, `dynamic_viscosity`, `kinematic_viscosity`, `gravity`, `phase_indicator`, `surface_tension`, `bed_elevation`, `manning_coefficient`, `porosity`, `linear_drag`, `quadratic_drag`, `bed_friction`, `canopy_drag`, `diffusivity` |
+| coefficient `role` | `density`, `dynamic_viscosity`, `kinematic_viscosity`, `gravity`, `phase_indicator`, `surface_tension`, `bed_elevation`, `manning_coefficient`, `porosity`, `linear_drag`, `quadratic_drag`, `bed_friction`, `canopy_drag`, `diffusivity`, `dispersive_pressure`, `dispersive_bed_force` |
+| `stabilization.tau` | `metric`, `element_size` |
+| stabilization and shock-capturing keys | `tau`, `lagged`, `shock_capturing`; `factor`, `beta`, `reference`, `lagged` (older: `lag`, `sc_beta`, `sc_uref`) |
+| `lagged_coefficients` values | `previous_step`, `previous_iterate` |
+| `imposed` (boundary kind) | `strong`, `weak`, `none`; a weak one's `form`: `symmetric`, `nonsymmetric`, `incomplete` |
+| `dispersion.closure`, auxiliary `role` | `hyperbolic_relaxation`; `relaxed_depth`, `relaxed_divergence`, `relaxed_bed_flux` |
 
 A family is identified by the processes and assumptions of
 `physical_model` (two-phase: `incompressible_flow`, `two_phase_flow`,
@@ -935,6 +940,63 @@ loads, and is not rewritten: a reader keyed on the old word keeps working
 until it maps the new one. `dispersive_shallow_water` was identified by
 the assumption `hyperbolic_relaxation`, which is how GN_SW2DCV discretizes
 the model, not an assumption of it; that is still recognized.
+
+### What a generator and a dispatcher read of the formulation (C42 round 5)
+
+The words above name *what a sub-problem is*. A kernel generator (C19) and the app framework (C5) also need *how it is
+formulated*, which used to come from a model's name or from `Parameters.py`. A spec states it, and
+`split_problem` carries each statement in the sub-problem's record. Worked specs: the fixtures
+`tests/fixtures/two_phase/dambreak_formulation.ymf`, `dambreak_porous.ymf` and
+`tests/fixtures/shallow_water/circular_dam_dispersive.ymf`, `dam3bumps.ymf`. Nothing is defaulted by ymf: what a spec
+does not state is the solver's own default (`ymf.stabilization.missing` lists what a reader that must not guess still
+needs).
+
+**Stabilization and shock capturing** (`ymf.stabilization`), per sub-problem, or per entry as the default of its
+sub-problems (a sub-problem's block replaces the entry's whole):
+
+```yaml
+stabilization:
+  method: SUPG                    # or a bare word: stabilization: SUPG
+  tau: metric                     # metric (G, proteus useMetrics 1) | element_size (h, useMetrics 0)
+  lagged: false                   # the subgrid error taken from the previous step
+  shock_capturing: {factor: 0.5, beta: 1.5, reference: 1.0, lagged: true}    # or: none
+```
+
+SUPG and ASGS read `tau`, `lagged`, `shock_capturing`; `residual_shock_capturing` reads `tau` and `shock_capturing`;
+the entropy and graph viscosities read none (their parameters are the scheme's options). `beta` is in [1, 2],
+`reference` positive, `factor` non-negative. `lag`, `sc_beta`, `sc_uref` (the keys proteus's dispatcher read first) are
+accepted and resolve to `lagged`, `beta`, `reference`.
+
+**Lagging** (`lagged_coefficients`): `{μ: previous_iterate, ρ: previous_step}` says which of the model's coefficients
+a sub-problem freezes, in the Newton iteration (a Picard step: the Jacobian drops the dependence) or in time (a
+constant of the step). A field read from another sub-problem is `lags`; a stabilization's lag is its `lagged`.
+
+**Boundary kind** (`imposed` on a condition, `ymf.boundaries`): `strong` (rows replaced), `weak` (Nitsche: `penalty`
+and `form`) or `none` (the natural condition). A Dirichlet condition is strong or weak (default strong); Neumann,
+Robin and `open` are none. `split_problem` gives each condition its resolved `kind`, which is what picks a kernel's
+face term (the engine's Strong, WeakDirichlet and Flux). An alias gives its kind to its Dirichlet part only.
+
+**Porosity** is a coefficient with `role: porosity`; `dambreak_porous.ymf` states it in the two-phase model's
+continuity, momentum, VOF and MCorr equations. A sub-problem's record lists the roles of the coefficients it uses
+(`coefficient_roles`), so a generator finds the porosity by its role.
+
+**The dispersive family** (`ymf.dispersion`): the model is the shallow-water one with the dispersive pressure `Pd` and bed
+force `Qd` as coefficients (roles `dispersive_pressure`, `dispersive_bed_force`), and a sub-problem states the closure
+that supplies them and the auxiliary unknowns it introduces:
+
+```yaml
+dispersion:
+  closure: hyperbolic_relaxation
+  closes: [Pd, Qd]
+  auxiliaries:
+    - {name: hη, role: relaxed_depth, units: m2}          # initial h², boundary data of h
+    - {name: hw, role: relaxed_divergence, units: m2/s}   # initial 0, boundary data of h (`initial:` to state another)
+    - {name: hβ, role: relaxed_bed_flux, units: m2/s}     # initial 0, boundary data of q
+```
+
+**Cells per axis**: `mesh: {cells: {x: 80, y: 40}}`. One count (`cells: 80`) is every axis, a list is a study
+(`cells: [80, 160]`), a list of maps a study of such meshes. `ymf.discretizations.cells_per_axis(cells, dim)` gives the
+counts in axis order; the output key reads `cells=80x40`.
 
 ## Document state
 
