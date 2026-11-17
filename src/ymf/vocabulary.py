@@ -508,6 +508,21 @@ def _check_lagged_coefficients(doc: Dict[str, Any], sub: Dict[str, Any], where: 
                 here, name, ", ".join(coefficients) or "none"))
 
 
+def _check_boundary_kinds(strong: Dict[str, Any]) -> None:
+    """``imposed``, ``penalty`` and ``form`` of every condition (written, or a member of a condition set) agree with its
+    type (ymf.boundaries)."""
+    from ymf.boundaries import BoundaryError, check_condition
+    conditions = [("boundary_conditions[%d]" % i, bc) for i, bc in enumerate(strong.get("boundary_conditions") or [])]
+    for name, members in (strong.get("condition_sets") or {}).items():
+        conditions += [("condition_sets.%s[%d]" % (name, i), bc) for i, bc in enumerate(members or [])]
+    for label, bc in conditions:
+        if isinstance(bc, dict):
+            try:
+                check_condition(bc, "model.strong_form.%s (%s on %s)" % (label, bc.get("type"), bc.get("variable")))
+            except BoundaryError as exc:
+                raise VocabularyError(str(exc)) from None
+
+
 def _check_spaces(block: Any, where: str) -> None:
     from ymf.spaces import SpaceError, check_finite_element
     try:
@@ -601,6 +616,7 @@ def check(doc: Dict[str, Any]) -> None:
     else:
         found = families_of(doc)
         family = found[0] if len(found) == 1 else None
+    _check_boundary_kinds(_strong(doc))
     seen: Dict[str, str] = {}
     for name, entry in (_strong(doc).get("coefficients") or {}).items():
         if isinstance(entry, dict) and entry.get("role") is not None:

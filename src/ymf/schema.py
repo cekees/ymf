@@ -389,7 +389,11 @@ _CONDITION_FIELDS = {
     # imposed (C12: a property of each condition), and what it expanded from.
     Optional("component"): Enum(["normal", "tangential"]),
     Optional("only"): Enum(["inflow", "incoming_characteristics"]),
-    Optional("imposed"): Enum(["strong", "weak"]),
+    Optional("imposed"): Enum(["strong", "weak", "none"]),
+    # a weak (Nitsche) condition's penalty, over h, and its adjoint term
+    # (ymf.boundaries); checked on load against the condition's type
+    Optional("penalty"): Float(),
+    Optional("form"): Enum(["symmetric", "nonsymmetric", "incomplete"]),
     Optional("expanded_from"): Map({Optional("type"): Str(), Optional("set"): Str()}),
     Optional("value"): Float(),
     # A value that varies along the boundary or in time: an expression

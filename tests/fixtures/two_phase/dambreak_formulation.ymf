@@ -4,9 +4,25 @@
 # add it:
 #   stabilization   SUPG or ASGS per sub-problem, its length scale, and the
 #                   shock-capturing viscosity with its parameters
+#   boundary kind   how each condition reaches the discrete problem: RANS2P
+#                   assembles its Dirichlet conditions weakly (Nitsche, the
+#                   boundary adjoint of sign 1: C19 gap note G8), VOF imposes
+#                   the air entering through the top strongly (upwind flux
+#                   with the Dirichlet inflow)
 # Every value is the one proteus's DispatchTable (cekees/main 92f24ad9)
 # uses for the cell, so the spec states what the dispatcher already did.
 extends: dambreak.ymf
+
+model:
+  strong_form:
+    # the family's sets, with the kind of each Dirichlet part stated
+    condition_sets:
+      free_slip:
+        - {variable: v, type: slip, imposed: weak, form: symmetric}
+      atmosphere:
+        - {variable: p, type: dirichlet, value: 0.0, imposed: weak, form: symmetric}
+        - {variable: v, type: open}
+        - {variable: χ, type: inflow, value: 1.0, imposed: strong}
 
 solution_paths:
   discretizations:
