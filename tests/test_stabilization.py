@@ -41,6 +41,14 @@ def test_shock_capturing_none_is_stated_and_is_not_absent():
 
 @pytest.mark.parametrize("block, message", [
     ({"tau": "metric"}, "say the method"),
+    ({}, "say the method"),
+    ({"tau": "metric", "shock_capturing": {"factor": 0.9}},
+     "no method is stated.*tau is read by a method: say which"),
+    ({"tau": "metric", "lagged": True, "shock_capturing": {"factor": 0.9}},
+     "lagged, tau are read by a method"),
+    ({"method": "none", "tau": "metric"}, "none does not read tau; its keys are method, shock_capturing"),
+    ({"method": "none", "lagged": True}, "none does not read lagged"),
+    ({"shock_capturing": {"beta": 1.5}}, "factor is required"),
     ({"method": "GLS"}, "stabilization GLS: ymf knows"),
     ({"method": "SUPG", "tau": "h"}, "tau: h is not one of metric, element_size"),
     ({"method": "SUPG", "lagged": "maybe"}, "'maybe' is not true or false"),
@@ -63,6 +71,62 @@ def test_shock_capturing_none_is_stated_and_is_not_absent():
 def test_a_stabilization_that_does_not_make_sense_is_refused(block, message):
     with pytest.raises(StabilizationError, match=message):
         resolve(block)
+
+
+# --- no method: none, and shock capturing alone (0.3.1) ------------------------------------------------------------
+
+def test_none_says_there_is_no_stabilization_and_adds_nothing():
+    assert resolve("none") == {"method": "none"} == resolve({"method": "none"})
+    assert canonical("stabilization", "none") == "none"
+    # none with shock capturing stated none is the same statement, spelled out
+    assert resolve({"method": "none", "shock_capturing": "none"}) == {"method": "none", "shock_capturing": None}
+
+
+def test_a_block_that_states_only_shock_capturing_is_shock_capturing_with_no_method():
+    # proteus's RDLS block in test/dispatch at cekees/main b9d98f5d (ymf 0.2: a free map; 0.3.0: refused for want of method)
+    old = {"shock_capturing": {"factor": 0.9, "lag": False}}
+    assert resolve(old) == {"method": "none", "shock_capturing": {"factor": 0.9, "lagged": False}}
+    assert resolve(old) == resolve({"method": "none", "shock_capturing": {"factor": 0.9, "lagged": False}})
+    # not a method ymf picks: it is not residual_shock_capturing (a method that also takes tau), nor SUPG
+    assert resolve(old)["method"] not in ("SUPG", "residual_shock_capturing")
+    assert resolve({"shock_capturing": "none"}) == {"method": "none", "shock_capturing": None}
+
+
+def test_missing_asks_none_only_for_a_shock_capturing_block_it_states():
+    assert missing("none") == [] and missing({"method": "none", "shock_capturing": "none"}) == []
+    assert missing({"shock_capturing": {"factor": 0.9, "lag": False}}) == [
+        "shock_capturing.beta", "shock_capturing.reference"]
+    assert missing({"shock_capturing": {"factor": 0.9, "beta": 1.0, "reference": 1.0, "lagged": False}}) == []
+    # nothing was filled in on the way: the same two keys are still unstated
+    assert "beta" not in resolve({"shock_capturing": {"factor": 0.9}})["shock_capturing"]
+    # SUPG still asks for everything it reads, shock capturing stated or not
+    assert missing("SUPG") == ["tau", "lagged", "shock_capturing"]
+
+
+def test_a_spec_states_none_and_shock_capturing_alone_and_split_problem_carries_them():
+    doc = load_ymf(FORMULATION)
+    _state(doc, "mcorr", "none")
+    _state(doc, "rdls", {"shock_capturing": {"factor": 0.9, "lag": False}})
+    check(doc)
+    split = {s["name"]: s for s in split_problem(doc, "level_set_five")["subproblems"]}
+    assert split["mcorr"]["stabilization"] == {"method": "none"}
+    assert split["rdls"]["stabilization"] == {"method": "none", "shock_capturing": {"factor": 0.9, "lagged": False}}
+    # an entry's none is the default of the sub-problems that state nothing; a sub-problem that states one replaces it
+    entry = doc["solution_paths"]["discretizations"][0]
+    entry["stabilization"] = {"method": "none"}
+    del subproblem(doc, "level_set_five", "vof")["stabilization"]
+    split = {s["name"]: s for s in split_problem(doc, "level_set_five")["subproblems"]}
+    assert split["vof"]["stabilization"] == {"method": "none"}
+    assert split["flow"]["stabilization"]["method"] == "ASGS"
+
+
+def test_a_block_that_states_shock_capturing_with_a_key_only_a_method_reads_is_refused_on_load():
+    doc = _state(load_ymf(FORMULATION), "rdls", {"tau": "metric", "shock_capturing": {"factor": 0.9}})
+    with pytest.raises(VocabularyError, match=r"subproblems\[rdls\]\.stabilization: no method is stated"):
+        check(doc)
+    doc = _state(load_ymf(FORMULATION), "rdls", {"tau": "metric"})
+    with pytest.raises(VocabularyError, match="say the method"):
+        check(doc)
 
 
 # --- what a generator still needs stated ------------------------------------------------------------------------

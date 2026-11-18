@@ -896,7 +896,7 @@ checked on load, so that a second solver reads the same ones:
 | model family (`physical_model.family`) | `two_phase_level_set`, `shallow_water`, `dispersive_shallow_water` |
 | sub-problem role (`role`) | two-phase: `velocity_pressure`, `velocity`, `pressure_increment`, `pressure`, `pressure_spin_up`, `volume_fraction`, `level_set`, `level_set_redistanced`, `redistancing`, `mass_correction`; shallow water: `shallow_water` |
 | `time_integration` | `backward_euler`, `bdf2`, `ssp_rk3`, `none` |
-| `stabilization.method` | `ASGS`, `SUPG`, `residual_shock_capturing`, `entropy_viscosity`, `graph_viscosity_smoothness`, `graph_viscosity_entropy_residual` |
+| `stabilization.method` | `ASGS`, `SUPG`, `residual_shock_capturing`, `entropy_viscosity`, `graph_viscosity_smoothness`, `graph_viscosity_entropy_residual`, `none` |
 | `discretization.scheme` and its options | `graph_viscosity_convex_limiting`: `entropy_viscosity_coefficient`, `lumped_mass`, `bounds_relaxation` (and `time_integration`, `outputs`, `dt` for every scheme) |
 | `step_control.type` | `min_cfl`, `fixed` |
 | `regularize.*.by` | `smoothed_heaviside`, `smoothed_sign`, `wet_dry_cutoff` |
@@ -966,6 +966,28 @@ SUPG and ASGS read `tau`, `lagged`, `shock_capturing`; `residual_shock_capturing
 the entropy and graph viscosities read none (their parameters are the scheme's options). `beta` is in [1, 2],
 `reference` positive, `factor` non-negative. `lag`, `sc_beta`, `sc_uref` (the keys proteus's dispatcher read first) are
 accepted and resolve to `lagged`, `beta`, `reference`.
+
+*No method, and shock capturing alone* (0.3.1). `method: none` says the sub-problem has no residual-based method; it reads
+only `shock_capturing`. Three statements, three meanings:
+
+```yaml
+stabilization: none                                  # not stabilized at all, shock capturing included (MCorr, PresInc, a projection)
+stabilization: {method: none, shock_capturing: {factor: 0.9, lagged: false}}   # shock capturing and no method
+stabilization: {shock_capturing: {factor: 0.9, lagged: false}}                 # the same: a block without `method`
+```
+
+A block with `shock_capturing` and no `method` is the second one, exactly: ymf never picks a method for a block that
+does not name one (it is neither `SUPG` nor `residual_shock_capturing`, which also takes `tau`), and `tau` or `lagged`
+without a method are refused, because they belong to a method. `resolve` returns `{"method": "none", ...}` for all
+three and adds no other key.
+
+*What a reader that must not guess still needs: `ymf.stabilization.missing(block)`.* It returns the dotted keys the
+kernel generator reads that the block does not state, and nothing is filled in: `missing("SUPG")` is `["tau", "lagged",
+"shock_capturing"]`; with `shock_capturing: {factor: 0.9, lagged: false}` stated it also asks for `shock_capturing.beta` and
+`.reference` (stating `shock_capturing: none` answers the block as a whole); the entropy and graph viscosities need
+nothing. For `none`, an unstated `shock_capturing` is not missing (the word says there is none); a `shock_capturing`
+block it does state must be complete, so `missing({"shock_capturing": {"factor": 0.9, "lag": False}})` is
+`["shock_capturing.beta", "shock_capturing.reference"]` and `missing("none")` is `[]`.
 
 **Lagging** (`lagged_coefficients`): `{μ: previous_iterate, ρ: previous_step}` says which of the model's coefficients
 a sub-problem freezes, in the Newton iteration (a Picard step: the Jacobian drops the dependence) or in time (a

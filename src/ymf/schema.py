@@ -112,9 +112,10 @@ ShockCapturingDef = Str() | Map(
     }
 )
 
+# A block without ``method`` states shock capturing alone (``method: none``), ymf.stabilization.resolve.
 StabilizationDef = Str() | Map(
     {
-        "method": Str(),
+        Optional("method"): Str(),
         Optional("tau"): Str(),
         Optional("lagged"): Bool(),
         Optional("lag"): Bool(),
