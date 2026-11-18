@@ -253,6 +253,7 @@ TIME_INTEGRATION: Dict[str, str] = {
 }
 
 STABILIZATION: Dict[str, str] = {
+    "none": "no residual-based method (and no shock capturing unless the block states it): a projection, a correction",
     "ASGS": "algebraic subgrid scale stabilization (variational multiscale)",
     "SUPG": "streamline-upwind Petrov-Galerkin",
     "residual_shock_capturing": "residual-based shock-capturing viscosity alone",
