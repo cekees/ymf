@@ -7,6 +7,20 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-18: 0.3.1, a stabilization without a method (C42 round 6).** ymf 0.3.0 required `method` in every
+  `stabilization:` block, so proteus's RDLS block (`stabilization: {shock_capturing: {factor: 0.9, lag: false}}`, read
+  as a free map by ymf 0.2) no longer loaded, and `test/dispatch` broke on every proteus PR. Now `method: none` is a
+  word (no residual-based method; it reads only `shock_capturing`), the bare `stabilization: none` says a sub-problem is
+  not stabilized at all (MCorr, PresInc), and a block that states only `shock_capturing` loads and means exactly
+  that, `method: none` plus that shock capturing; ymf picks no method for it and fills in no key. `tau` or `lagged`
+  without a method are refused (they belong to one). `ymf.stabilization.missing(block)` still lists what a reader that
+  must not guess needs: under `none` an unstated `shock_capturing` is not missing (the word says there is none), a
+  stated block must be complete (`beta`, `reference` for RDLS's). A spec written before 2026-11-17 loads unchanged:
+  proteus's own `test/dispatch/dambreak.ymf` and `two_phase_level_set.ymf` (`cekees/main` b9d98f5d) are fixtures
+  (`tests/fixtures/proteus_dispatch_0_2/`), loaded, resolved and round-tripped through an archive with the same key.
+  Suite 1032 -> 1048. What proteus's RDLS actually applies (SUPG with `tau: metric`, not lagged, and a classical
+  `beta` 1 shock capturing) is in `HANDOFF_2026-11-18_ymf-r6.md`: the old block was incomplete, not wrong to load.
+
 - **2026-11-17: C42 round 5, the formulation a generator and a dispatcher read (C19 spike report, C5 step 4 part 2).**
   The generator spike could not generate what the spec did not say (stabilization, shock capturing, lagging, boundary
   kind, porosity) and C5 could not state a dispersive model or a mesh of a box that is not square. Now the spec states

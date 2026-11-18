@@ -14,6 +14,8 @@ or as a block::
         reference: 1.0               # the reference value of the unknown (sc_uref)
         lagged: true                 # the viscosity taken from the previous step (ShockCapturing lag)
     stabilization: {method: SUPG, shock_capturing: none}     # none, stated: the solver adds no shock capturing
+    stabilization: none                                  # nothing: no method, no shock capturing (MCorr, a projection)
+    stabilization: {shock_capturing: {factor: 0.9}}      # shock capturing with no method (proteus's RDLS block of 0.2)
 
 What it is for. The generator (C19) turned VOF and NCLS into a functor each, but the SUPG tau, the shock capturing and
 their lag are the engine template's, and the template took them from the model's name (``dambreak.ymf`` stated none: the
@@ -28,6 +30,11 @@ becomes a block) and adds nothing: **a key the spec does not state stays unstate
 
 Which keys a method takes:
 
+* ``none``: no residual-based method. It takes only ``shock_capturing``: ``stabilization: none`` (or ``method: none``)
+  says that the sub-problem is not stabilized at all, shock capturing included; ``{method: none, shock_capturing:
+  {factor: 0.9}}`` says shock capturing and nothing else. A block that states ``shock_capturing`` and no ``method`` is
+  exactly that second one (ymf 0.2 read such a block, proteus's RDLS stated one; 0.3.0 refused it; resolve gives it
+  ``method: none``). This is a meaning, not a default: ymf never picks a method for a block that does not name one.
 * ``SUPG``, ``ASGS``: ``tau``, ``lagged``, ``shock_capturing`` (the residual-based viscosity added to the method).
 * ``residual_shock_capturing``: the shock-capturing viscosity alone: ``tau``, ``shock_capturing`` (its block says how much;
   unstated, the solver's own coefficient applies).
@@ -53,6 +60,7 @@ class StabilizationError(ValueError):
 
 #: method -> the keys of the block it reads (beside ``method``)
 TAKES: Dict[str, tuple] = {
+    "none": ("shock_capturing",),
     "SUPG": ("tau", "lagged", "shock_capturing"),
     "ASGS": ("tau", "lagged", "shock_capturing"),
     "residual_shock_capturing": ("tau", "shock_capturing"),
@@ -139,13 +147,28 @@ def _shock_capturing(block: Any, where: str) -> Optional[Dict[str, Any]]:
 
 def resolve(block: Any, where: str = "stabilization") -> Dict[str, Any]:
     """The stabilization as a block with ymf's words and every stated key kept: ``{method, tau?, lagged?,
-    shock_capturing?}``, ``shock_capturing`` a dict, or ``None`` when the spec says ``none``. Nothing is added.
-    Raises :class:`StabilizationError`."""
+    shock_capturing?}``, ``shock_capturing`` a dict, or ``None`` when the spec says ``none``. Nothing is added, with one
+    reading of what is stated: a block that gives ``shock_capturing`` and no ``method`` has ``method: none`` (shock
+    capturing and no residual-based method), and the bare word ``none`` is ``{"method": "none"}``, which under
+    :data:`TAKES` ``none`` states no shock capturing either. Raises :class:`StabilizationError`."""
     if isinstance(block, str):
         block = {"method": block}
-    if not isinstance(block, dict) or "method" not in block:
-        raise StabilizationError("%s: say the method (stabilization: SUPG), or give a block with method:" % (where,))
+    if not isinstance(block, dict):
+        raise StabilizationError("%s: say the method (stabilization: SUPG, or none), or give a block with method:"
+                                 % (where,))
     block = _keys(block, "stabilization_key", where)
+    if "method" not in block:
+        if "shock_capturing" not in block:
+            raise StabilizationError(
+                "%s: say the method (stabilization: SUPG, or none), or give a block with method: (a block with only "
+                "shock_capturing has no method: none)" % (where,))
+        others = sorted(set(block) - {"shock_capturing"})
+        if others:
+            raise StabilizationError(
+                "%s: no method is stated, so the block is shock capturing and nothing else (method: none), and "
+                "%s %s read by a method: say which (method: SUPG, ASGS or residual_shock_capturing)"
+                % (where, ", ".join(others), "is" if len(others) == 1 else "are"))
+        block = dict(block, method="none")
     method = _method(block["method"], where + ".method")
     takes = TAKES[method]
     unread = sorted(set(block) - {"method"} - set(takes))
@@ -194,12 +217,14 @@ def missing(block: Any) -> List[str]:
 
 def generator_needs(method: str, resolved: Optional[Dict[str, Any]] = None) -> List[str]:
     """What the kernel generator reads of a stabilization of ``method``: ``tau`` (and ``lagged`` for SUPG and ASGS),
-    and the shock-capturing block's four keys (or its explicit ``none``)."""
+    and the shock-capturing block's four keys (or its explicit ``none``). Method ``none`` needs no statement that there
+    is no shock capturing (it says so); only a shock-capturing block it does state must be complete."""
     takes = TAKES[method]
     needs = [k for k in ("tau", "lagged") if k in takes]
     if "shock_capturing" in takes:
         sc = (resolved or {}).get("shock_capturing", "unstated")
-        needs.append("shock_capturing")
+        if method != "none":
+            needs.append("shock_capturing")
         if isinstance(sc, dict):
             needs += ["shock_capturing." + k for k in SHOCK_CAPTURING_KEYS]
     return needs
