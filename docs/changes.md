@@ -7,6 +7,15 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-25: C42 round 7, a state on part of a boundary.** The SWFlow decks impose their inflow node by node on
+  part of one boundary (`X[0] == 0`) and on one Cartesian component (`x_mom`, `y_mom`), which a spec could not say: a
+  `component` was the normal or tangential part only (it needs the side's orientation), and a condition held on its
+  whole region. Now a condition may carry `part`, a predicate like a region's `where`, and there it replaces the
+  region's conditions on the same variable without a part on an overlapping component; a `component` may be `x`, `y`,
+  `z`; and predicates take comparisons (`x = 0 and 0.4 ≤ y ≤ 0.6`). `split_problem` gives `part` and `excluding`
+  (codes), so a reader applies each entry as written. Fixtures: `transcritical_bump.ymf` (the deck's three conditions)
+  and `obstacle_inflow.ymf` (obstacle_flow's boundary on its box: the outflow set with the state on x = 0).
+
 - **2026-11-18: 0.3.1, a stabilization without a method (C42 round 6).** ymf 0.3.0 required `method` in every
   `stabilization:` block, so proteus's RDLS block (`stabilization: {shock_capturing: {factor: 0.9, lag: false}}`, read
   as a free map by ymf 0.2) no longer loaded, and `test/dispatch` broke on every proteus PR. Now `method: none` is a

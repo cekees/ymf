@@ -182,6 +182,49 @@ the region exists, the variable is an unknown or a coefficient, `slip` and
 a `component` are on a vector, and a kind gets a value exactly when it
 takes one.
 
+**A state on part of a boundary** (round 7). A condition's `part` is a
+predicate, written like a region's `where`, that says on which points of its
+region it holds; there it replaces the region's conditions on the same
+variable that have no part and are on an overlapping component, and those
+hold on the rest. A `component` may also be a Cartesian one, `x`, `y` or
+`z` (the vector's first, second, third), with a value (dirichlet, neumann,
+inflow, characteristic). So the SWFlow decks' inflows read as they are
+imposed:
+
+```yaml
+# transcritical_bump: q's y component 0 on all of ∂Ω, its x component at x = 0, the depth at x = 25
+boundary_regions: [{name: all, where: "∂Ω"}]
+boundary_conditions:
+  - {region: all, variable: q, type: dirichlet, component: y, value: 0.0}
+  - {region: all, part: "x = 0", variable: q, type: dirichlet, component: x, value: 0.18}
+  - {region: all, part: "x = 25", variable: h, type: dirichlet, value: 0.28205279813802181}
+# obstacle_flow: the whole state on x = 0, the outflow elsewhere
+boundary_sets: [{region: all, set: outflow}]
+boundary_conditions:
+  - {region: all, part: "x = 0", variable: h, type: dirichlet, value: 1.0}
+  - {region: all, part: "x = 0", variable: q, type: dirichlet, formula: "(1.5, 0)"}
+# a window in a wall: the wall holds off it
+boundary_sets: [{region: walls, set: wall}]
+boundary_conditions:
+  - {region: walls, part: "x = 0 and 4 ≤ y ≤ 6", variable: q, type: dirichlet, formula: "(1.5, 0)"}
+```
+
+Components overlap unless they are two different Cartesian ones or the
+normal and the tangential part (`ymf.conditions.overlap`): the x component
+at x = 0 leaves the y component's condition alone there, a whole-vector
+state replaces both parts of a wall. A part is not a region, so it replaces
+no condition set's member (the member is the rest), and a part of a tag
+region is found by flag and position together. `split_problem` gives a
+condition with a part its `part` (code, beside the region's `where` or
+`flags`), and one without whose region other conditions carve parts out of
+its `excluding` (a list of codes): it holds where its region does, less
+those, so a reader applies each entry as written and decides no precedence.
+A Cartesian component's entry acts on that one component (`components:
+[q_0]`). Refused on load: a part that is the whole region (`∂Ω`), a part on
+a periodic condition, a Cartesian component on slip, open, robin or
+periodic. `adr_problem` (one system) runs neither a part nor a component.
+Parts of one region and variable should not overlap; that is not checked.
+
 **Condition sets.** What a free-slip wall or an open top means is part of
 the model: written once there, over its own unknowns and coefficients, and
 applied to regions by each problem.
@@ -377,6 +420,7 @@ solution_paths:
 | `grad div lap dt dx dy dz dot outer` | the operators spelled out, for ASCII-only text |
 | `lhs = rhs  in Ω` | an equation; the `in ...` clause is ignored |
 | `y = 0 or x = 0 and y = H` | a boundary region; `∂Ω` is the whole boundary |
+| `x = 0 and 0.4 ≤ y ≤ 0.6` | comparisons in a predicate (`≤ ≥ < >`, or `<= >=`; chained): a closed bound keeps the points on it (within `tol`), an open one drops them |
 | `Ω = [a, b] × [c, d],  t ∈ (t0, t1]` | the domain, a box, and the time interval of a transient problem |
 
 **Decimals are kept as written.** A numeral is an IEEE double, and a

@@ -329,6 +329,17 @@ def _check_conditions(doc: Dict[str, Any]) -> None:
         if kind == "slip" and variable in unknowns and unknowns[variable] != 1:
             raise YmfReferenceError("%s: slip gives the normal component of a vector, and "
                                     "%s is a scalar" % (where, variable))
+        if bc.get("component") in ("x", "y", "z") and kind in ("slip", "open", "robin", "periodic"):
+            raise YmfReferenceError("%s: a %s condition on the %s component; a Cartesian component takes a "
+                                    "value (dirichlet, neumann, inflow, characteristic)" % (where, kind, bc["component"]))
+        if bc.get("part") is not None:
+            part = str(bc["part"]).strip()
+            if kind == "periodic":
+                raise YmfReferenceError("%s: a periodic condition identifies a region's faces, whole; it has no part"
+                                        % (where,))
+            if part in ("", "∂Ω", "∂ Ω", "boundary"):
+                raise YmfReferenceError("%s: part %r is the whole region; give no part, or a predicate "
+                                        "(\"x = 0 and 0.4 ≤ y ≤ 0.6\")" % (where, bc["part"]))
         article = "an" if str(kind)[:1] in "aeiou" else "a"
         if _NEEDS_VALUE.get(kind) and not given:
             raise YmfReferenceError("%s: %s %s condition needs a value, formula or series"

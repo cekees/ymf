@@ -32,6 +32,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import sympy
 
+from ymf.conditions import AXES
 from ymf.stabilization import for_subproblem
 from ymf.vocabulary import canonical
 from ymf.symbolic.adr import adr_form, to_code
@@ -328,8 +329,12 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
     imposes a value picks one with that sign. Atmosphere's χ inflow of 1
     (air enters) is CLSVOF's φ inflow, positive. Each entry has ``type``,
     ``variable``, ``region``, ``where`` (boolean code using ``tol``, None for
-    the whole boundary), ``set`` if it came from one, the ``components`` it
-    acts on, and its data: ``value`` (code; per component for a vector,
+    the whole boundary; or ``flags``), ``set`` if it came from one, the
+    ``components`` it acts on (one, for a Cartesian ``component`` x/y/z), and
+    where it holds within its region: ``part`` (boolean code) for a condition
+    with a part, ``excluding`` (a list of them) for one without a part whose
+    region and variable (on an overlapping component) other conditions claim
+    parts of -- it holds on the region less those parts -- and its data: ``value`` (code; per component for a vector,
     except slip's normal component), ``series``, robin's ``alpha``/``beta``/
     ``g``, or periodic's ``axes``.
     """
@@ -337,12 +342,14 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
     from ymf.symbolic.problem import (_components, _given, _number, _periodic_axes,
                                       _robin_part, _robin_rhs, _series)
     from ymf.symbolic.problem import _selector
+    from ymf.conditions import parts as claimed_parts
     regions = {r["name"]: r for r in strong.get("boundary_regions") or []}
     out = []
     try:
         conditions = boundary_conditions(strong)
     except ValueError as exc:
         raise SymbolicError("%s: %s" % (where, exc)) from exc
+    claimed = claimed_parts(conditions)
     for bc in conditions:
         variable = bc["variable"]
         if variable in own:
@@ -350,8 +357,9 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
         elif variable in carried:
             target, rank = carried[variable], 0
         elif variable in (indicators or {}):
-            out.append(_indicator_condition(bc, indicators[variable], regions, strong,
-                                            space, where))
+            entry = _indicator_condition(bc, indicators[variable], regions, strong, space, where)
+            _restrict(entry, bc, claimed, space, where)
+            out.append(entry)
             continue
         else:
             continue
@@ -359,6 +367,7 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
         entry: Dict[str, Any] = {"type": bc["type"], "variable": variable,
                                  "region": bc["region"],
                                  **_selector(regions[bc["region"]], strong["domain"], space)}
+        _restrict(entry, bc, claimed, space, where)
         if target != variable:
             entry["carried_by"] = target
         for key in ("component", "only", "imposed", "expanded_from"):
@@ -367,6 +376,15 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
         _kind(entry, bc)
         entry["components"] = ([target] if rank == 0 else
                                ["%s_%d" % (target, i) for i in range(dim)])
+        axis = AXES.get(bc.get("component"))
+        if axis is not None:
+            if rank == 0:
+                raise SymbolicError("%s: the %s component of %s, which is a scalar"
+                                    % (here, bc["component"], target))
+            if axis >= dim:
+                raise SymbolicError("%s: a %d-dimensional vector has no %s component"
+                                    % (here, dim, bc["component"]))
+            entry["components"] = ["%s_%d" % (target, axis)]
         kind = bc["type"]
         if kind == "periodic":
             if lower is None:
@@ -396,6 +414,28 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
                 entry["value"] = _components(value, target, rank, space, here)
         out.append(entry)
     return out
+
+
+def _restrict(entry: Dict[str, Any], bc: Dict[str, Any], claimed, space, where: str) -> None:
+    """Where within its region a condition holds: its ``part`` as code, or, for one without a part, the parts of its
+    region that conditions on the same variable claim, as ``excluding`` (ymf.conditions)."""
+    def code(text):
+        from ymf.symbolic.notation import NotationError, Parser
+        here = "%s, boundary condition %s on %s, part %r" % (where, bc["type"], bc["region"], text)
+        try:
+            out = Parser(space).predicate(str(text))
+        except NotationError as exc:
+            raise SymbolicError("%s: %s" % (here, exc)) from exc
+        if out is None:
+            raise SymbolicError("%s: that is the whole region; give no part" % (here,))
+        return out
+    if bc.get("part") is not None:
+        entry["part"] = code(bc["part"])
+        return
+    from ymf.conditions import excluded
+    carved = excluded(bc, claimed)
+    if carved:
+        entry["excluding"] = [code(text) for text in carved]
 
 
 def _kind(entry: Dict[str, Any], bc: Dict[str, Any]) -> None:
