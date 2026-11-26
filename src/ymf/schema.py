@@ -407,6 +407,11 @@ _CONDITION_FIELDS = {
     # a boundary. On that part it replaces the region's conditions on the
     # same variable that have no part; they hold on the rest (ymf.conditions).
     Optional("part"): Str(),
+    # The value taken from another sub-problem's trace on the boundary
+    # (coupled sub-problems): instead of value, formula or series. `of` is the
+    # field read (default the condition's own variable), `via` the sub-problem
+    # whose trace it is, `at` when, as a lag says it. Dirichlet kinds only.
+    Optional("trace"): Map({Optional("of"): Str(), "via": Str(), "at": LagAtEnum}),
     Optional("imposed"): Enum(["strong", "weak", "none"]),
     # a weak (Nitsche) condition's penalty, over h, and its adjoint term
     # (ymf.boundaries); checked on load against the condition's type

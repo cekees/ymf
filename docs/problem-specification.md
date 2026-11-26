@@ -225,6 +225,27 @@ a periodic condition, a Cartesian component on slip, open, robin or
 periodic. `adr_problem` (one system) runs neither a part nor a component.
 Parts of one region and variable should not overlap; that is not checked.
 
+**A value from another sub-problem's trace** (round 7). In a split
+discretization one sub-problem may impose, on a boundary, the boundary
+values another holds (NCLS's inflow penalty against RDLS's face values):
+`trace: {of, via, at}` in place of `value`, `formula` or `series`. `via`
+names the sub-problem, `of` the field (default the condition's variable),
+`at` when (`previous_step`, or `current_step` from an earlier sub-problem of
+the step, as a lag says it).
+
+```yaml
+boundary_conditions:
+  - {region: top, variable: φ, type: dirichlet, imposed: weak,
+     trace: {of: φ, via: rdls, at: previous_step}}
+```
+
+Dirichlet, `inflow` and `characteristic` only, whole fields (no
+`component`). `split_problem` gives the entry `trace` (with `of` filled in)
+and no `value`, to every sub-problem that solves the variable except `via`
+itself, which has its own values; a `via` that is no sub-problem of the
+discretization, or is solved later than a `current_step` read, is refused.
+`adr_problem` runs none.
+
 **Condition sets.** What a free-slip wall or an open top means is part of
 the model: written once there, over its own unknowns and coefficients, and
 applied to regions by each problem.

@@ -7,6 +7,12 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-25: C42 round 7, a boundary value from another sub-problem's trace.** NCLS's inflow penalty is written
+  against RDLS's face values (C19 gap note G8), which a condition could not say: its value was an expression. Now a
+  Dirichlet, `inflow` or `characteristic` condition may give `trace: {of, via, at}` instead of a value; `split_problem`
+  carries it to the sub-problems that solve the variable (not `via` itself) and refuses a `via` that is not in the
+  discretization or a `current_step` read of a later sub-problem. It is part of an archive's key.
+
 - **2026-11-25: C42 round 7, `atan`.** santos_step's bed, `0.1 (0.5 + arctan(x/0.075)/π)`, could not be written (`atan`
   was not a function of the notation). Now `atan(e)` parses, prints back (the printer's round trip), is `numpy.arctan`
   in code, and differentiates (the bed slope in the momentum equation). Fixture `santos_step.ymf`: the deck's solitary

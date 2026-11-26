@@ -285,7 +285,8 @@ def split_problem(doc: Dict[str, Any], discretization: str) -> Dict[str, Any]:
                    for s in [sub] if (s.get("introduces") or {}).get("approximates")}
         indicators = {c: u for c, u in uncarried.items() if u in own}
         record["boundary_conditions"] = _conditions(strong, own, carried, space, dim,
-                                                    lower, upper, where, indicators)
+                                                    lower, upper, where, indicators,
+                                                    order=[s["name"] for s in subproblems], me=sub["name"])
         out_subs.append(record)
 
     initial = {}
@@ -314,7 +315,7 @@ _INDICATOR_SIGN = {0.0: -1, 0.5: 0, 1.0: 1}
 
 
 def _conditions(strong, own, carried, space, dim, lower, upper, where,
-                indicators=None) -> List[Dict[str, Any]]:
+                indicators=None, order=(), me=None) -> List[Dict[str, Any]]:
     """The boundary conditions one sub-problem imposes, as plain data.
 
     Those on its own unknowns, and those on a coefficient its introduced
@@ -335,8 +336,8 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
     with a part, ``excluding`` (a list of them) for one without a part whose
     region and variable (on an overlapping component) other conditions claim
     parts of -- it holds on the region less those parts -- and its data: ``value`` (code; per component for a vector,
-    except slip's normal component), ``series``, robin's ``alpha``/``beta``/
-    ``g``, or periodic's ``axes``.
+    except slip's normal component), ``series``, ``trace`` (``{of, via, at}``: another sub-problem's boundary
+    values), robin's ``alpha``/``beta``/``g``, or periodic's ``axes``.
     """
     from ymf.normalize import boundary_conditions
     from ymf.symbolic.problem import (_components, _given, _number, _periodic_axes,
@@ -364,6 +365,8 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
         else:
             continue
         here = "%s, boundary condition %s on %s" % (where, bc["type"], bc["region"])
+        if (bc.get("trace") or {}).get("via") == me:
+            continue                  # its own trace is what it has: the condition is for the sub-problems that read it
         entry: Dict[str, Any] = {"type": bc["type"], "variable": variable,
                                  "region": bc["region"],
                                  **_selector(regions[bc["region"]], strong["domain"], space)}
@@ -401,6 +404,8 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
         elif kind == "robin":
             entry.update(alpha=_robin_part(bc, "alpha", space),
                          beta=_robin_part(bc, "beta", space), g=_robin_rhs(bc, space))
+        elif bc.get("trace") is not None:
+            entry["trace"] = _trace(bc, target, order, me, here)
         elif bc.get("series") is not None:
             entry["series"] = _series(bc, target, 0 if bc.get("component") else rank)
         elif bc.get("formula") is not None or bc.get("value") is not None:
@@ -414,6 +419,21 @@ def _conditions(strong, own, carried, space, dim, lower, upper, where,
                 entry["value"] = _components(value, target, rank, space, here)
         out.append(entry)
     return out
+
+
+def _trace(bc, target, order, me, here) -> Dict[str, Any]:
+    """A condition's value that is another sub-problem's trace, as ``{of, via, at}`` (``of`` filled in): the field's
+    boundary values as ``via`` holds them, ``at`` the previous step's or, from an earlier sub-problem, this step's.
+    The sub-problem ``via`` itself imposes nothing (see :func:`_conditions`)."""
+    trace = bc["trace"]
+    via = trace["via"]
+    if via not in order:
+        raise SymbolicError("%s: trace via %s, which is no sub-problem of this discretization (have: %s)"
+                            % (here, via, ", ".join(order)))
+    if trace["at"] == "current_step" and order.index(via) > order.index(me):
+        raise SymbolicError("%s: trace via %s at current_step, but %s is solved after %s in the step; "
+                            "say previous_step" % (here, via, via, me))
+    return {"of": trace.get("of", bc["variable"]), "via": via, "at": trace["at"]}
 
 
 def _restrict(entry: Dict[str, Any], bc: Dict[str, Any], claimed, space, where: str) -> None:
