@@ -7,6 +7,12 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-25: C42 round 7, `atan`.** santos_step's bed, `0.1 (0.5 + arctan(x/0.075)/π)`, could not be written (`atan`
+  was not a function of the notation). Now `atan(e)` parses, prints back (the printer's round trip), is `numpy.arctan`
+  in code, and differentiates (the bed slope in the momentum equation). Fixture `santos_step.ymf`: the deck's solitary
+  wave over the step, dispersive, with its own hw. One test that used `atan` as its example of a function with no
+  notation now uses `asin`.
+
 - **2026-11-25: C42 round 7, a state on part of a boundary.** The SWFlow decks impose their inflow node by node on
   part of one boundary (`X[0] == 0`) and on one Cartesian component (`x_mom`, `y_mom`), which a spec could not say: a
   `component` was the normal or tangential part only (it needs the side's orientation), and a condition held on its

@@ -413,7 +413,7 @@ solution_paths:
 | `(a, b)` | a vector |
 | `x² π³ x^n x**n` | powers |
 | `2π²κt`, `κ ΔT`, `sin(πx)` | implicit multiplication |
-| `sin cos tan exp log sqrt sinh cosh tanh abs` | functions, with parentheses |
+| `sin cos tan atan exp log sqrt sinh cosh tanh abs` | functions, with parentheses (`atan` is the arctangent, `numpy.arctan` in code) |
 | `hypot(a, b)` | `sqrt(a² + b²)` rounded once (C99 `hypot`, `numpy.hypot` in code): a distance that matches code computing it with `hypot`, bit for bit |
 | `heaviside(φ)`, `sign(e)`, `min(a, b, ...)`, `max(a, b, ...)` | sharp functions; a solver needs `heaviside` and `sign` of an unknown regularized, since their derivatives are Dirac deltas |
 | `norm(v)`, `sym(∇v)` | `sqrt(v·v)`, and the symmetric part `(A + Aᵀ)/2` of a square tensor |

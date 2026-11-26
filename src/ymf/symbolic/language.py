@@ -210,7 +210,7 @@ class Space:
             "lap": lambda e: self.div(self.grad(e)),
             "identity": sympy.eye(self.dim),
             "pi": sympy.pi, "E": sympy.E,
-            "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan,
+            "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan, "atan": sympy.atan,
             "exp": sympy.exp, "log": sympy.log, "sqrt": sympy.sqrt,
             "sinh": sympy.sinh, "cosh": sympy.cosh, "tanh": sympy.tanh,
             "abs": sympy.Abs, "Abs": sympy.Abs, "hypot": hypot,

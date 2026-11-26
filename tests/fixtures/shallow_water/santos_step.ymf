@@ -1,0 +1,52 @@
+# test/SWFlow/santos_step.py as a spec (ymf round 7: atan): a solitary wave
+# over a step, dispersive (the deck's sw_model 1), 30 m × 2 m on the deck's
+# structured mesh (refinement 4: nnx = 81, nny = (nnx − 1)//10 + 1 = 9, so
+# 80 × 8 cells), walls all round (the deck sets x_mom on x = ±15, y_mom on
+# y = 0 and 2, hβ as x_mom: the normal discharge on a box). The step is the
+# deck's 0.1 (0.5 + arctan(x/0.075)/π). The wave is the deck's
+# A sech²(r (x − xs)) at t = 0 over still water d0; its discharge and its hw
+# are the deck's (hη is h², hβ 0: their roles' defaults).
+extends: dispersive_numerics.ymf
+
+model:
+  name: "Solitary wave over a step, dispersive, 30 m × 2 m (santos_step), structured 80 × 8"
+  physical_model: {provenance: human_specified}
+  strong_form:
+    domain: "Ω = [-15, 15] × [0, 2],  t ∈ (0, 10]"
+    boundary_regions:
+      - {name: all, where: "∂Ω"}
+    boundary_sets:
+      - {region: all, set: wall}
+    initial_conditions:
+      - {field: h, type: function, formula: "max(H − Z, 0)", units: m}
+      - {field: q, type: function, formula: "(max(H − Z, 0) c (H − d0)/H, 0)"}
+    coefficients:
+      g: {value: 9.81}
+      n: {value: 0.0}
+      θ: {value: 1.0}
+      Z: {formula: "0.1 (0.5 + atan(x/0.075)/π)"}
+      α: {value: 0.0}
+      β: {value: 0.0}
+      d0: {value: 0.2}
+      A: {value: 0.0365}
+      xs: {value: -3.0}
+      r: {formula: "sqrt(3 A/(4 d0² (d0 + A)))"}
+      c: {formula: "sqrt(g (d0 + A))"}
+      H: {formula: "d0 + A/cosh(r (x − xs))²"}
+
+solution_paths:
+  analytical: []
+  discretizations:
+    - name: relaxed_convex_limited
+      mesh: {cells: {x: 80, y: 8}}
+      step_control: {type: min_cfl, cfl: 0.25}
+      subproblems:
+        - name: gn
+          dispersion:
+            closure: hyperbolic_relaxation
+            closes: [Pd, Qd]
+            auxiliaries:
+              - {name: hη, role: relaxed_depth, units: m2}
+              - {name: hw, role: relaxed_divergence, units: m2/s,
+                 initial: "2 h² c d0 A r tanh(r (x − xs))/(cosh(r (x − xs))² H²)"}
+              - {name: hβ, role: relaxed_bed_flux, units: m2/s}

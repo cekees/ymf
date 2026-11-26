@@ -52,7 +52,7 @@ def test_what_the_notation_cannot_say_is_refused():
     with pytest.raises(NotationError, match="tensor"):
         to_notation(SPACE.grad(SPACE._fields["v"]))
     with pytest.raises(NotationError, match="no notation"):
-        to_notation(sympy.atan(sympy.Symbol("x")))
+        to_notation(sympy.asin(sympy.Symbol("x")))
 
 
 def _space_of(doc):

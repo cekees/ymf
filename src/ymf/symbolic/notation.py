@@ -23,8 +23,8 @@ Expressions
     ``² ³ ⁴``; implicit multiplication (``2π²κt``, ``κ ΔT``, ``sin(πx)``);
     ``·`` (a dot product of vectors, a product otherwise) and ``⊗``
     (outer product, binding tighter than ``·`` and ``*``); tuples
-    ``(a, b)`` are vectors; functions sin cos tan exp log sqrt sinh cosh
-    tanh abs, the sharp ones heaviside sign min max (min and max of any
+    ``(a, b)`` are vectors; functions sin cos tan atan exp log sqrt sinh
+    cosh tanh abs, the sharp ones heaviside sign min max (min and max of any
     number of arguments), and on vectors and tensors norm(v) = sqrt(v·v)
     and sym(A) = (A + Aᵀ)/2.
 Differential operators, each applied to the operand that follows it
@@ -84,7 +84,7 @@ def _sqrt(a):
 
 
 _FUNCTIONS = {
-    "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan, "exp": sympy.exp,
+    "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan, "atan": sympy.atan, "exp": sympy.exp,
     "log": sympy.log, "sqrt": _sqrt, "sinh": sympy.sinh, "cosh": sympy.cosh,
     "tanh": sympy.tanh, "abs": sympy.Abs,
     # sqrt(a² + b²) rounded once (C99 hypot), so that a formula can match code
