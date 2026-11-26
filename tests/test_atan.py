@@ -11,6 +11,7 @@ import pytest
 
 sympy = pytest.importorskip("sympy")
 pytest.importorskip("strictyaml")
+pytest.importorskip("numpy")                    # the code a solver evaluates is numpy code
 
 from _formulation import SHALLOW_WATER, roundtrip  # noqa: E402
 from ymf import closure  # noqa: E402
