@@ -1049,7 +1049,8 @@ three and adds no other key.
 *What a reader that must not guess still needs: `ymf.stabilization.missing(block)`.* It returns the dotted keys the
 kernel generator reads that the block does not state, and nothing is filled in: `missing("SUPG")` is `["tau", "lagged",
 "shock_capturing"]`; with `shock_capturing: {factor: 0.9, lagged: false}` stated it also asks for `shock_capturing.beta` and
-`.reference` (stating `shock_capturing: none` answers the block as a whole); the entropy and graph viscosities need
+`.reference` (stating `shock_capturing: none` answers the block as a whole; **at `beta: 1`, the classical form that never
+reads the reference value, `reference` is not asked for**: proteus's RDLS is `{factor: 0.9, beta: 1.0, lagged: false}`); the entropy and graph viscosities need
 nothing. For `none`, an unstated `shock_capturing` is not missing (the word says there is none); a `shock_capturing`
 block it does state must be complete, so `missing({"shock_capturing": {"factor": 0.9, "lag": False}})` is
 `["shock_capturing.beta", "shock_capturing.reference"]` and `missing("none")` is `[]`.

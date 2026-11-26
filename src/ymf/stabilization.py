@@ -217,7 +217,8 @@ def missing(block: Any) -> List[str]:
 
 def generator_needs(method: str, resolved: Optional[Dict[str, Any]] = None) -> List[str]:
     """What the kernel generator reads of a stabilization of ``method``: ``tau`` (and ``lagged`` for SUPG and ASGS),
-    and the shock-capturing block's four keys (or its explicit ``none``). Method ``none`` needs no statement that there
+    and the shock-capturing block's four keys (or its explicit ``none``; ``reference`` is not asked for when the block states
+    ``beta`` 1, the classical form, which never reads it). Method ``none`` needs no statement that there
     is no shock capturing (it says so); only a shock-capturing block it does state must be complete."""
     takes = TAKES[method]
     needs = [k for k in ("tau", "lagged") if k in takes]
@@ -226,8 +227,18 @@ def generator_needs(method: str, resolved: Optional[Dict[str, Any]] = None) -> L
         if method != "none":
             needs.append("shock_capturing")
         if isinstance(sc, dict):
-            needs += ["shock_capturing." + k for k in SHOCK_CAPTURING_KEYS]
+            needs += ["shock_capturing." + k for k in SHOCK_CAPTURING_KEYS
+                      if not (k == "reference" and _classical(sc))]
     return needs
+
+
+def _classical(shock_capturing: Dict[str, Any]) -> bool:
+    """Whether a shock-capturing block states ``beta`` 1: the classical form ``factor |R| / sqrt(∇uᵀ G ∇u)``, in which the
+    reference value of the unknown does not enter (proteus's RDLS). An unstated ``beta`` is not 1."""
+    try:
+        return float(shock_capturing["beta"]) == 1.0
+    except (KeyError, TypeError, ValueError):
+        return False
 
 
 def _has(resolved: Dict[str, Any], dotted: str) -> bool:

@@ -7,6 +7,11 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-25: C42 round 7, `reference` optional at `beta` 1.** `missing()` asked for `shock_capturing.reference` of every
+  stated shock-capturing block, though a `beta: 1` kernel (the classical `factor |R|/sqrt(∇uᵀ G ∇u)`, proteus's RDLS)
+  never reads it. It no longer does when `beta` is stated as 1 (any spelling: `beta`, `sc_beta`); stating a reference
+  there is still allowed and checked (positive), and any other or unstated `beta` still needs it. Nothing is defaulted.
+
 - **2026-11-25: C42 round 7, a boundary value from another sub-problem's trace.** NCLS's inflow penalty is written
   against RDLS's face values (C19 gap note G8), which a condition could not say: its value was an expression. Now a
   Dirichlet, `inflow` or `characteristic` condition may give `trace: {of, via, at}` instead of a value; `split_problem`
