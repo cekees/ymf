@@ -23,8 +23,8 @@ Expressions
     ``² ³ ⁴``; implicit multiplication (``2π²κt``, ``κ ΔT``, ``sin(πx)``);
     ``·`` (a dot product of vectors, a product otherwise) and ``⊗``
     (outer product, binding tighter than ``·`` and ``*``); tuples
-    ``(a, b)`` are vectors; functions sin cos tan exp log sqrt sinh cosh
-    tanh abs, the sharp ones heaviside sign min max (min and max of any
+    ``(a, b)`` are vectors; functions sin cos tan atan exp log sqrt sinh
+    cosh tanh abs, the sharp ones heaviside sign min max (min and max of any
     number of arguments), and on vectors and tensors norm(v) = sqrt(v·v)
     and sym(A) = (A + Aᵀ)/2.
 Differential operators, each applied to the operand that follows it
@@ -36,8 +36,9 @@ single-letter names (``πx`` is π·x) when every letter is known, and is an
 error otherwise -- so a misspelt coefficient is reported, not multiplied.
 
 Equations are ``lhs = rhs``, optionally followed by ``in <region>``, which
-is ignored. Predicates (boundary regions) are ``a = b`` tests joined by
-``and`` and ``or``. Domains are ``Ω = I × I [× I]`` with intervals
+is ignored. Predicates (boundary regions, and the part of a region a
+condition holds on) are ``a = b`` tests and comparisons ``a ≤ b``, ``a < b``
+(``≥ >``, ``<= >=``; chained, ``0.4 ≤ y ≤ 0.6``) joined by ``and`` and ``or``. Domains are ``Ω = I × I [× I]`` with intervals
 ``[a, b]``, optionally followed by ``, t ∈ (t0, t1]``. Assignments
 (analytical solutions) are ``name = expr`` lines; ``T(x, y, t) = ...`` is
 accepted, and a name that is not an unknown becomes a local definition
@@ -83,7 +84,7 @@ def _sqrt(a):
 
 
 _FUNCTIONS = {
-    "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan, "exp": sympy.exp,
+    "sin": sympy.sin, "cos": sympy.cos, "tan": sympy.tan, "atan": sympy.atan, "exp": sympy.exp,
     "log": sympy.log, "sqrt": _sqrt, "sinh": sympy.sinh, "cosh": sympy.cosh,
     "tanh": sympy.tanh, "abs": sympy.Abs,
     # sqrt(a² + b²) rounded once (C99 hypot), so that a formula can match code
@@ -111,6 +112,16 @@ def _sym(a):
     if not isinstance(a, sympy.MatrixBase) or a.shape[0] != a.shape[1] or a.shape[1] == 1:
         raise ValueError("sym needs a square tensor, such as ∇v")
     return (a + a.T) / 2
+
+
+#: a predicate's tests, as code over the difference d = lhs - rhs and the tolerance ``tol``
+_COMPARISONS = {
+    "=": "abs(%s) <= tol",
+    "≤": "%s <= tol", "<=": "%s <= tol",
+    "≥": "-(%s) <= tol", ">=": "-(%s) <= tol",
+    "<": "%s < -tol",
+    ">": "-(%s) < -tol",
+}
 
 
 class Parser:
@@ -358,7 +369,13 @@ class Parser:
         return [sympy.sympify(residual)]
 
     def predicate(self, text: str) -> Optional[str]:
-        """'x = 0 or y = H' -> numpy-free code using ``tol``; None for the whole boundary."""
+        """'x = 0 or y = H' -> numpy-free code using ``tol``; None for the whole boundary.
+
+        A test is ``a = b`` (within ``tol``) or a comparison ``a ≤ b``, ``a ≥ b`` (also ``<=``, ``>=``; within ``tol``,
+        so a closed bound keeps the points on it) or ``a < b``, ``a > b`` (by more than ``tol``, so an open bound drops
+        them); comparisons chain, ``0.4 ≤ y ≤ 0.6``. Tests join with ``and``, which binds tighter than ``or``. A part of
+        a face is ``x = 0 and 0.4 ≤ y ≤ 0.6``.
+        """
         stripped = text.strip()
         if stripped in ("∂Ω", "∂ Ω", "boundary"):
             return None
@@ -369,9 +386,15 @@ class Parser:
             tests = []
             while True:
                 lhs = self._sum()
-                self._expect("=")
-                rhs = self._sum()
-                tests.append("abs(%s) <= tol" % to_code(lhs - rhs))
+                op = self._take()
+                if op[1] not in _COMPARISONS:
+                    self._fail("expected '=' or a comparison (≤ ≥ < >)", op)
+                while True:
+                    rhs = self._sum()
+                    tests.append(_COMPARISONS[op[1]] % to_code(lhs - rhs))
+                    if self._peek()[1] not in _COMPARISONS or self._peek()[1] == "=":
+                        break
+                    lhs, op = rhs, self._take()
                 if self._peek()[1] == "and":
                     self._take(); continue
                 break

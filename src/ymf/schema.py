@@ -398,8 +398,20 @@ _CONDITION_FIELDS = {
     # Where an alias expands (ymf.conditions): which part of a vector the
     # condition is on, which part of the region it holds on, how it is
     # imposed (C12: a property of each condition), and what it expanded from.
-    Optional("component"): Enum(["normal", "tangential"]),
+    # A component is the normal or tangential part on the boundary, or one
+    # Cartesian component (x, y, z: the vector's first, second, third).
+    Optional("component"): Enum(["normal", "tangential", "x", "y", "z"]),
     Optional("only"): Enum(["inflow", "incoming_characteristics"]),
+    # The part of the region the condition holds on, a predicate like a
+    # region's where ("x = 0 and 0.4 ≤ y ≤ 0.6"): a state imposed on part of
+    # a boundary. On that part it replaces the region's conditions on the
+    # same variable that have no part; they hold on the rest (ymf.conditions).
+    Optional("part"): Str(),
+    # The value taken from another sub-problem's trace on the boundary
+    # (coupled sub-problems): instead of value, formula or series. `of` is the
+    # field read (default the condition's own variable), `via` the sub-problem
+    # whose trace it is, `at` when, as a lag says it. Dirichlet kinds only.
+    Optional("trace"): Map({Optional("of"): Str(), "via": Str(), "at": LagAtEnum}),
     Optional("imposed"): Enum(["strong", "weak", "none"]),
     # a weak (Nitsche) condition's penalty, over h, and its adjoint term
     # (ymf.boundaries); checked on load against the condition's type

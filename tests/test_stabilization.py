@@ -140,6 +140,23 @@ def test_missing_says_what_the_generator_cannot_guess():
     assert missing("entropy_viscosity") == []          # its parameters are the scheme's
 
 
+def test_reference_is_not_missing_at_beta_1_and_still_valid_when_stated():
+    rdls = {"method": "SUPG", "tau": "metric", "lagged": False,
+            "shock_capturing": {"factor": 0.9, "beta": 1.0, "lagged": False}}      # proteus's RDLS
+    assert missing(rdls) == []
+    assert missing({"shock_capturing": {"factor": 0.9, "beta": 1, "lag": False}}) == []      # also the 0.2 spelling
+    assert missing({"shock_capturing": {"factor": 0.9, "sc_beta": 1.0, "lag": False}}) == []
+    # beta other than 1, or not stated, still needs it
+    assert missing({"shock_capturing": {"factor": 0.9, "beta": 1.5, "lagged": False}}) == ["shock_capturing.reference"]
+    assert missing({"shock_capturing": {"factor": 0.9, "lagged": False}}) == [
+        "shock_capturing.beta", "shock_capturing.reference"]
+    # stating it is still fine, and still checked: positive
+    stated = dict(rdls, shock_capturing=dict(rdls["shock_capturing"], reference=2.0))
+    assert missing(stated) == [] and resolve(stated)["shock_capturing"]["reference"] == 2.0
+    with pytest.raises(StabilizationError, match="reference"):
+        resolve(dict(rdls, shock_capturing=dict(rdls["shock_capturing"], reference=-1.0)))
+
+
 # --- the spec ----------------------------------------------------------------------------------------------------
 
 @pytest.fixture(scope="module")
@@ -253,3 +270,20 @@ def test_a_spec_in_the_older_spelling_has_the_words_of_the_newer(tmp_path):
     new = split_problem(load_ymf(FORMULATION), "level_set_five")
     older = split_problem(load_ymf(tmp_path / "old.ymf"), "level_set_five")
     assert [s.get("stabilization") for s in older["subproblems"]] == [s.get("stabilization") for s in new["subproblems"]]
+
+
+def test_rdls_stated_at_beta_1_without_a_reference_is_complete_and_round_trips_an_archive(tmp_path):
+    from ymf import closure
+    from ymf.symbolic import split_problem
+    doc = load_ymf(FORMULATION)
+    rdls = {"method": "SUPG", "tau": "metric", "lagged": False,
+            "shock_capturing": {"factor": 0.9, "beta": 1.0, "lagged": False}}
+    _state(doc, "rdls", rdls)
+    check(doc)
+    path = tmp_path / "rdls_beta1.archive.ymf"
+    closure.write(path, doc, {})
+    again, _, _ = closure.load(path)
+    got = {s["name"]: s for s in split_problem(again, "level_set_five")["subproblems"]}["rdls"]["stabilization"]
+    assert got == resolve(rdls) and "reference" not in got["shock_capturing"] and missing(got) == []
+    assert closure.input_digest(again, "level_set_five", {"h": 0.0322}) == closure.input_digest(
+        doc, "level_set_five", {"h": 0.0322})
