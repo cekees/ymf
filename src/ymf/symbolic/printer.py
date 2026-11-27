@@ -17,7 +17,7 @@ What can be written is what the notation can read:
   (``u``, ``v_0``), and any other symbol by its name;
 * ``+ - * /`` and powers, with ``² ³ ⁴`` for small integer exponents and
   ``^`` otherwise; ``sqrt`` for a square root;
-* the functions sin cos tan exp log sqrt sinh cosh tanh abs heaviside
+* the functions sin cos tan atan exp log sqrt sinh cosh tanh abs heaviside
   sign, and min and max of any number of arguments;
 * derivatives: ``D(e, axis)`` as ``∂e/∂x``, ``Dt(e)`` as ``∂e/∂t``;
 * a column vector as a tuple ``(a, b)``.
@@ -49,7 +49,7 @@ __all__ = ["to_notation", "equation_notation"]
 _SUPERSCRIPTS = {2: "²", 3: "³", 4: "⁴"}
 _AXES = "xyz"
 _FUNCTIONS = {
-    sympy.sin: "sin", sympy.cos: "cos", sympy.tan: "tan", sympy.exp: "exp",
+    sympy.sin: "sin", sympy.cos: "cos", sympy.tan: "tan", sympy.atan: "atan", sympy.exp: "exp",
     sympy.log: "log", sympy.sinh: "sinh", sympy.cosh: "cosh", sympy.tanh: "tanh",
     sympy.Abs: "abs", sympy.Heaviside: "heaviside", sympy.sign: "sign",
 }

@@ -103,14 +103,14 @@ def check_condition(condition: Dict[str, Any], where: str) -> None:
 
 
 def kinds(doc: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Every boundary condition of the document, expanded, as ``{region, variable, type, [component], [only], kind,
+    """Every boundary condition of the document, expanded, as ``{region, [part], variable, type, [component], [only], kind,
     [penalty], [form]}`` in order: what a solver reads to choose its boundary terms."""
     from ymf.conditions import expand
     from ymf.normalize import boundary_conditions
     strong = ((expand(doc).get("model") or {}).get("strong_form") or {})
     out = []
     for bc in boundary_conditions(strong):
-        entry = {k: bc[k] for k in ("region", "variable", "type", "component", "only") if bc.get(k) is not None}
+        entry = {k: bc[k] for k in ("region", "part", "variable", "type", "component", "only") if bc.get(k) is not None}
         entry["kind"] = kind_of(bc)
         for k in ("penalty", "form"):
             if bc.get(k) is not None:

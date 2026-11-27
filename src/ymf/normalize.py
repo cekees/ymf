@@ -141,13 +141,15 @@ def boundary_conditions(strong_form: Dict[str, Any]) -> List[Dict[str, Any]]:
     of each applied set, with the region filled in and ``set`` naming where
     it came from. A condition written out for the same region and variable
     as a set's member replaces it: a case can apply ``atmosphere`` and still
-    give the pressure its own value. Raises ``ValueError`` for a set nobody
+    give the pressure its own value. A condition with a ``part`` holds on
+    part of its region only, so it replaces no member: the member holds on
+    the rest (ymf.conditions). Raises ``ValueError`` for a set nobody
     defines, and for two sets that both give one region's variable a
     condition, which nothing would choose between.
     """
     sets = strong_form.get("condition_sets") or {}
     direct = [dict(bc) for bc in strong_form.get("boundary_conditions") or []]
-    written = {(bc.get("region"), bc.get("variable")) for bc in direct}
+    written = {(bc.get("region"), bc.get("variable")) for bc in direct if bc.get("part") is None}
     expanded: List[Dict[str, Any]] = []
     given: Dict[Any, str] = {}
     for applied in strong_form.get("boundary_sets") or []:

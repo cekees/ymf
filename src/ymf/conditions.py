@@ -13,9 +13,12 @@ be reproducible from its record.
 An expanded condition is one of the abstract forms, on
 
 * the whole variable, or a ``component`` of a vector: its ``normal`` or
-  ``tangential`` part on the boundary;
-* the whole region, or ``only`` the part of it where the flow enters
-  (``inflow``) or where characteristics enter (``incoming_characteristics``);
+  ``tangential`` part on the boundary, or a Cartesian component ``x``, ``y``,
+  ``z``;
+* the whole region, or a ``part`` of it given by a predicate (``x = 0 and
+  0.4 ≤ y ≤ 0.6``: a state imposed on part of a boundary), and ``only`` the
+  part of that where the flow enters (``inflow``) or where characteristics
+  enter (``incoming_characteristics``);
 
 with its value (``value``, ``formula`` or ``series``), optionally how it is
 ``imposed`` (``strong`` or ``weak``: C12 makes that a property of each
@@ -26,6 +29,21 @@ from.
 document; it is idempotent, and a document with no alias and no condition set
 comes back unchanged, so the outputs it keys keep their keys.
 
+**A part, and the rest of its region.** A condition with a ``part`` holds
+on the points of its region where the predicate holds, and there it replaces
+the conditions on the same region and variable that have no part and are on
+a component that overlaps its own (:func:`overlap`: the whole variable
+overlaps every component; ``x`` and ``y``, or ``normal`` and ``tangential``,
+do not): those hold on the rest of the region. So ``boundary_sets: [{region: all, set: wall}]``
+and ``{region: all, part: "x = 0", variable: q, type: dirichlet, formula:
+"(0.75, 0)"}`` is a wall everywhere but on x = 0, where the discharge is
+given; ``{region: all, variable: q, type: dirichlet, component: y, value:
+0}`` with ``{region: all, part: "x = 0", variable: q, type: dirichlet,
+component: x, value: 0.18}`` holds q's y component everywhere, x = 0
+included. A part is not a region of its own, so a condition with a part does
+not replace a condition set's member either: the member is the rest.
+:func:`excluded` gives the parts a condition without one does not hold on.
+
 This module is stdlib only, like the rest of the spec core.
 """
 
@@ -34,7 +52,11 @@ from __future__ import annotations
 import copy
 from typing import Any, Dict, List, Tuple
 
-__all__ = ["ALIASES", "ABSTRACT", "expand", "expand_condition", "has_shorthand", "describe"]
+__all__ = ["ALIASES", "ABSTRACT", "AXES", "expand", "expand_condition", "has_shorthand", "describe", "parts",
+           "excluded", "overlap"]
+
+#: the Cartesian components a condition may be on, and the index of each
+AXES = {"x": 0, "y": 1, "z": 2}
 
 #: the abstract forms: what an expansion is made of
 ABSTRACT = ("dirichlet", "neumann", "robin", "periodic")
@@ -43,7 +65,7 @@ ABSTRACT = ("dirichlet", "neumann", "robin", "periodic")
 _VALUE_KEYS = ("value", "formula", "series", "units")
 
 #: the order an expanded condition's keys are written in
-_ORDER = ("region", "variable", "type", "component", "only", "value", "formula", "series",
+_ORDER = ("region", "part", "variable", "type", "component", "only", "value", "formula", "series",
           "alpha", "beta", "units", "imposed", "penalty", "form", "source", "source_url", "temporal",
           "expanded_from")
 
@@ -191,3 +213,38 @@ def expand(doc: Dict[str, Any]) -> Dict[str, Any]:
 def describe() -> List[Tuple[str, str, List[Dict[str, Any]]]]:
     """``(alias, what it means, its components)`` for the documentation."""
     return [(name, a["means"], copy.deepcopy(a["components"])) for name, a in ALIASES.items()]
+
+
+
+def overlap(a: Any, b: Any) -> bool:
+    """Whether conditions on components ``a`` and ``b`` of one variable (None: the whole variable) can constrain the
+    same thing: not when they are two different Cartesian components, nor the normal and the tangential part."""
+    if a is None or b is None or a == b:
+        return True
+    if a in AXES and b in AXES:
+        return False
+    return {a, b} != {"normal", "tangential"}
+
+
+def parts(conditions: List[Dict[str, Any]]) -> Dict[Tuple[Any, Any], List[Tuple[str, Any]]]:
+    """``{(region, variable): [(part, component), ...]}``: the parts of each region that conditions on a variable claim,
+    with the component each is on, in the order written, each once."""
+    out: Dict[Tuple[Any, Any], List[Tuple[str, Any]]] = {}
+    for bc in conditions:
+        if isinstance(bc, dict) and bc.get("part") is not None:
+            claimed = out.setdefault((bc.get("region"), bc.get("variable")), [])
+            if (bc["part"], bc.get("component")) not in claimed:
+                claimed.append((bc["part"], bc.get("component")))
+    return out
+
+
+def excluded(bc: Dict[str, Any], claimed: Dict[Tuple[Any, Any], List[Tuple[str, Any]]]) -> List[str]:
+    """The parts a condition without a part does not hold on: those of its region that conditions on the same variable,
+    on a component that overlaps its own, claim (``claimed`` is :func:`parts`). Empty for a condition with a part."""
+    if bc.get("part") is not None:
+        return []
+    out: List[str] = []
+    for part, component in claimed.get((bc.get("region"), bc.get("variable")), []):
+        if overlap(component, bc.get("component")) and part not in out:
+            out.append(part)
+    return out

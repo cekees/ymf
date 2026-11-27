@@ -605,10 +605,12 @@ def adr_problem(doc: Dict[str, Any], hamiltonian_gradients=()) -> Dict[str, Any]
                                 "boundary condition that runs in one ADR system (%s "
                                 "conditions are for a split discretization's solver)"
                                 % (bc["region"], bc["type"], bc["type"]))
-        restricted = [k for k in ("component", "only") if bc.get(k) is not None]
+        restricted = [k for k in ("component", "only", "part", "trace") if bc.get(k) is not None]
         if restricted or bc.get("imposed") == "weak":
             what = ("on the %s component" % bc["component"] if bc.get("component") else
                     "only on %s" % bc["only"].replace("_", " ") if bc.get("only") else
+                    "on the part %s" % bc["part"] if bc.get("part") is not None else
+                    "with another sub-problem's trace as its value" if bc.get("trace") is not None else
                     "imposed weakly")
             raise SymbolicError(
                 "boundary condition on %s: a %s condition %s%s runs in a split "

@@ -182,6 +182,70 @@ the region exists, the variable is an unknown or a coefficient, `slip` and
 a `component` are on a vector, and a kind gets a value exactly when it
 takes one.
 
+**A state on part of a boundary** (round 7). A condition's `part` is a
+predicate, written like a region's `where`, that says on which points of its
+region it holds; there it replaces the region's conditions on the same
+variable that have no part and are on an overlapping component, and those
+hold on the rest. A `component` may also be a Cartesian one, `x`, `y` or
+`z` (the vector's first, second, third), with a value (dirichlet, neumann,
+inflow, characteristic). So the SWFlow decks' inflows read as they are
+imposed:
+
+```yaml
+# transcritical_bump: q's y component 0 on all of ∂Ω, its x component at x = 0, the depth at x = 25
+boundary_regions: [{name: all, where: "∂Ω"}]
+boundary_conditions:
+  - {region: all, variable: q, type: dirichlet, component: y, value: 0.0}
+  - {region: all, part: "x = 0", variable: q, type: dirichlet, component: x, value: 0.18}
+  - {region: all, part: "x = 25", variable: h, type: dirichlet, value: 0.28205279813802181}
+# obstacle_flow: the whole state on x = 0, the outflow elsewhere
+boundary_sets: [{region: all, set: outflow}]
+boundary_conditions:
+  - {region: all, part: "x = 0", variable: h, type: dirichlet, value: 1.0}
+  - {region: all, part: "x = 0", variable: q, type: dirichlet, formula: "(1.5, 0)"}
+# a window in a wall: the wall holds off it
+boundary_sets: [{region: walls, set: wall}]
+boundary_conditions:
+  - {region: walls, part: "x = 0 and 4 ≤ y ≤ 6", variable: q, type: dirichlet, formula: "(1.5, 0)"}
+```
+
+Components overlap unless they are two different Cartesian ones or the
+normal and the tangential part (`ymf.conditions.overlap`): the x component
+at x = 0 leaves the y component's condition alone there, a whole-vector
+state replaces both parts of a wall. A part is not a region, so it replaces
+no condition set's member (the member is the rest), and a part of a tag
+region is found by flag and position together. `split_problem` gives a
+condition with a part its `part` (code, beside the region's `where` or
+`flags`), and one without whose region other conditions carve parts out of
+its `excluding` (a list of codes): it holds where its region does, less
+those, so a reader applies each entry as written and decides no precedence.
+A Cartesian component's entry acts on that one component (`components:
+[q_0]`). Refused on load: a part that is the whole region (`∂Ω`), a part on
+a periodic condition, a Cartesian component on slip, open, robin or
+periodic. `adr_problem` (one system) runs neither a part nor a component.
+Parts of one region and variable should not overlap; that is not checked.
+
+**A value from another sub-problem's trace** (round 7). In a split
+discretization one sub-problem may impose, on a boundary, the boundary
+values another holds (NCLS's inflow penalty against RDLS's face values):
+`trace: {of, via, at}` in place of `value`, `formula` or `series`. `via`
+names the sub-problem, `of` the field (default the condition's variable),
+`at` when (`previous_step`, or `current_step` from an earlier sub-problem of
+the step, as a lag says it).
+
+```yaml
+boundary_conditions:
+  - {region: top, variable: φ, type: dirichlet, imposed: weak,
+     trace: {of: φ, via: rdls, at: previous_step}}
+```
+
+Dirichlet, `inflow` and `characteristic` only, whole fields (no
+`component`). `split_problem` gives the entry `trace` (with `of` filled in)
+and no `value`, to every sub-problem that solves the variable except `via`
+itself, which has its own values; a `via` that is no sub-problem of the
+discretization, or is solved later than a `current_step` read, is refused.
+`adr_problem` runs none.
+
 **Condition sets.** What a free-slip wall or an open top means is part of
 the model: written once there, over its own unknowns and coefficients, and
 applied to regions by each problem.
@@ -370,13 +434,14 @@ solution_paths:
 | `(a, b)` | a vector |
 | `x² π³ x^n x**n` | powers |
 | `2π²κt`, `κ ΔT`, `sin(πx)` | implicit multiplication |
-| `sin cos tan exp log sqrt sinh cosh tanh abs` | functions, with parentheses |
+| `sin cos tan atan exp log sqrt sinh cosh tanh abs` | functions, with parentheses (`atan` is the arctangent, `numpy.arctan` in code) |
 | `hypot(a, b)` | `sqrt(a² + b²)` rounded once (C99 `hypot`, `numpy.hypot` in code): a distance that matches code computing it with `hypot`, bit for bit |
 | `heaviside(φ)`, `sign(e)`, `min(a, b, ...)`, `max(a, b, ...)` | sharp functions; a solver needs `heaviside` and `sign` of an unknown regularized, since their derivatives are Dirac deltas |
 | `norm(v)`, `sym(∇v)` | `sqrt(v·v)`, and the symmetric part `(A + Aᵀ)/2` of a square tensor |
 | `grad div lap dt dx dy dz dot outer` | the operators spelled out, for ASCII-only text |
 | `lhs = rhs  in Ω` | an equation; the `in ...` clause is ignored |
 | `y = 0 or x = 0 and y = H` | a boundary region; `∂Ω` is the whole boundary |
+| `x = 0 and 0.4 ≤ y ≤ 0.6` | comparisons in a predicate (`≤ ≥ < >`, or `<= >=`; chained): a closed bound keeps the points on it (within `tol`), an open one drops them |
 | `Ω = [a, b] × [c, d],  t ∈ (t0, t1]` | the domain, a box, and the time interval of a transient problem |
 
 **Decimals are kept as written.** A numeral is an IEEE double, and a
@@ -984,7 +1049,8 @@ three and adds no other key.
 *What a reader that must not guess still needs: `ymf.stabilization.missing(block)`.* It returns the dotted keys the
 kernel generator reads that the block does not state, and nothing is filled in: `missing("SUPG")` is `["tau", "lagged",
 "shock_capturing"]`; with `shock_capturing: {factor: 0.9, lagged: false}` stated it also asks for `shock_capturing.beta` and
-`.reference` (stating `shock_capturing: none` answers the block as a whole); the entropy and graph viscosities need
+`.reference` (stating `shock_capturing: none` answers the block as a whole; **at `beta: 1`, the classical form that never
+reads the reference value, `reference` is not asked for**: proteus's RDLS is `{factor: 0.9, beta: 1.0, lagged: false}`); the entropy and graph viscosities need
 nothing. For `none`, an unstated `shock_capturing` is not missing (the word says there is none); a `shock_capturing`
 block it does state must be complete, so `missing({"shock_capturing": {"factor": 0.9, "lag": False}})` is
 `["shock_capturing.beta", "shock_capturing.reference"]` and `missing("none")` is `[]`.

@@ -278,11 +278,27 @@ def _check_split(doc: Dict[str, Any], entry: Dict[str, Any]) -> None:
             if symbol in readable:
                 raise YmfReferenceError(
                     "%s.binds.%s: %s is already a name" % (here, symbol, symbol))
+    for bc in _traces(strong):
+        trace = bc["trace"]
+        here = "model.strong_form.boundary_conditions[region=%r, variable=%r].trace" % (
+            bc.get("region"), bc.get("variable"))
+        _check(trace["via"], names, "%s.via (in %s)" % (here, where), "sub-problem")
+        _check(trace.get("of", bc.get("variable")), sorted(readable), "%s.of" % (here,),
+               "model unknown, coefficient or introduced unknown")
     if None not in equations:
         unsolved = [e for e in equations if e not in solved_by]
         if unsolved:
             raise YmfReferenceError(
                 "%s: no sub-problem solves %s" % (where, ", ".join(unsolved)))
+
+
+def _traces(strong):
+    """The conditions (sets expanded) whose value is another sub-problem's trace."""
+    from ymf.normalize import boundary_conditions
+    try:
+        return [bc for bc in boundary_conditions(strong) if isinstance(bc, dict) and bc.get("trace") is not None]
+    except ValueError:
+        return []
 
 
 #: what each kind of condition needs: a value (value, formula or series),
@@ -323,12 +339,33 @@ def _check_conditions(doc: Dict[str, Any]) -> None:
             raise YmfReferenceError("%s: %s is neither an unknown nor a coefficient"
                                     % (where, variable))
         given = any(bc.get(k) is not None for k in ("value", "formula", "series"))
+        if bc.get("trace") is not None:
+            if given:
+                raise YmfReferenceError("%s: a trace is the condition's value; it takes no value, formula or series"
+                                        % (where,))
+            if kind not in ("dirichlet", "inflow", "characteristic"):
+                raise YmfReferenceError("%s: a %s condition takes no trace; a trace is the value of a dirichlet, "
+                                        "inflow or characteristic condition" % (where, kind))
+            if bc.get("component") is not None:
+                raise YmfReferenceError("%s: a trace is a whole field's; it takes no component" % (where,))
+            given = True
         if bc.get("component") and variable in unknowns and unknowns[variable] != 1:
             raise YmfReferenceError("%s: a %s component is a vector's, and %s is a scalar"
                                     % (where, bc["component"], variable))
         if kind == "slip" and variable in unknowns and unknowns[variable] != 1:
             raise YmfReferenceError("%s: slip gives the normal component of a vector, and "
                                     "%s is a scalar" % (where, variable))
+        if bc.get("component") in ("x", "y", "z") and kind in ("slip", "open", "robin", "periodic"):
+            raise YmfReferenceError("%s: a %s condition on the %s component; a Cartesian component takes a "
+                                    "value (dirichlet, neumann, inflow, characteristic)" % (where, kind, bc["component"]))
+        if bc.get("part") is not None:
+            part = str(bc["part"]).strip()
+            if kind == "periodic":
+                raise YmfReferenceError("%s: a periodic condition identifies a region's faces, whole; it has no part"
+                                        % (where,))
+            if part in ("", "∂Ω", "∂ Ω", "boundary"):
+                raise YmfReferenceError("%s: part %r is the whole region; give no part, or a predicate "
+                                        "(\"x = 0 and 0.4 ≤ y ≤ 0.6\")" % (where, bc["part"]))
         article = "an" if str(kind)[:1] in "aeiou" else "a"
         if _NEEDS_VALUE.get(kind) and not given:
             raise YmfReferenceError("%s: %s %s condition needs a value, formula or series"

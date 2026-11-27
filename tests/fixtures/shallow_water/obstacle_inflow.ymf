@@ -1,0 +1,38 @@
+# The boundary of test/SWFlow/obstacle_flow.py as a spec (ymf round 7: a
+# state imposed on part of a boundary), on the deck's 40 m × 10 m box without
+# its cylinder (a box domain has no hole; the boundary treatment is the point
+# here). The deck gives the whole state, h = h_inflow and q = (q_inflow, 0),
+# at the nodes with x = 0, and nothing elsewhere (reflecting_BCs False: the
+# realizer's outflow). As a spec: the outflow set on all of ∂Ω, and the state
+# on its part x = 0, where it replaces the set's member for q.
+extends: proteus_numerics.ymf
+
+model:
+  name: "Inflow on part of the boundary, 40 m × 10 m (obstacle_flow's boundary)"
+  physical_model: {provenance: human_specified}
+  strong_form:
+    domain: "Ω = [0, 40] × [0, 10],  t ∈ (0, 20]"
+    boundary_regions:
+      - {name: all, where: "∂Ω"}
+    boundary_sets:
+      - {region: all, set: outflow}
+    boundary_conditions:
+      - {region: all, part: "x = 0", variable: h, type: dirichlet, value: 1.0, units: m}
+      - {region: all, part: "x = 0", variable: q, type: dirichlet, formula: "(1.5, 0)"}
+    initial_conditions:
+      - {field: h, type: constant, value: 1.0, units: m}
+      - {field: q, type: constant, value: 0.0}
+    coefficients:
+      g: {value: 9.81}
+      n: {value: 0.02}
+      θ: {value: 1.0}
+      Z: {value: 0.0}
+      α: {value: 0.0}
+      β: {value: 0.0}
+
+solution_paths:
+  analytical: []
+  discretizations:
+    - name: convex_limited
+      mesh: {h: 0.5}
+      step_control: {type: min_cfl, cfl: 0.25}
