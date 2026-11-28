@@ -7,6 +7,17 @@ rediscover why a thing is the way it is. Open gaps are in
 
 ## 2026-11
 
+- **2026-11-28: a nonlinear potential, `∇·(−a∇φ(u))`.** The Kirchhoff form of a nonlinear diffusion equation (`φ: u² +
+  10u`, a coefficient that names the unknown, or the same written under the gradient) was refused: "the potential u**2
+  is not an unknown". `classify` now gathers the terms of one unknown's gradients (`Space.d` splits `∇(u² + 10u)` into
+  `∇(u²) + 10∇u`) back into one tensor and one potential, scaled so the potential's last term in sympy's order (the
+  highest power) has coefficient 1, and refuses terms whose tensors are not multiples by a number, or a potential of
+  more than one unknown or of the coordinates. The ADR form's diffusion entry then carries `potential: {phi, dphi,
+  depends_on}`; a potential that is the unknown itself reads as before (no key), so every existing spec gives the same
+  plain data. The named form substitutes a coefficient of the state that sits under a second derivative (it is a
+  potential, which a known field cannot be) and keeps `phi` in its diffusion slot; `ymf.units` takes the potential's
+  dimension from its expression. Found writing the 1.x Introduction notebook's nonlinear Poisson problem as a spec.
+
 - **2026-11-25: C42 round 7, `reference` optional at `beta` 1.** `missing()` asked for `shock_capturing.reference` of every
   stated shock-capturing block, though a `beta: 1` kernel (the classical `factor |R|/sqrt(∇uᵀ G ∇u)`, proteus's RDLS)
   never reads it. It no longer does when `beta` is stated as 1 (any spelling: `beta`, `sc_beta`); stating a reference
