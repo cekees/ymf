@@ -24,6 +24,11 @@ anything else first order          Hamiltonian, ``H += term``
 where ``c`` is a number. That table is ibvp's Proteus classifier
 (https://github.com/ibvp/ibvp, MIT, Kloeckner and Kirby) on sympy.
 
+The potential ``phi`` is an unknown ``u`` or a function of one, ``phi(u)``
+(Kirchhoff form, ``div(-a grad(u**2 + 10*u))``): the diffusion entry then
+carries ``potential``, phi and its derivative, as a solver with nonlinear
+potentials (Proteus's ``potential`` flags) takes them.
+
 It also works out what Proteus needs to assemble a Newton Jacobian: the
 derivative of every coefficient with respect to every unknown, and whether
 each dependence is constant, linear or nonlinear.
@@ -119,6 +124,9 @@ class Equation:
         self.advection = [sympy.Integer(0)] * dim
         #: potential component -> dim x dim tensor
         self.diffusion: Dict[str, sympy.Matrix] = {}
+        #: potential component -> phi, for a potential that is a function of
+        #: the component other than the component itself (absent otherwise)
+        self.potential: Dict[str, sympy.Expr] = {}
         self.reaction = sympy.Integer(0)
         self.hamiltonian = sympy.Integer(0)
 
@@ -139,7 +147,12 @@ def _derivative_order(expr) -> int:
 
 
 def _diffusion_terms(arg, space: Space, where: str):
-    """Read ``sum_k b_k D(phi_k, k)`` -> [(b_k, phi_k, k)]."""
+    """Read ``sum_k b_k D(g_k, k)`` -> [(b_k, g_k, k)].
+
+    ``g_k`` is an unknown, or a function of one unknown (a term of a
+    nonlinear potential, ``u**2`` in ``D(u**2 + 10*u, k)``, which
+    :meth:`Space.d` has already split into ``D(u**2, k) + 10*D(u, k)``).
+    """
     out = []
     for term in sympy.Add.make_args(sympy.expand(arg, deep=False)):
         inner = [f for f in sympy.Mul.make_args(term) if isinstance(f, D)]
@@ -148,13 +161,55 @@ def _diffusion_terms(arg, space: Space, where: str):
             raise SymbolicError(
                 "%s: %s is not a diffusive flux b*grad(phi) -- second derivatives "
                 "must appear as div(b*grad(phi))" % (where, term))
-        phi, k = inner[0].args
-        if phi not in space.component_symbols:
-            raise SymbolicError(
-                "%s: the potential %s is not an unknown; only phi = an unknown is "
-                "supported so far" % (where, phi))
-        out.append((rest, phi, int(k)))
+        g, k = inner[0].args
+        _potential_unknown(g, space, where)
+        out.append((rest, g, int(k)))
     return out
+
+
+def _potential_unknown(g, space: Space, where: str) -> sympy.Symbol:
+    """The one unknown a term of a potential is a function of."""
+    if g in space.component_symbols:
+        return g
+    unknowns = sorted(g.free_symbols & set(space.component_symbols), key=str)
+    others = sorted(g.free_symbols - set(space.component_symbols), key=str)
+    if g.has(D, Dt) or len(unknowns) != 1 or others:
+        raise SymbolicError(
+            "%s: the potential %s under the gradient is not a function of one unknown%s; "
+            "a diffusive flux is b*grad(phi) with phi an unknown or a function of one "
+            "unknown, phi(u)" % (where, g, " (it also depends on %s)"
+                                 % ", ".join(map(str, others)) if others else ""))
+    return unknowns[0]
+
+
+def _potentials(by_term, space: Space, where: str):
+    """One tensor and one potential per unknown, from the terms of its gradients.
+
+    ``by_term`` maps each ``g`` found under a gradient of the unknown to the
+    tensor it carries. ``div(a grad(u**2 + 10*u))`` arrives as two terms,
+    ``a`` on ``u**2`` and ``10 a`` on ``u``: a potential ``phi = u**2 + 10*u``
+    with the tensor ``a``. That needs the tensors to be multiples of one
+    another by numbers; ``phi`` is scaled so that its last term in sympy's
+    canonical order (for a polynomial, the highest power) has coefficient 1.
+    Returns ``(tensor, phi)``, with ``phi`` None when it is the unknown itself.
+    """
+    terms = list(sympy.ordered(by_term))
+    if len(terms) == 1 and terms[0] in space.component_symbols:
+        return by_term[terms[0]], None
+    lead = terms[-1]
+    tensor = by_term[lead]
+    r, c = next((r, c) for r in range(tensor.shape[0]) for c in range(tensor.shape[1])
+                if tensor[r, c] != 0)
+    phi = lead
+    for g in terms[:-1]:
+        scale = sympy.simplify(by_term[g][r, c] / tensor[r, c])
+        if not scale.is_number or sympy.simplify(by_term[g] - scale * tensor) != sympy.zeros(*tensor.shape):
+            raise SymbolicError(
+                "%s: the gradients of %s and %s carry tensors that are not multiples of "
+                "each other by a number, so they are not one diffusive flux a*grad(phi(u))"
+                % (where, lead, g))
+        phi += scale * g
+    return tensor, phi
 
 
 def classify(residual, space: Space, where: str = "equation",
@@ -168,6 +223,8 @@ def classify(residual, space: Space, where: str = "equation",
     forms.
     """
     eq = Equation(space.dim)
+    #: unknown -> {g under a gradient of it -> the tensor it carries}
+    gradients: Dict[sympy.Symbol, Dict[sympy.Expr, sympy.Matrix]] = {}
     allowed = (set(space.component_symbols) | set(space.x) | {space.t}
                | set(space.parameters))
     stray = sympy.sympify(residual).free_symbols - allowed
@@ -194,9 +251,10 @@ def classify(residual, space: Space, where: str = "equation",
                 if not arg.has(D, Dt):
                     eq.advection[axis] += number * arg
                     continue
-                for b, phi, k in _diffusion_terms(arg, space, where):
-                    tensor = eq.diffusion.setdefault(
-                        phi.name, sympy.zeros(space.dim, space.dim))
+                for b, g, k in _diffusion_terms(arg, space, where):
+                    unknown = _potential_unknown(g, space, where)
+                    tensor = gradients.setdefault(unknown, {}).setdefault(
+                        g, sympy.zeros(space.dim, space.dim))
                     tensor[axis, k] += -number * b
                 continue
         # Not in divergence form: must be first order, no time derivative.
@@ -211,6 +269,11 @@ def classify(residual, space: Space, where: str = "equation",
                 raise SymbolicError("%s: in %s, only derivatives of an unknown may "
                                     "appear outside a divergence" % (where, term))
         eq.hamiltonian += term
+    for unknown, by_term in gradients.items():
+        tensor, phi = _potentials(by_term, space, where)
+        eq.diffusion[unknown.name] = tensor
+        if phi is not None:
+            eq.potential[unknown.name] = phi
     return eq
 
 
@@ -255,7 +318,10 @@ def adr_form(equations: Sequence[sympy.Expr], space: Space,
     it depends on each (``linear`` or ``nonlinear``; an empty map is a
     constant). How a solver encodes that -- Proteus's flag dictionaries,
     say -- is the solver's business. Diffusion tensors are given in CSR
-    form over their symbolic nonzeros.
+    form over their symbolic nonzeros, keyed by the unknown whose potential
+    they act on; when that potential is a function of the unknown and not
+    the unknown itself, the entry also holds ``potential``: ``phi``, its
+    derivative ``dphi`` and ``depends_on``, like the other slots.
     """
     if len(equations) != len(space.components):
         raise SymbolicError(
@@ -308,6 +374,14 @@ def adr_form(equations: Sequence[sympy.Expr], space: Space,
                            for c, s in _syms(space, deps)},
                     "depends_on": deps,
                 }
+                if phi in eq.potential:
+                    p = eq.potential[phi]
+                    pdeps = _flag(p, space)
+                    diffusion[phi]["potential"] = {
+                        "phi": to_code(p),
+                        "dphi": {c: to_code(sympy.diff(p, s)) for c, s in _syms(space, pdeps)},
+                        "depends_on": pdeps,
+                    }
             entry["diffusion"] = diffusion
 
         if eq.reaction != 0:

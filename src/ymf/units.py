@@ -734,9 +734,12 @@ def _flux_dimension(strong_form, component, names, dims, space, cache):
         raise _Undetermined(["no flux q: %s" % exc])
     terms = []
     for phi, tensor in eq.diffusion.items():
+        # the potential under the gradient: the unknown, or a function of it
+        potential = (_expression_dimension(eq.potential[phi], names, dims)
+                     if phi in eq.potential else names[phi])
         for entry in tensor:
             if entry != 0:
-                terms.append(_expression_dimension(entry, names, dims) * names[phi] / names["x"])
+                terms.append(_expression_dimension(entry, names, dims) * potential / names["x"])
     if not terms:
         raise _Undetermined(["the equation for %s has no diffusive flux" % component])
     for term in terms[1:]:

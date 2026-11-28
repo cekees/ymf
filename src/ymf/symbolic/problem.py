@@ -808,7 +808,9 @@ def _values_only(adr: Dict[str, Any]) -> Dict[str, Any]:
             if slot in entry:
                 kept[slot] = {k: entry[slot][k] for k in keys}
         if "diffusion" in entry:
-            kept["diffusion"] = {phi: {k: d[k] for k in ("rowptr", "colind", "a")}
+            kept["diffusion"] = {phi: dict({k: d[k] for k in ("rowptr", "colind", "a")},
+                                           **({"phi": d["potential"]["phi"]}
+                                              if "potential" in d else {}))
                                  for phi, d in entry["diffusion"].items()}
         out.append(kept)
     return {"dim": adr["dim"], "components": adr["components"], "equations": out}
@@ -886,10 +888,28 @@ def _named_form(texts: Sequence[str], spec: Dict[str, Any], values: Dict[str, An
         order.extend(ready)
         todo = [c for c in todo if c not in ready]
 
-    space = Space(dim, unknowns, constants, named_fields, parameters, functions)
-    residuals: List[sympy.Expr] = []
-    for text in texts:
-        residuals.extend(post(r) for r in parse_equation(text, space))
+    def read():
+        space = Space(dim, unknowns, constants, named_fields, parameters, functions)
+        residuals: List[sympy.Expr] = []
+        for text in texts:
+            residuals.extend(post(r) for r in parse_equation(text, space))
+        return space, residuals
+
+    space, residuals = read()
+    # A coefficient of the state under a gradient inside a divergence is a
+    # potential, phi(u) in div(-a grad(phi)): held as a known field it would
+    # be differentiated twice into the reaction, which no slot holds. The ADR
+    # form needs it as a function of the unknowns, so it is substituted here,
+    # as in the substituted form; its inline record stays.
+    potentials = {stem(d.expr.func.__name__)
+                  for r in residuals for d in sympy.sympify(r).atoms(sympy.Derivative)
+                  if isinstance(d.expr, AppliedUndef)
+                  and sum(n for v, n in d.variable_count if v in space.x) >= 2} & set(ranks)
+    if potentials:
+        for name in potentials:
+            constants[name] = values[name]
+            named_fields.pop(name)
+        space, residuals = read()
     adr = adr_form(residuals, space, hamiltonian_gradients=hamiltonian_gradients)
     return dict({"order": order}, **_values_only(adr)), inline
 
